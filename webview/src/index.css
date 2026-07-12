@@ -1,0 +1,96 @@
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* VS Code injects default padding to webviews, we remove it to go edge-to-edge */
+body.vscode-body {
+  padding: 0 !important;
+}
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+/* Notion-style nested list bullets */
+.bn-editor [data-content-type="bulletListItem"] {
+  list-style-type: disc !important;
+}
+.bn-editor .bn-block-group [data-content-type="bulletListItem"] {
+  list-style-type: circle !important;
+}
+.bn-editor .bn-block-group .bn-block-group [data-content-type="bulletListItem"] {
+  list-style-type: square !important;
+}
+
+/* Ensure uniform size and spacing for the bullet icons */
+/* UpNote-style Bullet sizes and Colors */
+.bn-editor [data-content-type="bulletListItem"]::marker,
+.bn-editor [data-content-type="numberedListItem"]::marker {
+  color: var(--vscode-textLink-foreground, #3b82f6) !important;
+}
+
+.bn-editor [data-content-type="bulletListItem"] {
+  padding-left: 0.2em;
+}
+.bn-editor [data-content-type="bulletListItem"]::marker {
+  font-size: 0.65em !important; /* Make bullets small like UpNote */
+}
+
+/* UpNote-style Tables: Clean and Minimal */
+.bn-editor table {
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  width: 100%;
+}
+.bn-editor th, .bn-editor td {
+  border: 1px solid rgba(120, 120, 120, 0.3) !important;
+  padding: 10px 14px;
+}
+.bn-editor th {
+  background-color: transparent !important;
+  font-weight: 600;
+}
+.bn-editor tr:nth-child(even) td {
+  background-color: transparent !important;
+}
+.bn-editor tr:hover td {
+  background-color: transparent !important;
+}
+
+/* UpNote Typography & Layout */
+.bn-editor {
+  font-family: Avenir, "Segoe UI", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif !important;
+  line-height: 1.6;
+}
+
+/* Tighter block spacing for continuous document flow */
+.bn-editor .bn-block-content {
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
+}
+
+/* Fade BlockNote Drag Handles heavily (Notion-style removal) */
+.bn-side-menu {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.bn-block:hover .bn-side-menu, .bn-editor:hover .bn-side-menu {
+  opacity: 0.2;
+}
+.bn-side-menu:hover {
+  opacity: 1 !important;
+}
+
+/* Elegant Blockquotes */
+.bn-editor [data-content-type="blockQuote"] {
+  border-left: 3px solid var(--vscode-textLink-foreground, #3b82f6) !important;
+  background-color: transparent !important;
+  padding-left: 1.2em !important;
+  margin: 1.2em 0;
+  font-style: italic;
+  opacity: 0.85;
+}

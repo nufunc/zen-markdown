@@ -1,0 +1,95 @@
+{
+  "name": "neat-md-editor",
+  "displayName": "Neat MD Editor",
+  "description": "Neat & Aesthetic WYSIWYG Markdown Editor with Mermaid",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "llmAssist.mdEditor",
+        "displayName": "Neat MD Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.llm.md"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "Neat MD Editor",
+      "properties": {
+        "llmAssist.fontSize": {
+          "type": "number",
+          "default": 16,
+          "description": "Font size for the Neat MD Editor"
+        },
+        "llmAssist.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "light",
+            "dark",
+            "nord",
+            "one-half-dark",
+            "solarized-dark",
+            "vintage"
+          ],
+          "enumDescriptions": [
+            "Match VS Code theme",
+            "Light theme",
+            "Dark theme",
+            "Nord theme (Cool frosty dark)",
+            "One Half Dark",
+            "Solarized Dark",
+            "Vintage"
+          ],
+          "default": "auto",
+          "description": "Select the theme for the Neat MD Editor. 'auto' follows the VS Code theme."
+        },
+        "llmAssist.autoFix": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run Auto-Fix formatting (Prettier) on save or edit."
+        },
+        "llmAssist.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh editor when the document changes externally."
+        },
+        "llmAssist.showToc": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show Table of Contents by default."
+        },
+        "llmAssist.showProperties": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show Document Properties (Frontmatter) by default."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build:webview": "cd webview && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}
