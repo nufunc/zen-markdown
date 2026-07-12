@@ -36,15 +36,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const llmEditorProvider_1 = require("./llmEditorProvider");
+const neatMdEditorProvider_1 = require("./neatMdEditorProvider");
 function activate(context) {
-    context.subscriptions.push(llmEditorProvider_1.LLMAssistEditorProvider.register(context));
-    context.subscriptions.push(vscode.commands.registerCommand('llmAssist.openWithTextEditor', () => {
+    context.subscriptions.push(neatMdEditorProvider_1.NeatMdEditorProvider.register(context));
+    context.subscriptions.push(vscode.commands.registerCommand('neatMdEditor.openWithTextEditor', () => {
         vscode.commands.executeCommand('workbench.action.reopenTextEditor');
-    }), vscode.commands.registerCommand('llmAssist.openWithNeatEditor', (uri) => {
+    }), vscode.commands.registerCommand('neatMdEditor.openWithNeatEditor', (uri) => {
         const target = uri ?? vscode.window.activeTextEditor?.document.uri;
         if (target) {
-            vscode.commands.executeCommand('vscode.openWith', target, 'llmAssist.mdEditor');
+            vscode.commands.executeCommand('vscode.openWith', target, 'neatMdEditor.mdEditor');
         }
     }));
 }

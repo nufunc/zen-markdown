@@ -14,7 +14,7 @@
   "contributes": {
     "customEditors": [
       {
-        "viewType": "llmAssist.mdEditor",
+        "viewType": "neatMdEditor.mdEditor",
         "displayName": "Neat MD Editor",
         "selector": [
           {
@@ -29,13 +29,13 @@
     ],
     "commands": [
       {
-        "command": "llmAssist.openWithTextEditor",
+        "command": "neatMdEditor.openWithTextEditor",
         "title": "Open with Text Editor",
         "category": "Neat MD Editor",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "llmAssist.openWithNeatEditor",
+        "command": "neatMdEditor.openWithNeatEditor",
         "title": "Open with Neat MD Editor",
         "category": "Neat MD Editor",
         "icon": "$(open-preview)"
@@ -44,13 +44,13 @@
     "menus": {
       "editor/title": [
         {
-          "command": "llmAssist.openWithTextEditor",
-          "when": "activeCustomEditorId == llmAssist.mdEditor",
+          "command": "neatMdEditor.openWithTextEditor",
+          "when": "activeCustomEditorId == neatMdEditor.mdEditor",
           "group": "navigation"
         },
         {
-          "command": "llmAssist.openWithNeatEditor",
-          "when": "editorLangId == markdown && activeCustomEditorId != llmAssist.mdEditor",
+          "command": "neatMdEditor.openWithNeatEditor",
+          "when": "editorLangId == markdown && activeCustomEditorId != neatMdEditor.mdEditor",
           "group": "navigation"
         }
       ]
@@ -58,12 +58,12 @@
     "configuration": {
       "title": "Neat MD Editor",
       "properties": {
-        "llmAssist.fontSize": {
+        "neatMdEditor.fontSize": {
           "type": "number",
           "default": 16,
           "description": "Font size for the Neat MD Editor"
         },
-        "llmAssist.theme": {
+        "neatMdEditor.theme": {
           "type": "string",
           "enum": [
             "auto",
@@ -86,22 +86,22 @@
           "default": "auto",
           "description": "Select the theme for the Neat MD Editor. 'auto' follows the VS Code theme."
         },
-        "llmAssist.autoFix": {
+        "neatMdEditor.autoFix": {
           "type": "boolean",
           "default": false,
           "description": "Automatically run Auto-Fix formatting (Prettier) on save or edit."
         },
-        "llmAssist.autoRefresh": {
+        "neatMdEditor.autoRefresh": {
           "type": "boolean",
           "default": true,
           "description": "Automatically refresh editor when the document changes externally."
         },
-        "llmAssist.showToc": {
+        "neatMdEditor.showToc": {
           "type": "boolean",
           "default": false,
           "description": "Show Table of Contents by default."
         },
-        "llmAssist.showProperties": {
+        "neatMdEditor.showProperties": {
           "type": "boolean",
           "default": false,
           "description": "Show Document Properties (Frontmatter) by default."
