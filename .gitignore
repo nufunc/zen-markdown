@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+webview/dist/
+
+# Packaged extension
+*.vsix
+
+# Local session notes
+MEMORY.md
+
+# Logs & OS files
+*.log
+.DS_Store
