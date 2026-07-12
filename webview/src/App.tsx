@@ -88,6 +88,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
+import * as cmThemes from '@uiw/codemirror-themes-all';
 
 const { Original, Modified } = CodeMirrorMerge;
 
@@ -240,6 +241,74 @@ function App() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (isRawMode) return;
+
+    let hoverTarget: HTMLElement | null = null;
+    let timeoutId: any = null;
+
+    const floatingBtn = document.createElement('button');
+    floatingBtn.className = 'bn-floating-copy-btn';
+    floatingBtn.innerHTML = '📋 Copy';
+    floatingBtn.style.position = 'absolute';
+    floatingBtn.style.padding = '4px 8px';
+    floatingBtn.style.fontSize = '11px';
+    floatingBtn.style.cursor = 'pointer';
+    floatingBtn.style.borderRadius = '4px';
+    floatingBtn.style.opacity = '0';
+    floatingBtn.style.pointerEvents = 'none';
+    floatingBtn.style.transition = 'opacity 0.2s';
+    floatingBtn.style.zIndex = '1000';
+    
+    document.body.appendChild(floatingBtn);
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const codeBlock = target.closest('.bn-block-content[data-content-type="codeBlock"]') as HTMLElement;
+      
+      if (codeBlock) {
+        hoverTarget = codeBlock;
+        const rect = codeBlock.getBoundingClientRect();
+        floatingBtn.style.top = `${rect.top + window.scrollY + 6}px`;
+        // Button width is ~60px, padding right is ~6px
+        floatingBtn.style.left = `${rect.right + window.scrollX - 70}px`; 
+        floatingBtn.style.opacity = '1';
+        floatingBtn.style.pointerEvents = 'auto';
+        
+        clearTimeout(timeoutId);
+      } else {
+        if (target !== floatingBtn && !floatingBtn.contains(target)) {
+          timeoutId = setTimeout(() => {
+            floatingBtn.style.opacity = '0';
+            floatingBtn.style.pointerEvents = 'none';
+            hoverTarget = null;
+            floatingBtn.innerHTML = '📋 Copy';
+          }, 100);
+        }
+      }
+    };
+
+    floatingBtn.onclick = () => {
+      if (hoverTarget) {
+        const pre = hoverTarget.querySelector('pre');
+        if (pre) {
+          navigator.clipboard.writeText(pre.innerText);
+          floatingBtn.innerHTML = '✅ Copied!';
+          setTimeout(() => { floatingBtn.innerHTML = '📋 Copy'; }, 2000);
+        }
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      if (document.body.contains(floatingBtn)) {
+        document.body.removeChild(floatingBtn);
+      }
+    };
+  }, [isRawMode]);
 
   const extractHeadings = (editorInstance: any) => {
     const newHeadings: {id: string, text: string, level: number}[] = [];
@@ -433,7 +502,9 @@ function App() {
   };
 
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && !e.shiftKey && editor && !isRawMode) {
+    if (!editor || isRawMode) return;
+
+    if (e.key === 'Tab' && !e.shiftKey) {
       try {
         const cursor = editor.getTextCursorPosition();
         if (cursor && cursor.block.type === 'numberedListItem') {
@@ -446,6 +517,71 @@ function App() {
       } catch (err) {
         // Ignored if no cursor position can be resolved
       }
+      return;
+    }
+
+    // UpNote Shortcuts
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, {
+            type: 'heading',
+            props: { level: parseInt(e.key) as any }
+          });
+        }
+      } catch(err) {}
+      return;
+    }
+    
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '7') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, { type: 'bulletListItem' });
+        }
+      } catch(err) {}
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '8') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, { type: 'numberedListItem' });
+        }
+      } catch(err) {}
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '9') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, { type: 'checkListItem' });
+        }
+      } catch(err) {}
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, { type: 'blockQuote' });
+        }
+      } catch(err) {}
+      return;
     }
   };
 
@@ -475,6 +611,7 @@ function App() {
   let codeBg = '#f5f5f5';
   let codeColor = '#333333';
   let blockNoteTheme: "light" | "dark" = "light";
+  let cmTheme: any = cmThemes.vscodeLight;
 
   if (activeTheme === 'dark') {
     bgColor = '#1e1e1e';
@@ -483,6 +620,7 @@ function App() {
     codeBg = '#252526';
     codeColor = '#d4d4d4';
     blockNoteTheme = "dark";
+    cmTheme = cmThemes.vscodeDark;
   } else if (activeTheme === 'nord') {
     bgColor = '#2e3440';
     textColor = '#d8dee9';
@@ -490,6 +628,7 @@ function App() {
     codeBg = '#3b4252';
     codeColor = '#d8dee9';
     blockNoteTheme = "dark";
+    cmTheme = cmThemes.nord;
   } else if (activeTheme === 'one-half-dark') {
     bgColor = '#282c34';
     textColor = '#dcdfe4';
@@ -497,6 +636,7 @@ function App() {
     codeBg = '#2c323c';
     codeColor = '#dcdfe4';
     blockNoteTheme = "dark";
+    cmTheme = cmThemes.atomone;
   } else if (activeTheme === 'solarized-dark') {
     bgColor = '#002b36';
     textColor = '#839496';
@@ -504,12 +644,14 @@ function App() {
     codeBg = '#073642';
     codeColor = '#839496';
     blockNoteTheme = "dark";
+    cmTheme = cmThemes.solarizedDark;
   } else if (activeTheme === 'vintage') {
     bgColor = '#f4ecd8';
     textColor = '#3a3a3a';
     headerBg = '#e8dcc3';
     codeBg = '#e8dcc3';
     codeColor = '#3a3a3a';
+    cmTheme = cmThemes.gruvboxLight;
   }
 
   const dropdownBg = isDark ? '#252526' : '#ffffff';
@@ -690,21 +832,26 @@ function App() {
           boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
           zIndex: 90
         }}>
-          <div 
-            onMouseDown={handleTocMouseDown}
-            style={{ 
-              fontWeight: 'bold', 
-              marginBottom: '8px', 
-              opacity: 0.8, 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              cursor: 'grab',
-              userSelect: 'none'
-            }}
-            title="Drag to move"
-          >
-            <span style={{ fontSize: '14px' }}>📑</span> Table of Contents
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div 
+              onMouseDown={handleTocMouseDown}
+              style={{ 
+                fontWeight: 'bold', 
+                opacity: 0.8, 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                cursor: 'grab',
+                userSelect: 'none',
+                flex: 1
+              }}
+              title="Drag to move"
+            >
+              <span style={{ fontSize: '14px' }}>📑</span> Table of Contents
+            </div>
+            <span title="Close TOC" onClick={() => updateConfig('showToc', false)} style={{ display: 'flex', cursor: 'pointer', opacity: 0.7 }}>
+              <X size={14} />
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {headings.map(h => (
@@ -936,18 +1083,48 @@ function App() {
         onKeyDownCapture={handleKeyDownCapture}
       >
         <style>{`
-          .bn-editor { font-size: ${config.fontSize}px; background-color: transparent !important; }
+          /* Confluence Typography Base */
+          .bn-editor { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+            font-size: ${config.fontSize}px; 
+            background-color: transparent !important; 
+          }
+          
+          /* Confluence Link Style */
+          .bn-editor a {
+            color: ${isDark ? '#579dff' : '#0052cc'} !important;
+            text-decoration: none;
+          }
+          .bn-editor a:hover {
+            text-decoration: underline;
+          }
+          
           .bn-container { color: ${textColor} !important; }
           .cm-content { padding: 16px 32px !important; }
           
           /* Custom Code Block Theme Colors */
           .bn-editor .bn-block-content[data-content-type="codeBlock"] {
-            background-color: ${codeBg} !important;
+            background-color: ${isDark ? codeBg : '#ebecf0'} !important;
             color: ${codeColor} !important;
+            border-radius: 6px !important;
+            border: 1px solid ${isDark ? '#333' : '#dfe1e6'} !important;
           }
           /* Override BlockNote default syntax highlighting background */
           .bn-editor .bn-block-content[data-content-type="codeBlock"] pre {
             background-color: transparent !important;
+            padding: 8px !important;
+            margin: 0 !important;
+          }
+          
+          /* Floating Copy Button Style */
+          .bn-floating-copy-btn {
+            background-color: ${isDark ? '#333' : '#ffffff'} !important;
+            color: ${isDark ? '#eee' : '#333'} !important;
+            border: 1px solid ${isDark ? '#555' : '#ccc'} !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          .bn-floating-copy-btn:hover {
+            background-color: ${isDark ? '#444' : '#f0f0f0'} !important;
           }
           
           /* Uniform Bullet Icons */
@@ -988,12 +1165,6 @@ function App() {
           .bn-editor h1, .bn-editor h2, .bn-editor h3, .bn-editor h4, .bn-editor h5, .bn-editor h6,
           .bn-editor ul, .bn-editor ol, .bn-editor li,
           .bn-editor [data-content-type="heading"],
-          .bn-editor [data-content-type="paragraph"],
-          .bn-editor [data-content-type="bulletListItem"],
-          .bn-editor [data-content-type="numberedListItem"],
-          .bn-editor [data-content-type="codeBlock"],
-          .bn-editor pre,
-          .bn-editor code,
           .bn-editor .bn-inline-content {
             margin-top: 0 !important;
             margin-bottom: 0 !important;
@@ -1022,14 +1193,17 @@ function App() {
             margin-bottom: 0.15em !important;
           }
 
-          /* Inline Code Styling */
-          .bn-editor .bn-inline-content code {
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            color: var(--vscode-textPreformat-foreground, #d16969) !important;
+          /* Remove spacing between consecutive headings */
+          .bn-editor .bn-block-outer:has([data-content-type="heading"]) + .bn-block-outer:has([data-content-type="heading"]) [data-content-type="heading"] {
+            margin-top: 0 !important;
           }
-          
+
+          /* Code Block Margins */
+          .bn-editor .bn-block-outer:has([data-content-type="codeBlock"]) {
+            margin-top: 0.25cm !important;
+            margin-bottom: 0.25cm !important;
+          }
+
           /* Table Styles Enhancement */
           /* 1. Target the table block itself */
           .bn-editor .bn-block-outer:has([data-content-type="table"]),
@@ -1067,34 +1241,41 @@ function App() {
             margin: 0 !important;
           }
           .bn-editor [data-content-type="table"] th {
-            background-color: ${headerBg} !important;
+            background-color: ${isDark ? '#22272b' : '#f4f5f7'} !important;
+            color: ${isDark ? '#b6c2cf' : '#172b4d'} !important;
             font-weight: 600 !important;
           }
           .bn-editor [data-content-type="table"] td, 
           .bn-editor [data-content-type="table"] th {
-            border: 1px solid ${dropdownBorder} !important;
-            padding: 6px 12px !important;
+            border: 1px solid ${isDark ? '#a6c5e229' : '#dfe1e6'} !important;
+            padding: 2px 6px !important;
             min-width: 100px;
           }
           
-          /* Blockquote Styles */
+          /* Blockquote Styles (Confluence) */
           .bn-editor [data-content-type="blockQuote"] {
-            background-color: ${isDark ? 'rgba(0, 122, 255, 0.1)' : 'rgba(0, 122, 255, 0.05)'} !important;
-            border-left: 4px solid #007aff !important;
-            padding: 12px 16px !important;
-            border-radius: 0 4px 4px 0;
-            margin: 8px 0;
+            background-color: ${isDark ? 'rgba(87, 157, 255, 0.05)' : 'rgba(0, 82, 204, 0.03)'} !important;
+            border-left: 3px solid ${isDark ? '#579dff' : '#0052cc'} !important;
+            padding: 4px 12px !important;
+            color: ${isDark ? '#8c9bab' : '#172b4d'} !important;
+            border-radius: 0 4px 4px 0 !important;
+          }
+          /* Ensure child div doesn't add an extra black border */
+          .bn-editor [data-content-type="blockQuote"] > div {
+            border-left: none !important;
+            padding-left: 0 !important;
           }
           
-          /* Inline Code Styles */
+          /* Inline Code Styles (Confluence) */
           .bn-editor code, .bn-editor [data-inline-style="code"] {
-            background-color: ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'} !important;
-            padding: 2px 6px !important;
-            border-radius: 4px !important;
+            background-color: ${isDark ? 'rgba(166, 197, 226, 0.16)' : '#ebecf0'} !important;
+            padding: 2px 4px !important;
+            border-radius: 3px !important;
             font-family: Consolas, 'Courier New', monospace !important;
             font-size: 0.9em !important;
-            color: ${isDark ? '#e06c75' : '#d14'} !important;
-            border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'} !important;
+            color: ${isDark ? '#b6c2cf' : '#172b4d'} !important;
+            border: none !important;
+            box-shadow: none !important;
           }
           .bn-editor [data-content-type="table"] tr {
             transition: background-color 0.1s ease;
@@ -1109,7 +1290,7 @@ function App() {
               <div style={{ padding: '20px', fontFamily: 'monospace', color: textColor, opacity: 0.7 }}>Loading Git HEAD...</div>
             ) : (
               <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }} className="cm-merge-container">
-                <CodeMirrorMerge orientation="a-b" className="cm-merge-root" theme={blockNoteTheme}>
+                <CodeMirrorMerge orientation="a-b" className="cm-merge-root" theme={cmTheme}>
                   <Original
                     value={originalText}
                     extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping, EditorState.readOnly.of(true)]}
@@ -1124,9 +1305,20 @@ function App() {
                   />
                 </CodeMirrorMerge>
                 <style>{`
-                  .cm-merge-root { flex: 1; height: 100%; overflow: hidden; }
-                  .cm-merge-container .cm-editor { height: 100%; font-family: Consolas, 'Courier New', monospace; font-size: inherit; }
-                  .cm-merge-container .cm-scroller { overflow: auto; }
+                  .cm-merge-root { flex: 1; height: 100%; overflow: hidden; display: flex; }
+                  .cm-merge-theme { flex: 1; display: flex; height: 100%; min-height: 0; }
+                  .cm-merge-container .cm-editor { height: 100%; flex: 1; font-family: Consolas, 'Courier New', monospace; font-size: inherit; }
+                  .cm-merge-container .cm-scroller { overflow: auto !important; height: 100%; }
+                  /* Scrollbar & Layout Fixes */
+                  .cm-merge-container .cm-scroller { overflow-y: scroll !important; overflow-x: auto !important; height: 100%; }
+                  .cm-merge-root { overflow: hidden !important; }
+                  /* Make lines transparent so CodeMirror merge background highlights can be seen */
+                  .cm-merge-container .cm-line { background-color: transparent !important; }
+                  /* Diff Highlight Colors */
+                  .cm-merge-a .cm-changedLine, .cm-deletedLine, .cm-deletedChunk { background-color: ${isDark ? 'rgba(255, 80, 80, 0.2)' : 'rgba(255, 0, 0, 0.15)'} !important; }
+                  .cm-merge-b .cm-changedLine, .cm-insertedLine, .cm-insertedChunk { background-color: ${isDark ? 'rgba(80, 255, 80, 0.2)' : 'rgba(0, 255, 0, 0.15)'} !important; }
+                  .cm-deletedText, .cm-merge-a .cm-changedText { background-color: ${isDark ? 'rgba(255, 80, 80, 0.4)' : 'rgba(255, 0, 0, 0.3)'} !important; }
+                  .cm-insertedText, .cm-merge-b .cm-changedText { background-color: ${isDark ? 'rgba(80, 255, 80, 0.4)' : 'rgba(0, 255, 0, 0.3)'} !important; }
                 `}</style>
               </div>
             )
@@ -1138,7 +1330,7 @@ function App() {
                 setDocumentText(val);
                 vscode.postMessage({ type: 'change', text: val });
               }}
-              theme={blockNoteTheme}
+              theme={cmTheme}
               style={{
                 width: '100%',
                 height: '100%',
