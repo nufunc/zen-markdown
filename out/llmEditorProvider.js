@@ -40,15 +40,25 @@ const child_process_1 = require("child_process");
 class LLMAssistEditorProvider {
     static register(context) {
         const provider = new LLMAssistEditorProvider(context);
-        return vscode.window.registerCustomEditorProvider('llmAssist.mdEditor', provider);
+        return vscode.window.registerCustomEditorProvider('llmAssist.mdEditor', provider, {
+            webviewOptions: { enableFindWidget: true }
+        });
     }
     constructor(context) {
         this.context = context;
     }
     async resolveCustomTextEditor(document, webviewPanel, _token) {
+        const docDir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
+        const localResourceRoots = [vscode.Uri.file(path.join(this.context.extensionPath, 'webview', 'dist'))];
+        if (docDir) {
+            localResourceRoots.push(vscode.Uri.file(docDir));
+        }
+        for (const folder of vscode.workspace.workspaceFolders ?? []) {
+            localResourceRoots.push(folder.uri);
+        }
         webviewPanel.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'webview', 'dist'))]
+            localResourceRoots
         };
         webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
         function updateWebview() {
@@ -69,7 +79,11 @@ class LLMAssistEditorProvider {
             const autoRefresh = config.get('autoRefresh') ?? true;
             const showToc = config.get('showToc') ?? false;
             const showProperties = config.get('showProperties') ?? false;
-            const isReadOnly = document.uri.scheme !== 'file';
+            const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
+            // 문서 폴더의 webview URI — 상대경로 이미지 미리보기용
+            const docBaseUri = docDir
+                ? webviewPanel.webview.asWebviewUri(vscode.Uri.file(docDir)).toString()
+                : '';
             webviewPanel.webview.postMessage({
                 type: 'config',
                 theme,
@@ -78,21 +92,25 @@ class LLMAssistEditorProvider {
                 autoRefresh,
                 showToc,
                 showProperties,
-                isReadOnly
+                isReadOnly,
+                docBaseUri
             });
         }
-        let isInternalUpdate = false;
+        // 웹뷰가 마지막으로 보낸 텍스트를 기억해 자기 echo를 걸러냄 (타이머 레이스 없음)
+        let lastWebviewText;
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
             if (e.document.uri.toString() === document.uri.toString()) {
-                if (!isInternalUpdate) {
-                    const currentConfig = vscode.workspace.getConfiguration('llmAssist');
-                    const autoRefresh = currentConfig.get('autoRefresh') ?? true;
-                    if (autoRefresh) {
-                        webviewPanel.webview.postMessage({
-                            type: 'external_update',
-                            text: document.getText(),
-                        });
-                    }
+                const currentText = document.getText();
+                if (currentText === lastWebviewText) {
+                    return; // 웹뷰 편집이 문서에 반영된 echo — 되쏘지 않음
+                }
+                const currentConfig = vscode.workspace.getConfiguration('llmAssist');
+                const autoRefresh = currentConfig.get('autoRefresh') ?? true;
+                if (autoRefresh) {
+                    webviewPanel.webview.postMessage({
+                        type: 'external_update',
+                        text: currentText,
+                    });
                 }
             }
         });
@@ -112,10 +130,64 @@ class LLMAssistEditorProvider {
         webviewPanel.webview.onDidReceiveMessage(e => {
             switch (e.type) {
                 case 'change':
-                    isInternalUpdate = true;
-                    this.updateTextDocument(document, e.text).then(() => {
-                        setTimeout(() => isInternalUpdate = false, 50);
-                    });
+                    lastWebviewText = e.text;
+                    this.updateTextDocument(document, e.text);
+                    return;
+                case 'notify':
+                    vscode.window.showInformationMessage(e.message);
+                    return;
+                case 'saveImage':
+                    (async () => {
+                        try {
+                            if (!docDir) {
+                                throw new Error('Save the document to disk before pasting images.');
+                            }
+                            const assetsDir = vscode.Uri.file(path.join(docDir, 'assets'));
+                            await vscode.workspace.fs.createDirectory(assetsDir);
+                            const safeName = String(e.name || 'image.png').replace(/[^\w.-]+/g, '_');
+                            const ext = path.extname(safeName) || '.png';
+                            const base = path.basename(safeName, ext) || 'image';
+                            const fileName = `${base}-${Date.now()}${ext}`;
+                            const fileUri = vscode.Uri.joinPath(assetsDir, fileName);
+                            await vscode.workspace.fs.writeFile(fileUri, Buffer.from(e.data, 'base64'));
+                            webviewPanel.webview.postMessage({
+                                type: 'imageSaved',
+                                requestId: e.requestId,
+                                relPath: `assets/${fileName}`
+                            });
+                        }
+                        catch (err) {
+                            webviewPanel.webview.postMessage({
+                                type: 'imageSaved',
+                                requestId: e.requestId,
+                                error: err?.message || String(err)
+                            });
+                        }
+                    })();
+                    return;
+                case 'openLink':
+                    (async () => {
+                        const href = String(e.href || '');
+                        try {
+                            if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+                                await vscode.env.openExternal(vscode.Uri.parse(href));
+                                return;
+                            }
+                            if (!docDir)
+                                return;
+                            const targetPath = path.resolve(docDir, decodeURIComponent(href.split('#')[0]));
+                            const targetUri = vscode.Uri.file(targetPath);
+                            if (targetPath.toLowerCase().endsWith('.md')) {
+                                await vscode.commands.executeCommand('vscode.openWith', targetUri, 'llmAssist.mdEditor');
+                            }
+                            else {
+                                await vscode.commands.executeCommand('vscode.open', targetUri);
+                            }
+                        }
+                        catch (err) {
+                            vscode.window.showWarningMessage(`Cannot open link: ${href} (${err?.message || err})`);
+                        }
+                    })();
                     return;
                 case 'refresh':
                     webviewPanel.webview.postMessage({
@@ -135,7 +207,8 @@ class LLMAssistEditorProvider {
                 case 'getOriginalContent':
                     const dirname = path.dirname(document.uri.fsPath);
                     const basename = path.basename(document.uri.fsPath);
-                    (0, child_process_1.exec)(`git show "HEAD:./${basename}"`, { cwd: dirname }, (err, stdout, stderr) => {
+                    // execFile: 파일명에 따옴표/특수문자가 있어도 셸 해석 없이 안전
+                    (0, child_process_1.execFile)('git', ['show', `HEAD:./${basename}`], { cwd: dirname }, (err, stdout, stderr) => {
                         webviewPanel.webview.postMessage({
                             type: 'originalContent',
                             content: err ? `[Git History Not Found or File Untracked]\n\n${stderr || err.message}` : stdout

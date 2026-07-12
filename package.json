@@ -27,6 +27,34 @@
         "priority": "default"
       }
     ],
+    "commands": [
+      {
+        "command": "llmAssist.openWithTextEditor",
+        "title": "Open with Text Editor",
+        "category": "Neat MD Editor",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "llmAssist.openWithNeatEditor",
+        "title": "Open with Neat MD Editor",
+        "category": "Neat MD Editor",
+        "icon": "$(open-preview)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "llmAssist.openWithTextEditor",
+          "when": "activeCustomEditorId == llmAssist.mdEditor",
+          "group": "navigation"
+        },
+        {
+          "command": "llmAssist.openWithNeatEditor",
+          "when": "editorLangId == markdown && activeCustomEditorId != llmAssist.mdEditor",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Neat MD Editor",
       "properties": {

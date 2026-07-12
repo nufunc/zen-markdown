@@ -1,8 +1,16 @@
 import { createReactBlockSpec } from "@blocknote/react";
 import { defaultProps } from "@blocknote/core";
 import { useState, useEffect, useRef } from "react";
-import mermaid from "mermaid";
 import { Edit2, Check } from "lucide-react";
+
+// mermaid는 무거우므로(코어+cytoscape+katex 등) 첫 다이어그램 렌더링 시점에만 로드
+let mermaidPromise: Promise<typeof import("mermaid")["default"]> | null = null;
+const loadMermaid = () => {
+  if (!mermaidPromise) {
+    mermaidPromise = import("mermaid").then(m => m.default);
+  }
+  return mermaidPromise;
+};
 
 export const MermaidBlock = createReactBlockSpec(
   {
@@ -31,37 +39,36 @@ export const MermaidBlock = createReactBlockSpec(
 
       useEffect(() => {
         if (!isEditing && containerRef.current && code) {
+          let cancelled = false;
           const isDarkTheme = document.body.getAttribute('data-theme-dark') === 'true';
-          mermaid.initialize({ startOnLoad: false, theme: isDarkTheme ? "dark" : "default" });
           // Generate a completely unique ID on every render to avoid "Diagram already exists" error
           const id = `mermaid-${props.block.id.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 10)}`;
-          containerRef.current.innerHTML = "";
-          
-          try {
-            // Check syntax first to avoid Mermaid globally throwing and corrupting state
-            mermaid.parse(code).then(async (isValid) => {
+
+          loadMermaid().then(async (mermaid) => {
+            if (cancelled || !containerRef.current) return;
+            mermaid.initialize({ startOnLoad: false, theme: isDarkTheme ? "dark" : "default" });
+            containerRef.current.innerHTML = "";
+            try {
+              // Check syntax first to avoid Mermaid globally throwing and corrupting state
+              const isValid = await mermaid.parse(code);
               if (isValid) {
-                try {
-                  const { svg } = await mermaid.render(id, code);
-                  if (containerRef.current) {
-                    containerRef.current.innerHTML = svg;
-                  }
-                } catch (renderError: any) {
-                  if (containerRef.current) {
-                    containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Mermaid Render Error: ${renderError.message}</div>`;
-                  }
+                const { svg } = await mermaid.render(id, code);
+                if (!cancelled && containerRef.current) {
+                  containerRef.current.innerHTML = svg;
                 }
               }
-            }).catch((parseError: any) => {
-              if (containerRef.current) {
-                containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Syntax Error: ${parseError?.message || parseError || 'Unknown Error'}</div>`;
+            } catch (e: any) {
+              if (!cancelled && containerRef.current) {
+                containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Mermaid Error: ${e?.message || e || 'Unknown Error'}</div>`;
               }
-            });
-          } catch (e: any) {
-             if (containerRef.current) {
-                containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Mermaid Error: ${e.message}</div>`;
-             }
-          }
+            }
+          }).catch((e: any) => {
+            if (!cancelled && containerRef.current) {
+              containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Failed to load Mermaid: ${e?.message || e}</div>`;
+            }
+          });
+
+          return () => { cancelled = true; };
         }
       }, [code, isEditing, props.block.id, themeTrigger]);
 

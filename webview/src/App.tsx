@@ -43,8 +43,17 @@ const isMermaidCode = (text: string): boolean => {
   return mermaidPatterns.some(pattern => pattern.test(firstRealLine));
 };
 
+const NBSP = '\u00A0';
+
 const processBlocksFromMarkdown = (blocks: any[]): any[] => {
   return blocks.map((b: any) => {
+    // preserveBlankLines가 만든 nbsp 전용 문단 → 진짜 빈 문단으로 표시
+    // (BlockNote는 &nbsp;를 엔티티 디코드 없이 리터럴 텍스트로 파싱함)
+    if (b.type === "paragraph" && Array.isArray(b.content) && b.content.length === 1
+        && b.content[0].type === "text"
+        && (b.content[0].text === "&nbsp;" || b.content[0].text === NBSP)) {
+      return { ...b, content: [] };
+    }
     if (b.type === "codeBlock") {
       const lang = b.props?.language;
       const text = b.content?.map((c: any) => c.text).join("") || "";
@@ -62,6 +71,13 @@ const processBlocksFromMarkdown = (blocks: any[]): any[] => {
 const processBlocksToMarkdown = (blocks: any[]): any[] => {
   return blocks.map((b: any) => {
     const newB = { ...b };
+    // 빈 문단 → nbsp 문단으로 직렬화해 빈 줄이 마크다운에서 유실되지 않게 함
+    // (저장 직전 restoreBlankLines가 다시 빈 줄로 복원)
+    const isEmptyParagraph = newB.type === "paragraph"
+      && (!newB.content || (Array.isArray(newB.content) && newB.content.every((c: any) => c.type === "text" && !c.text.trim())));
+    if (isEmptyParagraph) {
+      return { ...newB, content: [{ type: "text", text: NBSP, styles: {} }] };
+    }
     if (newB.type === "mermaid") {
       return { 
         id: newB.id, 
@@ -79,13 +95,12 @@ const processBlocksToMarkdown = (blocks: any[]): any[] => {
 import { BlockNoteView } from '@blocknote/mantine';
 import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare } from 'lucide-react';
 import YAML from 'yaml';
-import '@blocknote/core/fonts/inter.css';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
 import CodeMirror from '@uiw/react-codemirror';
 import CodeMirrorMerge from 'react-codemirror-merge';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
+import { codeLanguages } from './codeLanguages';
 import { EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import * as cmThemes from '@uiw/codemirror-themes-all';
@@ -115,16 +130,51 @@ function sanitizeMarkdownCodeBlocks(markdown: string): string {
   });
 }
 
-function preserveMarkdownLineBreaks(markdown: string): string {
+function mapOutsideCodeFences(markdown: string, fn: (part: string) => string): string {
   const parts = markdown.split(/(```[\s\S]*?```)/);
-  return parts.map((part, index) => {
-    if (index % 2 === 0) {
-      // Replace single newlines between text with two spaces + newline
-      // This forces markdown parsers to treat them as hard breaks (<br>)
-      return part.replace(/([^\n])\n(?=[^\n])/g, '$1  \n');
+  return parts.map((part, index) => (index % 2 === 0 ? fn(part) : part)).join('');
+}
+
+function preserveMarkdownLineBreaks(markdown: string): string {
+  return mapOutsideCodeFences(markdown, part =>
+    // Replace single newlines between text with two spaces + newline
+    // This forces markdown parsers to treat them as hard breaks (<br>)
+    part.replace(/([^\n])\n(?=[^\n])/g, '$1  \n')
+  );
+}
+
+// 빈 줄 2줄 이상(\n 3개 이상): 초과분을 &nbsp; 문단으로 바꿔 파싱에서 살아남게 함
+// (마크다운 파서는 연속 빈 줄을 문단 구분 하나로 접어버림)
+function preserveBlankLines(md: string): string {
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/\n{3,}/g, m => '\n\n' + '&nbsp;\n\n'.repeat(m.length - 2))
+  );
+}
+
+// 저장 시 &nbsp;/NBSP 전용 문단을 다시 빈 줄로 복원
+function restoreBlankLines(md: string): string {
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/\n\n(?:&nbsp;|\u00A0)[ \t]*(?=\n|$)/g, '\n')
+  );
+}
+
+const MD_IMAGE_RE = /(!\[[^\]]*\]\()([^)\s]+)((?:\s+"[^"]*")?\))/g;
+
+// 상대경로 이미지를 webview URI로 바꿔 WYSIWYG에서 미리보기 가능하게 함
+function toWebviewImageUrls(md: string, base: string): string {
+  if (!base) return md;
+  return mapOutsideCodeFences(md, part => part.replace(MD_IMAGE_RE, (m, pre, url, post) => {
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.startsWith('//') || url.startsWith('/') || url.startsWith('#')) {
+      return m;
     }
-    return part;
-  }).join('');
+    return `${pre}${base}/${url}${post}`;
+  }));
+}
+
+// 저장 시 webview URI를 다시 상대경로로 복원 (base는 고유 URL이므로 단순 치환 안전)
+function fromWebviewImageUrls(md: string, base: string): string {
+  if (!base) return md;
+  return md.split(`${base}/`).join('');
 }
 
 function extractFrontmatter(text: string): { frontmatter: string, content: string } {
@@ -138,7 +188,7 @@ function extractFrontmatter(text: string): { frontmatter: string, content: strin
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
   const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false });
-  const [isRawMode, setIsRawMode] = useState(false);
+  const [isRawMode, setIsRawMode] = useState(() => !!(vscode.getState()?.isRawMode));
   const [isDiffMode, setIsDiffMode] = useState(false);
   const [originalText, setOriginalText] = useState<string | null>(null);
   const [editor, setEditor] = useState<any>(null);
@@ -157,6 +207,13 @@ function App() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const hasEdited = useRef(false);
   const isInitializing = useRef(false);
+  const docBaseUriRef = useRef<string>("");
+  const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasRestoredScroll = useRef(false);
+  const cmViewRef = useRef<any>(null);
+  const pendingHeadingRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handleTocMouseMove = (e: MouseEvent) => {
@@ -195,15 +252,34 @@ function App() {
     vscode.postMessage({ type: 'ready' });
   }, []);
 
+  // Ctrl/Cmd+클릭으로 링크 열기 — 상대경로 .md는 Neat 에디터로, 그 외는 VS Code/외부로
+  useEffect(() => {
+    const handleLinkClick = (e: MouseEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const anchor = (e.target as HTMLElement).closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') || '';
+      if (!href) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const base = docBaseUriRef.current;
+      const rel = base && href.startsWith(base + '/') ? href.slice(base.length + 1) : href;
+      vscode.postMessage({ type: 'openLink', href: rel });
+    };
+    document.addEventListener('click', handleLinkClick, true);
+    return () => document.removeEventListener('click', handleLinkClick, true);
+  }, []);
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       switch (message.type) {
         case 'config':
-          setConfig({ 
-            theme: message.theme, 
-            fontSize: message.fontSize, 
-            autoFix: message.autoFix, 
+          docBaseUriRef.current = message.docBaseUri || "";
+          setConfig({
+            theme: message.theme,
+            fontSize: message.fontSize,
+            autoFix: message.autoFix,
             autoRefresh: message.autoRefresh,
             showToc: message.showToc,
             showProperties: message.showProperties,
@@ -224,6 +300,14 @@ function App() {
         case 'originalContent':
           setOriginalText(message.content);
           break;
+        case 'imageSaved': {
+          const resolve = pendingUploads.current.get(message.requestId);
+          if (resolve) {
+            pendingUploads.current.delete(message.requestId);
+            resolve({ relPath: message.relPath, error: message.error });
+          }
+          break;
+        }
       }
     };
     window.addEventListener('message', handleMessage);
@@ -335,11 +419,13 @@ function App() {
           setFmData(null);
         }
         const normalizedContent = content.replace(/\r\n/g, '\n');
-        const safeContent = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(normalizedContent));
-        
+        const safeContent = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
+          preserveBlankLines(toWebviewImageUrls(normalizedContent, docBaseUriRef.current))
+        ));
+
         isInitializing.current = true;
         if (!editor) {
-          const newEditor = BlockNoteEditor.create({ schema });
+          const newEditor = BlockNoteEditor.create({ schema, uploadFile });
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
@@ -347,6 +433,28 @@ function App() {
           extractHeadings(newEditor);
           // Reset edit flag after initialization
           hasEdited.current = false;
+
+          // 모드 전환 시 기억한 헤딩 또는 저장된 스크롤 위치로 복원
+          setTimeout(() => {
+            const target = pendingHeadingRef.current;
+            if (target) {
+              pendingHeadingRef.current = null;
+              newEditor.forEachBlock((b: any) => {
+                if (b.type === 'heading') {
+                  const text = b.content?.map((c: any) => c.text || '').join('') || '';
+                  if (text.trim() === target) {
+                    document.querySelector(`[data-id="${b.id}"]`)?.scrollIntoView({ block: 'start' });
+                    return false;
+                  }
+                }
+                return true;
+              });
+            } else if (!hasRestoredScroll.current && scrollRef.current) {
+              const saved = vscode.getState();
+              if (saved?.scrollTop) scrollRef.current.scrollTop = saved.scrollTop;
+            }
+            hasRestoredScroll.current = true;
+          }, 150);
         } else {
           // External update or refresh: replace existing blocks
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
@@ -363,9 +471,41 @@ function App() {
     initEditor();
   }, [documentText, isRawMode, editor]);
 
+  // 클립보드/드롭 이미지를 문서 옆 assets/ 폴더에 저장하고 미리보기 URL 반환
+  const uploadFile = async (file: File): Promise<string> => {
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const requestId = Math.random().toString(36).slice(2);
+    const result = await new Promise<{ relPath?: string, error?: string }>((resolve) => {
+      pendingUploads.current.set(requestId, resolve);
+      vscode.postMessage({ type: 'saveImage', requestId, name: file.name || 'image.png', data });
+    });
+    if (result.error || !result.relPath) {
+      vscode.postMessage({ type: 'notify', message: `이미지 저장 실패: ${result.error || 'unknown'}` });
+      throw new Error(result.error || 'Image save failed');
+    }
+    const base = docBaseUriRef.current;
+    return base ? `${base}/${result.relPath}` : result.relPath;
+  };
+
+  const changeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
+  const postChange = (text: string) => {
+    if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
+    changeDebounceRef.current = setTimeout(() => {
+      changeDebounceRef.current = null;
+      vscode.postMessage({ type: 'change', text });
+    }, 300);
+  };
+
   const saveToHost = (fmString: string, mdString: string) => {
     const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
-    vscode.postMessage({ type: 'change', text: fullText });
+    postChange(fullText);
   };
 
   const handleWysiwygChange = async () => {
@@ -397,6 +537,7 @@ function App() {
         console.error("Auto fix formatting failed", e);
       }
     }
+    markdown = restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current));
     saveToHost(parsedFrontmatter, markdown);
   };
 
@@ -406,7 +547,10 @@ function App() {
     setFmData(newData);
     const newFmString = YAML.stringify(newData).trim();
     setParsedFrontmatter(newFmString);
-    const md = await editor.blocksToMarkdownLossy(editor.document);
+    const md = restoreBlankLines(fromWebviewImageUrls(
+      await editor.blocksToMarkdownLossy(processBlocksToMarkdown(editor.document) as any),
+      docBaseUriRef.current
+    ));
     saveToHost(newFmString, md);
   };
 
@@ -471,13 +615,15 @@ function App() {
       return true;
     });
     
-    // eslint-disable-next-line no-alert
-    alert(`총 ${count}개의 항목이 바뀌었습니다.`);
+    // alert()는 VS Code 웹뷰 샌드박스에서 차단되므로 호스트 알림 사용
+    vscode.postMessage({ type: 'notify', message: `총 ${count}개의 항목이 바뀌었습니다.` });
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      // Ctrl+F는 VS Code 네이티브 find 위젯(enableFindWidget)에 양보하고,
+      // 자체 Replace 위젯은 Ctrl+H로 연다
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
         e.preventDefault();
         setShowSearchReplace(prev => !prev);
       } else if (e.key === 'Escape' && showSearchReplace) {
@@ -489,10 +635,36 @@ function App() {
   }, [showSearchReplace]);
 
   const toggleMode = async () => {
+    // 모드 전환 시 현재 위치의 헤딩을 기억해 반대 모드에서 같은 지점으로 스크롤 (best-effort)
+    try {
+      if (!isRawMode) {
+        let current: string | null = null;
+        for (const h of headings) {
+          const el = document.querySelector(`[data-id="${h.id}"]`);
+          if (!el) continue;
+          if ((el as HTMLElement).getBoundingClientRect().top <= 120) current = h.text;
+          else break;
+        }
+        pendingHeadingRef.current = current;
+      } else {
+        const view = cmViewRef.current;
+        if (view && typeof documentText === 'string') {
+          const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+          const lineNo = view.state.doc.lineAt(block.from).number;
+          const lines = documentText.split('\n');
+          for (let i = Math.min(lineNo, lines.length) - 1; i >= 0; i--) {
+            const m = lines[i].match(/^#{1,6}\s+(.+)/);
+            if (m) { pendingHeadingRef.current = m[1].trim(); break; }
+          }
+        }
+      }
+    } catch { /* 위치 동기화는 실패해도 무해 */ }
+    vscode.updateState({ isRawMode: !isRawMode });
+
     if (!isRawMode && editor) {
       if (hasEdited.current) {
-        let markdown = await editor.blocksToMarkdownLossy(editor.document);
-        markdown = sanitizeMarkdownCodeBlocks(markdown);
+        let markdown = await editor.blocksToMarkdownLossy(processBlocksToMarkdown(editor.document) as any);
+        markdown = restoreBlankLines(fromWebviewImageUrls(sanitizeMarkdownCodeBlocks(markdown), docBaseUriRef.current));
         const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
         setDocumentText(fullText);
       }
@@ -1293,14 +1465,14 @@ function App() {
                 <CodeMirrorMerge orientation="a-b" className="cm-merge-root" theme={cmTheme}>
                   <Original
                     value={originalText}
-                    extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping, EditorState.readOnly.of(true)]}
+                    extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping, EditorState.readOnly.of(true)]}
                   />
                   <Modified
                     value={documentText as string}
-                    extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping]}
+                    extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
                     onChange={(val) => {
                       setDocumentText(val);
-                      vscode.postMessage({ type: 'change', text: val });
+                      postChange(val);
                     }}
                   />
                 </CodeMirrorMerge>
@@ -1325,10 +1497,30 @@ function App() {
           ) : (
             <CodeMirror
               value={documentText as string}
-              extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping]}
+              extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
               onChange={(val) => {
                 setDocumentText(val);
-                vscode.postMessage({ type: 'change', text: val });
+                postChange(val);
+              }}
+              onCreateEditor={(view: any) => {
+                cmViewRef.current = view;
+                // WYSIWYG에서 기억한 헤딩 위치로 스크롤 복원
+                const target = pendingHeadingRef.current;
+                if (target && typeof documentText === 'string') {
+                  pendingHeadingRef.current = null;
+                  const lines = (documentText as string).split('\n');
+                  let pos = 0;
+                  for (const line of lines) {
+                    const m = line.match(/^#{1,6}\s+(.+)/);
+                    if (m && m[1].trim() === target) {
+                      setTimeout(() => {
+                        try { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start' }) }); } catch { /* noop */ }
+                      }, 50);
+                      break;
+                    }
+                    pos += line.length + 1;
+                  }
+                }
               }}
               theme={cmTheme}
               style={{
@@ -1341,7 +1533,15 @@ function App() {
             />
           )
         ) : (
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div
+            ref={scrollRef}
+            style={{ flex: 1, overflow: 'auto' }}
+            onScroll={(e) => {
+              const top = e.currentTarget.scrollTop;
+              if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+              scrollSaveTimer.current = setTimeout(() => vscode.updateState({ scrollTop: top }), 200);
+            }}
+          >
             <div style={{ padding: '16px 32px' }}>
               {renderFrontmatterUI()}
               {editor && <BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} />}

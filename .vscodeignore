@@ -1,0 +1,12 @@
+.vscode/**
+.gitignore
+.markdownlint.json
+MEMORY.md
+tsconfig.json
+src/**
+out/**/*.map
+node_modules/**
+
+# webview: 빌드 산출물(dist)만 포함
+webview/**
+!webview/dist/**
