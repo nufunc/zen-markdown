@@ -143,7 +143,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build:webview && npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "node -e \"fs.rmSync('out',{recursive:true,force:true})\" && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "build:webview": "cd webview && npm run build"
   },
