@@ -3,7 +3,10 @@ class VSCodeAPIWrapper {
 
     constructor() {
         if (typeof acquireVsCodeApi === 'function') {
-            this.vsCodeApi = acquireVsCodeApi();
+            // acquireVsCodeApi는 두 번 호출하면 throw하므로, 모듈이 어떤 이유로든
+            // 이중 평가되어도 안전하도록 인스턴스를 전역에 캐시해 재사용
+            const g = globalThis as any;
+            this.vsCodeApi = g.__vsCodeApiInstance ?? (g.__vsCodeApiInstance = acquireVsCodeApi());
         }
     }
 

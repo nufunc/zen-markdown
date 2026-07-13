@@ -1,10 +1,28 @@
 {
-  "name": "neat-md-editor",
+  "name": "neat-markdown-editor",
+  "publisher": "nufunc",
   "displayName": "Neat MD Editor",
+  "icon": "icon.png",
   "description": "Neat & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "author": "nufunc <nufunc@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nufunc/neat-markdown-editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nufunc/neat-markdown-editor/issues"
+  },
+  "homepage": "https://github.com/nufunc/neat-markdown-editor#readme",
+  "keywords": [
+    "markdown",
+    "editor",
+    "mermaid",
+    "wysiwyg"
+  ],
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -72,7 +90,9 @@
             "nord",
             "one-half-dark",
             "solarized-dark",
-            "vintage"
+            "vintage",
+            "gruvbox-dark",
+            "tokyo-night-day"
           ],
           "enumDescriptions": [
             "Match VS Code theme",
@@ -81,7 +101,9 @@
             "Nord theme (Cool frosty dark)",
             "One Half Dark",
             "Solarized Dark",
-            "Vintage"
+            "Vintage",
+            "Gruvbox Dark (Warm retro dark)",
+            "Tokyo Night Day (Cool pastel light)"
           ],
           "default": "auto",
           "description": "Select the theme for the Neat MD Editor. 'auto' follows the VS Code theme."
@@ -105,12 +127,22 @@
           "type": "boolean",
           "default": false,
           "description": "Show Document Properties (Frontmatter) by default."
+        },
+        "neatMdEditor.defaultCodeLanguage": {
+          "type": "string",
+          "default": "text",
+          "description": "Default language for newly created code blocks."
         }
+      }
+    },
+    "configurationDefaults": {
+      "workbench.editorAssociations": {
+        "{git,gitlens}:/**/*.md": "default"
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build:webview && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "build:webview": "cd webview && npm run build"

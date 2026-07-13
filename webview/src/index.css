@@ -4,6 +4,7 @@ html, body, #root {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden; /* Prevent double scrollbars */
 }
 
 /* VS Code injects default padding to webviews, we remove it to go edge-to-edge */
@@ -19,10 +20,10 @@ body.vscode-body {
 .bn-editor [data-content-type="bulletListItem"] {
   list-style-type: disc !important;
 }
-.bn-editor .bn-block-group [data-content-type="bulletListItem"] {
+.bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group [data-content-type="bulletListItem"] {
   list-style-type: circle !important;
 }
-.bn-editor .bn-block-group .bn-block-group [data-content-type="bulletListItem"] {
+.bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group [data-content-type="bulletListItem"] {
   list-style-type: square !important;
 }
 
@@ -40,26 +41,7 @@ body.vscode-body {
   font-size: 0.65em !important; /* Make bullets small like UpNote */
 }
 
-/* UpNote-style Tables: Clean and Minimal */
-.bn-editor table {
-  border-collapse: collapse;
-  margin: 1.5em 0;
-  width: 100%;
-}
-.bn-editor th, .bn-editor td {
-  border: 1px solid rgba(120, 120, 120, 0.3) !important;
-  padding: 10px 14px;
-}
-.bn-editor th {
-  background-color: transparent !important;
-  font-weight: 600;
-}
-.bn-editor tr:nth-child(even) td {
-  background-color: transparent !important;
-}
-.bn-editor tr:hover td {
-  background-color: transparent !important;
-}
+/* 테이블 스타일은 editorStyles.ts의 !important 규칙이 담당 (여기 두면 죽은 코드) */
 
 /* UpNote Typography & Layout */
 .bn-editor {
@@ -85,12 +67,4 @@ body.vscode-body {
   opacity: 1 !important;
 }
 
-/* Elegant Blockquotes */
-.bn-editor [data-content-type="blockQuote"] {
-  border-left: 3px solid var(--vscode-textLink-foreground, #3b82f6) !important;
-  background-color: transparent !important;
-  padding-left: 1.2em !important;
-  margin: 1.2em 0;
-  font-style: italic;
-  opacity: 0.85;
-}
+/* Blockquote styles live in App.tsx (theme-aware injected <style>) */

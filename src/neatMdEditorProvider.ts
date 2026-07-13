@@ -1,12 +1,22 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { execFile } from 'child_process';
+
+// 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
+const ALLOWED_CONFIG_KEYS = ['theme', 'fontSize', 'autoFix', 'autoRefresh', 'showToc', 'showProperties', 'defaultCodeLanguage'];
+// openLink에서 외부로 여는 것을 허용하는 URL 스킴
+const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
 
 export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
         const provider = new NeatMdEditorProvider(context);
         return vscode.window.registerCustomEditorProvider('neatMdEditor.mdEditor', provider, {
-            webviewOptions: { enableFindWidget: true }
+            webviewOptions: {
+                enableFindWidget: true,
+                // WYSIWYG 에디터 특성상 탭 전환 시 커서/스크롤/편집 상태 보존이 중요
+                retainContextWhenHidden: true
+            }
         });
     }
 
@@ -21,12 +31,14 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
     ): Promise<void> {
         const docDir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
 
-        const localResourceRoots = [vscode.Uri.file(path.join(this.context.extensionPath, 'webview', 'dist'))];
+        // 문서 폴더 + 문서가 속한 워크스페이스 폴더만 허용 (전체 워크스페이스 개방 지양)
+        const localResourceRoots = [vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'dist')];
         if (docDir) {
             localResourceRoots.push(vscode.Uri.file(docDir));
         }
-        for (const folder of vscode.workspace.workspaceFolders ?? []) {
-            localResourceRoots.push(folder.uri);
+        const containingFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (containingFolder) {
+            localResourceRoots.push(containingFolder.uri);
         }
 
         webviewPanel.webview.options = {
@@ -55,6 +67,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
             const autoRefresh = config.get<boolean>('autoRefresh') ?? true;
             const showToc = config.get<boolean>('showToc') ?? false;
             const showProperties = config.get<boolean>('showProperties') ?? false;
+            const defaultCodeLanguage = config.get<string>('defaultCodeLanguage') || 'text';
             const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
             // 문서 폴더의 webview URI — 상대경로 이미지 미리보기용
             const docBaseUri = docDir
@@ -70,27 +83,42 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                 showToc,
                 showProperties,
                 isReadOnly,
+                defaultCodeLanguage,
                 docBaseUri
             });
         }
 
-        // 웹뷰가 마지막으로 보낸 텍스트를 기억해 자기 echo를 걸러냄 (타이머 레이스 없음)
-        let lastWebviewText: string | undefined;
+        // 웹뷰가 보낸 미반영 텍스트들을 기억해 자기 echo를 걸러냄.
+        // applyEdit이 비동기라 연속 편집 시 마지막 하나만 기억하면 이전 변경이
+        // 외부 변경으로 오판되므로, 최근 목록을 유지하고 매칭 지점까지 소비한다.
+        const pendingWebviewTexts: string[] = [];
+        let externalUpdateTimer: NodeJS.Timeout | undefined;
 
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
-            if (e.document.uri.toString() === document.uri.toString()) {
-                const currentText = document.getText();
-                if (currentText === lastWebviewText) {
-                    return; // 웹뷰 편집이 문서에 반영된 echo — 되쏘지 않음
+            if (e.document.uri.toString() !== document.uri.toString()) {
+                return;
+            }
+            const currentText = document.getText();
+            const echoIdx = pendingWebviewTexts.indexOf(currentText);
+            if (echoIdx !== -1) {
+                // 웹뷰 편집이 문서에 반영된 echo — 해당 지점까지 소비하고 되쏘지 않음
+                pendingWebviewTexts.splice(0, echoIdx + 1);
+                return;
+            }
+            const currentConfig = vscode.workspace.getConfiguration('neatMdEditor');
+            const autoRefresh = currentConfig.get<boolean>('autoRefresh') ?? true;
+            if (autoRefresh) {
+                // 분할 뷰 타이핑 등 연속 외부 변경은 디바운스해서 웹뷰 재파싱 비용을 줄임
+                if (externalUpdateTimer) {
+                    clearTimeout(externalUpdateTimer);
                 }
-                const currentConfig = vscode.workspace.getConfiguration('neatMdEditor');
-                const autoRefresh = currentConfig.get<boolean>('autoRefresh') ?? true;
-                if (autoRefresh) {
+                externalUpdateTimer = setTimeout(() => {
+                    externalUpdateTimer = undefined;
                     webviewPanel.webview.postMessage({
                         type: 'external_update',
-                        text: currentText,
+                        text: document.getText(),
                     });
-                }
+                }, 250);
             }
         });
 
@@ -105,6 +133,9 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
         });
 
         webviewPanel.onDidDispose(() => {
+            if (externalUpdateTimer) {
+                clearTimeout(externalUpdateTimer);
+            }
             changeDocumentSubscription.dispose();
             configSubscription.dispose();
             themeSubscription.dispose();
@@ -112,10 +143,23 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
 
         webviewPanel.webview.onDidReceiveMessage(e => {
             switch (e.type) {
-                case 'change':
-                    lastWebviewText = e.text;
-                    this.updateTextDocument(document, e.text);
+                case 'change': {
+                    const text = String(e.text ?? '');
+                    pendingWebviewTexts.push(text);
+                    if (pendingWebviewTexts.length > 50) {
+                        pendingWebviewTexts.shift();
+                    }
+                    this.updateTextDocument(document, text).then(ok => {
+                        if (!ok) {
+                            // 적용 실패(읽기 전용 등) — 웹뷰를 실제 문서 상태로 되돌려 어긋남 방지
+                            webviewPanel.webview.postMessage({
+                                type: 'external_update',
+                                text: document.getText(),
+                            });
+                        }
+                    });
                     return;
+                }
                 case 'notify':
                     vscode.window.showInformationMessage(e.message);
                     return;
@@ -151,12 +195,28 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                     (async () => {
                         const href = String(e.href || '');
                         try {
-                            if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-                                await vscode.env.openExternal(vscode.Uri.parse(href));
+                            const schemeMatch = href.match(/^([a-z][a-z0-9+.-]*):/i);
+                            if (schemeMatch) {
+                                const scheme = schemeMatch[1].toLowerCase();
+                                if (ALLOWED_LINK_SCHEMES.includes(scheme)) {
+                                    await vscode.env.openExternal(vscode.Uri.parse(href));
+                                } else {
+                                    vscode.window.showWarningMessage(`Blocked link with scheme "${scheme}:"`);
+                                }
                                 return;
                             }
                             if (!docDir) return;
                             const targetPath = path.resolve(docDir, decodeURIComponent(href.split('#')[0]));
+                            // 문서 폴더 또는 워크스페이스 내부만 허용 (../ 탈출 차단)
+                            const roots = [docDir, ...(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath)];
+                            const inScope = roots.some(root => {
+                                const rel = path.relative(root, targetPath);
+                                return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+                            });
+                            if (!inScope) {
+                                vscode.window.showWarningMessage(`Blocked link outside the workspace: ${href}`);
+                                return;
+                            }
                             const targetUri = vscode.Uri.file(targetPath);
                             if (targetPath.toLowerCase().endsWith('.md')) {
                                 await vscode.commands.executeCommand('vscode.openWith', targetUri, 'neatMdEditor.mdEditor');
@@ -178,37 +238,68 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                     sendConfig();
                     updateWebview();
                     return;
-                case 'updateConfig':
+                case 'openBuiltIn':
+                    (async () => {
+                        try {
+                            // 'default' viewType은 커스텀 에디터가 priority:default로 등록돼 있으면
+                            // 다시 이 에디터로 해석되므로, 활성 에디터를 텍스트 에디터로 다시 여는 명령을 사용
+                            await vscode.commands.executeCommand('workbench.action.reopenTextEditor');
+                        } catch (err: any) {
+                            vscode.window.showWarningMessage(`Cannot open built-in editor: ${err?.message || err}`);
+                        }
+                    })();
+                    return;
+                case 'updateConfig': {
+                    if (typeof e.key !== 'string' || !ALLOWED_CONFIG_KEYS.includes(e.key)) {
+                        return;
+                    }
                     const config = vscode.workspace.getConfiguration('neatMdEditor');
                     // 타겟을 지정하지 않으면 가장 우선순위가 높은(현재 적용중인) 설정 위치를 업데이트함
-                    config.update(e.key, e.value);
+                    config.update(e.key, e.value).then(undefined, (err: any) => {
+                        vscode.window.showWarningMessage(`Cannot save setting "${e.key}": ${err?.message || err}`);
+                    });
                     return;
-                case 'getOriginalContent':
+                }
+                case 'getOriginalContent': {
+                    if (document.uri.scheme !== 'file') {
+                        webviewPanel.webview.postMessage({
+                            type: 'originalContent',
+                            content: '[Git diff is only available for files on disk]'
+                        });
+                        return;
+                    }
                     const dirname = path.dirname(document.uri.fsPath);
                     const basename = path.basename(document.uri.fsPath);
                     // execFile: 파일명에 따옴표/특수문자가 있어도 셸 해석 없이 안전
-                    execFile('git', ['show', `HEAD:./${basename}`], { cwd: dirname }, (err, stdout, stderr) => {
+                    execFile('git', ['show', `HEAD:./${basename}`], { cwd: dirname, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
                         webviewPanel.webview.postMessage({
                             type: 'originalContent',
                             content: err ? `[Git History Not Found or File Untracked]\n\n${stderr || err.message}` : stdout
                         });
                     });
                     return;
+                }
             }
         });
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {
-        const baseUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'webview', 'dist')
-        )).toString() + '/';
+        const distUri = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'dist');
+        const baseUri = webview.asWebviewUri(distUri).toString() + '/';
 
-        const scriptUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'webview', 'dist', 'assets', 'index.js')
-        ));
-        const styleUri = webview.asWebviewUri(vscode.Uri.file(
-            path.join(this.context.extensionPath, 'webview', 'dist', 'assets', 'index.css')
-        ));
+        // 엔트리 파일명은 콘텐츠 해시를 포함(index-<hash>.js)하므로 해시 자체가 캐시 버스터.
+        // 쿼리 스트링(?t=) 방식은 동적 청크가 쿼리 없는 ./index.js를 다시 import할 때
+        // 브라우저가 별개 모듈로 취급해 엔트리가 이중 실행됨 (acquireVsCodeApi 중복 오류)
+        let scriptFile = 'index.js';
+        let styleFile = 'index.css';
+        try {
+            const files = fs.readdirSync(path.join(this.context.extensionPath, 'webview', 'dist', 'assets'));
+            scriptFile = files.find(f => /^index-[\w-]+\.js$/.test(f)) ?? scriptFile;
+            styleFile = files.find(f => /^index-[\w-]+\.css$/.test(f)) ?? styleFile;
+        } catch { /* dist 미존재 시 해시 없는 파일명 폴백 */ }
+
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', scriptFile)).toString();
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', styleFile)).toString();
 
         // Use a nonce to whitelist which scripts can be run
         const nonce = getNonce();
@@ -243,12 +334,29 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
             </html>`;
     }
 
-    private updateTextDocument(document: vscode.TextDocument, newContent: string) {
+    // 전체 치환 대신 공통 앞/뒤를 제외한 최소 범위만 교체해
+    // undo 단위와 대용량 문서 성능을 개선함. 적용 성공 여부를 반환.
+    private updateTextDocument(document: vscode.TextDocument, newContent: string): Thenable<boolean> {
+        const oldContent = document.getText();
+        if (oldContent === newContent) {
+            return Promise.resolve(true);
+        }
+        let start = 0;
+        const maxStart = Math.min(oldContent.length, newContent.length);
+        while (start < maxStart && oldContent.charCodeAt(start) === newContent.charCodeAt(start)) {
+            start++;
+        }
+        let oldEnd = oldContent.length;
+        let newEnd = newContent.length;
+        while (oldEnd > start && newEnd > start && oldContent.charCodeAt(oldEnd - 1) === newContent.charCodeAt(newEnd - 1)) {
+            oldEnd--;
+            newEnd--;
+        }
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
             document.uri,
-            new vscode.Range(0, 0, document.lineCount, 0),
-            newContent
+            new vscode.Range(document.positionAt(start), document.positionAt(oldEnd)),
+            newContent.slice(start, newEnd)
         );
         return vscode.workspace.applyEdit(edit);
     }

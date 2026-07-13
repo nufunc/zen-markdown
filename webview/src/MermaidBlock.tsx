@@ -44,28 +44,34 @@ export const MermaidBlock = createReactBlockSpec(
           // Generate a completely unique ID on every render to avoid "Diagram already exists" error
           const id = `mermaid-${props.block.id.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 10)}`;
 
+          // 에러 메시지는 사용자 코드가 포함될 수 있으므로 textContent로 넣어 마크업 주입 차단
+          const showError = (prefix: string, e: any) => {
+            if (cancelled || !containerRef.current) return;
+            const div = document.createElement('div');
+            div.style.cssText = 'color: #e5534b; font-size: 12px; padding: 10px; white-space: pre-wrap;';
+            div.textContent = `${prefix}: ${e?.message || e || 'Unknown Error'}`;
+            containerRef.current.replaceChildren(div);
+          };
+
           loadMermaid().then(async (mermaid) => {
             if (cancelled || !containerRef.current) return;
             mermaid.initialize({ startOnLoad: false, theme: isDarkTheme ? "dark" : "default" });
-            containerRef.current.innerHTML = "";
+            containerRef.current.replaceChildren();
             try {
               // Check syntax first to avoid Mermaid globally throwing and corrupting state
               const isValid = await mermaid.parse(code);
               if (isValid) {
                 const { svg } = await mermaid.render(id, code);
                 if (!cancelled && containerRef.current) {
+                  // svg는 mermaid가 내부적으로 dompurify 새니타이즈를 거친 결과물
                   containerRef.current.innerHTML = svg;
                 }
               }
             } catch (e: any) {
-              if (!cancelled && containerRef.current) {
-                containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Mermaid Error: ${e?.message || e || 'Unknown Error'}</div>`;
-              }
+              showError('Mermaid Error', e);
             }
           }).catch((e: any) => {
-            if (!cancelled && containerRef.current) {
-              containerRef.current.innerHTML = `<div style="color:red; font-size:12px; padding: 10px;">Failed to load Mermaid: ${e?.message || e}</div>`;
-            }
+            showError('Failed to load Mermaid', e);
           });
 
           return () => { cancelled = true; };
@@ -78,7 +84,8 @@ export const MermaidBlock = createReactBlockSpec(
             <button 
               onClick={() => setIsEditing(!isEditing)}
               style={{ background: "rgba(128,128,128,0.2)", color: "var(--text-color, #333)", border: "none", padding: "6px", borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center" }}
-              title={isEditing ? "View Diagram" : "Edit Mermaid Code"}
+              data-tooltip={isEditing ? "View Diagram" : "Edit Mermaid Code"}
+              data-tooltip-pos="right"
             >
               {isEditing ? <Check size={14} /> : <Edit2 size={14} />}
             </button>

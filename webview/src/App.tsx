@@ -1,99 +1,31 @@
-import { useEffect, useState, useRef } from 'react';
-import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs } from '@blocknote/core';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
+import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter } from './markdownTransforms';
+import { formatCodeBlock } from './codeFormatter';
+import { resolveTheme } from './themes';
+import { buildEditorStyles } from './editorStyles';
+import { FrontmatterPanel } from './FrontmatterPanel';
+import { CodeBlockMenu } from './CodeBlockMenu';
 
-const schema = BlockNoteSchema.create({
+// 기본 코드 언어 설정(neatMdEditor.defaultCodeLanguage)을 반영하기 위해
+// 스키마는 모듈 상수가 아니라 에디터 생성 시점에 만든다
+const buildSchema = (defaultCodeLanguage: string) => BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
+    codeBlock: createCodeBlockSpec({
+      indentLineWithTab: true,
+      defaultLanguage: defaultCodeLanguage || 'text',
+      supportedLanguages,
+      createHighlighter: createShikiHighlighter as any,
+    }),
     mermaid: MermaidBlock(),
   },
 });
 
-const isMermaidCode = (text: string): boolean => {
-  const lines = text.split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0 && !line.startsWith('%%'));
-
-  if (lines.length === 0) return false;
-  const firstRealLine = lines[0];
-
-  const mermaidPatterns = [
-    /^(graph|flowchart)(\s+(TB|TD|BT|RL|LR))?\b/i,
-    /^sequenceDiagram\b/i,
-    /^classDiagram\b/i,
-    /^stateDiagram(-v2)?\b/i,
-    /^erDiagram\b/i,
-    /^gantt\b/i,
-    /^pie\b/i,
-    /^journey\b/i,
-    /^gitGraph\b/i,
-    /^c4Diagram\b/i,
-    /^mindmap\b/i,
-    /^timeline\b/i,
-    /^zenuml\b/i,
-    /^sankey-beta\b/i,
-    /^sankey\b/i,
-    /^quadrantChart\b/i,
-    /^xychart-beta\b/i,
-    /^packet-beta\b/i,
-    /^kanban\b/i,
-    /^architecture\b/i,
-  ];
-
-  return mermaidPatterns.some(pattern => pattern.test(firstRealLine));
-};
-
-const NBSP = '\u00A0';
-
-const processBlocksFromMarkdown = (blocks: any[]): any[] => {
-  return blocks.map((b: any) => {
-    // preserveBlankLines가 만든 nbsp 전용 문단 → 진짜 빈 문단으로 표시
-    // (BlockNote는 &nbsp;를 엔티티 디코드 없이 리터럴 텍스트로 파싱함)
-    if (b.type === "paragraph" && Array.isArray(b.content) && b.content.length === 1
-        && b.content[0].type === "text"
-        && (b.content[0].text === "&nbsp;" || b.content[0].text === NBSP)) {
-      return { ...b, content: [] };
-    }
-    if (b.type === "codeBlock") {
-      const lang = b.props?.language;
-      const text = b.content?.map((c: any) => c.text).join("") || "";
-      if (lang === "mermaid" || ((!lang || lang === "text" || lang === "plaintext" || lang === "") && isMermaidCode(text))) {
-        return { id: b.id, type: "mermaid", props: { code: text } } as any;
-      }
-    }
-    if (b.children && b.children.length > 0) {
-      b.children = processBlocksFromMarkdown(b.children);
-    }
-    return b;
-  });
-};
-
-const processBlocksToMarkdown = (blocks: any[]): any[] => {
-  return blocks.map((b: any) => {
-    const newB = { ...b };
-    // 빈 문단 → nbsp 문단으로 직렬화해 빈 줄이 마크다운에서 유실되지 않게 함
-    // (저장 직전 restoreBlankLines가 다시 빈 줄로 복원)
-    const isEmptyParagraph = newB.type === "paragraph"
-      && (!newB.content || (Array.isArray(newB.content) && newB.content.every((c: any) => c.type === "text" && !c.text.trim())));
-    if (isEmptyParagraph) {
-      return { ...newB, content: [{ type: "text", text: NBSP, styles: {} }] };
-    }
-    if (newB.type === "mermaid") {
-      return { 
-        id: newB.id, 
-        type: "codeBlock", 
-        props: { language: "mermaid" }, 
-        content: [{ type: "text", text: newB.props.code, styles: {} }] 
-      } as any;
-    }
-    if (newB.children && newB.children.length > 0) {
-      newB.children = processBlocksToMarkdown(newB.children);
-    }
-    return newB;
-  });
-};
 import { BlockNoteView } from '@blocknote/mantine';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -103,91 +35,17 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { codeLanguages } from './codeLanguages';
 import { EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
-import * as cmThemes from '@uiw/codemirror-themes-all';
 
 const { Original, Modified } = CodeMirrorMerge;
 
-// 확장된 공식 지원 언어 목록 (이외의 잘못된 언어 문자열은 text로 기본 처리)
-const KNOWN_LANGUAGES = [
-  "abap", "actionscript", "ada", "arduino", "bash", "basic", "c", "cpp", "csharp", "cs", "css", 
-  "d", "dart", "delphi", "dockerfile", "docker", "elixir", "erlang", "fortran", "go", "golang", 
-  "graphql", "groovy", "haskell", "html", "java", "javascript", "js", "jsx", "json", "julia", 
-  "kotlin", "latex", "tex", "lisp", "lua", "makefile", "markdown", "md", "matlab", "objectivec", 
-  "ocaml", "pascal", "perl", "php", "plaintext", "text", "txt", "powershell", "ps1", "ps", 
-  "prolog", "python", "py", "r", "ruby", "rb", "rust", "rs", "scala", "scheme", "shell", "sh", 
-  "sql", "swift", "tcl", "tsx", "typescript", "ts", "vbnet", "vhdl", "verilog", "xml", "yaml", "yml"
-];
-
-function sanitizeMarkdownCodeBlocks(markdown: string): string {
-  return markdown.replace(/^```([^\s\n]+)?(.*)$/gm, (match, lang, rest) => {
-    if (!lang) return match; // 닫힘 태그(```) 또는 언어 없는 열림 태그는 원본 유지
-    const normalizedLang = lang.toLowerCase();
-    if (KNOWN_LANGUAGES.includes(normalizedLang)) {
-      return match;
-    }
-    // 잘못된(알 수 없는) 대상이 들어간 경우 기본 서식(text)으로 변경
-    return "```text" + rest;
-  });
-}
-
-function mapOutsideCodeFences(markdown: string, fn: (part: string) => string): string {
-  const parts = markdown.split(/(```[\s\S]*?```)/);
-  return parts.map((part, index) => (index % 2 === 0 ? fn(part) : part)).join('');
-}
-
-function preserveMarkdownLineBreaks(markdown: string): string {
-  return mapOutsideCodeFences(markdown, part =>
-    // Replace single newlines between text with two spaces + newline
-    // This forces markdown parsers to treat them as hard breaks (<br>)
-    part.replace(/([^\n])\n(?=[^\n])/g, '$1  \n')
-  );
-}
-
-// 빈 줄 2줄 이상(\n 3개 이상): 초과분을 &nbsp; 문단으로 바꿔 파싱에서 살아남게 함
-// (마크다운 파서는 연속 빈 줄을 문단 구분 하나로 접어버림)
-function preserveBlankLines(md: string): string {
-  return mapOutsideCodeFences(md, part =>
-    part.replace(/\n{3,}/g, m => '\n\n' + '&nbsp;\n\n'.repeat(m.length - 2))
-  );
-}
-
-// 저장 시 &nbsp;/NBSP 전용 문단을 다시 빈 줄로 복원
-function restoreBlankLines(md: string): string {
-  return mapOutsideCodeFences(md, part =>
-    part.replace(/\n\n(?:&nbsp;|\u00A0)[ \t]*(?=\n|$)/g, '\n')
-  );
-}
-
-const MD_IMAGE_RE = /(!\[[^\]]*\]\()([^)\s]+)((?:\s+"[^"]*")?\))/g;
-
-// 상대경로 이미지를 webview URI로 바꿔 WYSIWYG에서 미리보기 가능하게 함
-function toWebviewImageUrls(md: string, base: string): string {
-  if (!base) return md;
-  return mapOutsideCodeFences(md, part => part.replace(MD_IMAGE_RE, (m, pre, url, post) => {
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.startsWith('//') || url.startsWith('/') || url.startsWith('#')) {
-      return m;
-    }
-    return `${pre}${base}/${url}${post}`;
-  }));
-}
-
-// 저장 시 webview URI를 다시 상대경로로 복원 (base는 고유 URL이므로 단순 치환 안전)
-function fromWebviewImageUrls(md: string, base: string): string {
-  if (!base) return md;
-  return md.split(`${base}/`).join('');
-}
-
-function extractFrontmatter(text: string): { frontmatter: string, content: string } {
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-  if (match) {
-    return { frontmatter: match[1], content: text.slice(match[0].length) };
-  }
-  return { frontmatter: "", content: text };
-}
-
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
-  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false });
+  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false, defaultCodeLanguage: 'text' });
+  // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
+  const configRef = useRef(config);
+  configRef.current = config;
+  // 코드블록 케밥(⋮) 메뉴 상태
+  const [codeMenu, setCodeMenu] = useState<{ blockId: string, x: number, y: number } | null>(null);
   const [isRawMode, setIsRawMode] = useState(() => !!(vscode.getState()?.isRawMode));
   const [isDiffMode, setIsDiffMode] = useState(false);
   const [originalText, setOriginalText] = useState<string | null>(null);
@@ -195,6 +53,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [parsedFrontmatter, setParsedFrontmatter] = useState<string>("");
   const [fmData, setFmData] = useState<Record<string, any> | null>(null);
+  const [fmCollapsed, setFmCollapsed] = useState(false);
   const [showSearchReplace, setShowSearchReplace] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [replaceQuery, setReplaceQuery] = useState("");
@@ -206,7 +65,13 @@ function App() {
   
   const settingsRef = useRef<HTMLDivElement>(null);
   const hasEdited = useRef(false);
+  const lastEditTimeRef = useRef(0);
   const isInitializing = useRef(false);
+  // 호스트로 마지막에 보낸 전체 텍스트 — external_update가 자기 편집의 반사인지 판별용
+  const lastSentTextRef = useRef<string>("");
+  const changeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 에디터에 마지막으로 반영한 documentText — setEditor로 인한 이펙트 재실행 시 이중 파싱 방지
+  const lastInitializedTextRef = useRef<string | null>(null);
   const docBaseUriRef = useRef<string>("");
   const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -283,7 +148,8 @@ function App() {
             autoRefresh: message.autoRefresh,
             showToc: message.showToc,
             showProperties: message.showProperties,
-            isReadOnly: message.isReadOnly
+            isReadOnly: message.isReadOnly,
+            defaultCodeLanguage: message.defaultCodeLanguage || 'text'
           });
           if (message.isReadOnly) {
             setIsRawMode(true);
@@ -294,9 +160,19 @@ function App() {
             setDocumentText(message.text || "");
           }
           break;
-        case 'external_update':
-          setDocumentText(message.text || "");
+        case 'external_update': {
+          const incoming = message.text || "";
+          // 호스트가 이미 내용 비교로 echo를 걸러 보내므로 여기 오는 것은 대부분 진짜 외부 변경.
+          // 단, 적용 실패 재동기화 등으로 자기 편집이 되돌아온 경우는 무시.
+          if (incoming === lastSentTextRef.current) return;
+          // 진행 중인 로컬 debounce는 이전 문서 기준의 stale 상태이므로 취소하고 외부 내용 채택
+          if (changeDebounceRef.current) {
+            clearTimeout(changeDebounceRef.current);
+            changeDebounceRef.current = null;
+          }
+          setDocumentText(incoming);
           break;
+        }
         case 'originalContent':
           setOriginalText(message.content);
           break;
@@ -326,73 +202,147 @@ function App() {
     };
   }, []);
 
+  // 코드블록 호버 시 Copy/Format 플로팅 버튼.
+  // Format은 명시적 클릭 시에만 실행 — 커서 이탈 시 자동 재인덴트는 문자열/주석 안의
+  // 중괄호를 오판해 사용자가 의도한 들여쓰기를 훼손할 수 있어 제거함.
+  // 코드블록 호버 시 Copy 플로팅 버튼
   useEffect(() => {
     if (isRawMode) return;
 
     let hoverTarget: HTMLElement | null = null;
     let timeoutId: any = null;
 
-    const floatingBtn = document.createElement('button');
-    floatingBtn.className = 'bn-floating-copy-btn';
-    floatingBtn.innerHTML = '📋 Copy';
-    floatingBtn.style.position = 'absolute';
-    floatingBtn.style.padding = '4px 8px';
-    floatingBtn.style.fontSize = '11px';
-    floatingBtn.style.cursor = 'pointer';
-    floatingBtn.style.borderRadius = '4px';
-    floatingBtn.style.opacity = '0';
-    floatingBtn.style.pointerEvents = 'none';
-    floatingBtn.style.transition = 'opacity 0.2s';
-    floatingBtn.style.zIndex = '1000';
-    
-    document.body.appendChild(floatingBtn);
+    // 고정 SVG 문자열 — 이모지 대신 라인 아이콘으로 (사용자 입력 미포함이라 innerHTML 안전)
+    const COPY_LABEL = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><span>Copy</span>';
+    const COPIED_LABEL = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Copied</span>';
+
+    const makeFloatingBtn = (className: string, html: string) => {
+      const btn = document.createElement('button');
+      btn.className = className;
+      btn.innerHTML = html;
+      btn.style.position = 'absolute';
+      btn.style.cursor = 'pointer';
+      btn.style.opacity = '0';
+      btn.style.pointerEvents = 'none';
+      btn.style.transition = 'opacity 0.2s';
+      btn.style.zIndex = '1000';
+      // 오른쪽 끝 기준 정렬 — 라벨 길이가 달라져도 위치가 흔들리지 않음
+      btn.style.transform = 'translateX(-100%)';
+      document.body.appendChild(btn);
+      return btn;
+    };
+
+    const copyBtn = makeFloatingBtn('bn-floating-copy-btn', COPY_LABEL);
+    // 케밥(⋮) — 복사/잘라내기/삭제/언어 메뉴 트리거
+    const KEBAB_LABEL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+    const menuBtn = makeFloatingBtn('bn-floating-copy-btn bn-floating-menu-btn', KEBAB_LABEL);
+
+    const buttons = [copyBtn, menuBtn];
+
+    const resetCopyBtn = () => {
+      copyBtn.innerHTML = COPY_LABEL;
+      copyBtn.classList.remove('copied');
+    };
 
     const handleMouseMove = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const codeBlock = target.closest('.bn-block-content[data-content-type="codeBlock"]') as HTMLElement;
-      
+
       if (codeBlock) {
         hoverTarget = codeBlock;
         const rect = codeBlock.getBoundingClientRect();
-        floatingBtn.style.top = `${rect.top + window.scrollY + 6}px`;
-        // Button width is ~60px, padding right is ~6px
-        floatingBtn.style.left = `${rect.right + window.scrollX - 70}px`; 
-        floatingBtn.style.opacity = '1';
-        floatingBtn.style.pointerEvents = 'auto';
-        
+        menuBtn.style.top = `${rect.top + window.scrollY + 8}px`;
+        menuBtn.style.left = `${rect.right + window.scrollX - 10}px`;
+        copyBtn.style.top = `${rect.top + window.scrollY + 8}px`;
+        copyBtn.style.left = `${rect.right + window.scrollX - 42}px`;
+        for (const b of buttons) {
+          b.style.opacity = '1';
+          b.style.pointerEvents = 'auto';
+        }
         clearTimeout(timeoutId);
       } else {
-        if (target !== floatingBtn && !floatingBtn.contains(target)) {
+        if (!buttons.some(b => b === target || b.contains(target))) {
           timeoutId = setTimeout(() => {
-            floatingBtn.style.opacity = '0';
-            floatingBtn.style.pointerEvents = 'none';
+            for (const b of buttons) {
+              b.style.opacity = '0';
+              b.style.pointerEvents = 'none';
+            }
             hoverTarget = null;
-            floatingBtn.innerHTML = '📋 Copy';
+            resetCopyBtn();
           }, 100);
         }
       }
     };
 
-    floatingBtn.onclick = () => {
+    copyBtn.onclick = () => {
       if (hoverTarget) {
         const pre = hoverTarget.querySelector('pre');
         if (pre) {
           navigator.clipboard.writeText(pre.innerText);
-          floatingBtn.innerHTML = '✅ Copied!';
-          setTimeout(() => { floatingBtn.innerHTML = '📋 Copy'; }, 2000);
+          copyBtn.innerHTML = COPIED_LABEL;
+          copyBtn.classList.add('copied');
+          setTimeout(resetCopyBtn, 1800);
         }
       }
+    };
+
+    menuBtn.onclick = () => {
+      if (!hoverTarget) return;
+      const id = (hoverTarget.closest('[data-id]') as HTMLElement | null)?.getAttribute('data-id');
+      if (!id) return;
+      const r = menuBtn.getBoundingClientRect();
+      setCodeMenu({ blockId: id, x: r.right, y: r.bottom + 6 });
     };
 
     document.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
-      if (document.body.contains(floatingBtn)) {
-        document.body.removeChild(floatingBtn);
+      for (const b of buttons) {
+        if (document.body.contains(b)) {
+          document.body.removeChild(b);
+        }
       }
     };
   }, [isRawMode]);
+
+  // 커서가 코드블록을 떠날 때 prettier로 자동 포맷.
+  // 지원 언어(js/ts/json/css/html/yaml)만 대상이고, 문법 오류나 미지원 언어는 원본 유지.
+  const activeCodeBlockIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isRawMode || !editor) return;
+
+    const handleSelectionChange = () => {
+      try {
+        const cursor = editor.getTextCursorPosition();
+        const currentBlockId = cursor?.block?.id || null;
+        const currentBlockType = cursor?.block?.type || null;
+
+        if (activeCodeBlockIdRef.current && activeCodeBlockIdRef.current !== currentBlockId) {
+          const prevBlockId = activeCodeBlockIdRef.current;
+          const prevBlock = editor.getBlock(prevBlockId);
+          if (prevBlock && prevBlock.type === 'codeBlock') {
+            const text = prevBlock.content?.map((c: any) => c.text || '').join('') || '';
+            const lang = prevBlock.props?.language || '';
+            formatCodeBlock(text, lang).then(formatted => {
+              if (formatted === null || formatted === text) return;
+              // 비동기 완료 시점에 블록이 여전히 존재하고 내용이 그대로일 때만 반영
+              const stillThere = editor.getBlock(prevBlockId);
+              if (!stillThere || stillThere.type !== 'codeBlock') return;
+              const currentText = stillThere.content?.map((c: any) => c.text || '').join('') || '';
+              if (currentText !== text) return;
+              editor.updateBlock(prevBlockId, { content: [{ type: 'text', text: formatted, styles: {} }] });
+            }).catch(() => { /* noop */ });
+          }
+        }
+
+        activeCodeBlockIdRef.current = currentBlockType === 'codeBlock' ? currentBlockId : null;
+      } catch { /* noop */ }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [isRawMode, editor]);
 
   const extractHeadings = (editorInstance: any) => {
     const newHeadings: {id: string, text: string, level: number}[] = [];
@@ -405,12 +355,25 @@ function App() {
       }
       return true;
     });
-    setHeadings(newHeadings);
+    // 내용이 같으면 같은 참조를 유지해 매 키입력마다의 전체 리렌더를 방지
+    setHeadings(prev => {
+      if (prev.length === newHeadings.length &&
+          prev.every((h, i) => h.id === newHeadings[i].id && h.text === newHeadings[i].text && h.level === newHeadings[i].level)) {
+        return prev;
+      }
+      return newHeadings;
+    });
   };
 
   useEffect(() => {
     async function initEditor() {
       if (documentText !== "loading" && !isRawMode) {
+        // setEditor로 인한 이펙트 재실행에서 같은 내용을 다시 파싱하지 않음
+        // (이중 파싱 + undo 스택에 replaceBlocks 중복 적재 방지)
+        if (editor && lastInitializedTextRef.current === documentText) {
+          return;
+        }
+        lastInitializedTextRef.current = documentText;
         const { frontmatter, content } = extractFrontmatter(documentText);
         setParsedFrontmatter(frontmatter);
         try {
@@ -425,7 +388,7 @@ function App() {
 
         isInitializing.current = true;
         if (!editor) {
-          const newEditor = BlockNoteEditor.create({ schema, uploadFile });
+          const newEditor = BlockNoteEditor.create({ schema: buildSchema(configRef.current.defaultCodeLanguage), uploadFile });
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
@@ -456,11 +419,25 @@ function App() {
             hasRestoredScroll.current = true;
           }, 150);
         } else {
-          // External update or refresh: replace existing blocks
+          // External update or refresh: replace existing blocks.
+          // replaceBlocks는 커서를 문서 끝으로 보내므로, 블록 인덱스 기준으로 복원
+          // (블록 id는 재파싱 시 재생성되어 id로는 복원 불가)
+          let cursorIdx = -1;
+          try {
+            const cur = editor.getTextCursorPosition();
+            cursorIdx = editor.document.findIndex((b: any) => b.id === cur?.block?.id);
+          } catch { /* noop */ }
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           editor.replaceBlocks(editor.document, blocks);
           extractHeadings(editor);
+          if (cursorIdx >= 0) {
+            try {
+              const doc = editor.document;
+              const target = doc[Math.min(cursorIdx, doc.length - 1)];
+              if (target) editor.setTextCursorPosition(target, 'start');
+            } catch { /* noop */ }
+          }
         }
         
         setTimeout(() => {
@@ -492,13 +469,12 @@ function App() {
     return base ? `${base}/${result.relPath}` : result.relPath;
   };
 
-  const changeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
   const postChange = (text: string) => {
     if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
     changeDebounceRef.current = setTimeout(() => {
       changeDebounceRef.current = null;
+      lastSentTextRef.current = text;
       vscode.postMessage({ type: 'change', text });
     }, 300);
   };
@@ -508,26 +484,27 @@ function App() {
     postChange(fullText);
   };
 
-  const handleWysiwygChange = async () => {
-    if (!editor || isInitializing.current) return;
-    hasEdited.current = true;
-    extractHeadings(editor);
+  const generateMarkdownFromEditor = async () => {
+    if (!editor) return "";
     const blocksForMd = processBlocksToMarkdown(editor.document);
     let markdown = await editor.blocksToMarkdownLossy(blocksForMd as any);
     
-    // Force hyphens for bullet lists (Notion/UpNote style) safely (ignore codeblocks)
-    const lines = markdown.split('\n');
-    let inCodeBlock = false;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim().startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-      } else if (!inCodeBlock) {
-        lines[i] = lines[i].replace(/^(\s*)\*\s/, '$1- ');
+    const enforceHyphens = (md: string) => {
+      const lines = md.split('\n');
+      let inCodeBlock = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+        } else if (!inCodeBlock) {
+          lines[i] = lines[i].replace(/^(\s*)[*+]\s/, '$1- ');
+        }
       }
-    }
-    markdown = lines.join('\n');
+      return lines.join('\n');
+    };
 
+    markdown = enforceHyphens(markdown);
     markdown = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(markdown));
+    
     if (config.autoFix) {
       try {
         const prettier = await import('prettier/standalone');
@@ -537,20 +514,63 @@ function App() {
         console.error("Auto fix formatting failed", e);
       }
     }
-    markdown = restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current));
-    saveToHost(parsedFrontmatter, markdown);
+    
+    markdown = enforceHyphens(markdown);
+    return restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current));
+  };
+
+  const handleWysiwygChange = () => {
+    if (!editor || isInitializing.current) return;
+    hasEdited.current = true;
+    lastEditTimeRef.current = Date.now();
+    extractHeadings(editor);
+    // 직렬화(blocksToMarkdownLossy + 후처리 + autoFix prettier)가 비싸므로
+    // postMessage만이 아니라 파이프라인 전체를 디바운스 안쪽에서 실행
+    if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
+    changeDebounceRef.current = setTimeout(async () => {
+      changeDebounceRef.current = null;
+      try {
+        const markdown = await generateMarkdownFromEditor();
+        const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
+        lastSentTextRef.current = fullText;
+        vscode.postMessage({ type: 'change', text: fullText });
+      } catch (err) {
+        console.error('Failed to serialize document', err);
+      }
+    }, 300);
+
+    // Scroll cursor into view when editing (especially on line breaks)
+    setTimeout(() => {
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor && cursor.block) {
+          const blockElement = document.querySelector(`[data-id="${cursor.block.id}"]`);
+          if (blockElement) {
+            blockElement.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+          }
+        }
+      } catch (err) {
+        // Ignored
+      }
+    }, 10);
   };
 
   const handleFmChange = async (key: string, value: any) => {
     if (!fmData || !editor) return;
     const newData = { ...fmData, [key]: value };
     setFmData(newData);
-    const newFmString = YAML.stringify(newData).trim();
+    // Document API로 해당 키만 수정해 주석·빈 줄·인용 스타일을 보존
+    // (전체 재직렬화는 frontmatter의 주석을 모두 날림)
+    let newFmString: string;
+    try {
+      const doc = YAML.parseDocument(parsedFrontmatter);
+      doc.set(key, value);
+      newFmString = doc.toString().trim();
+    } catch {
+      newFmString = YAML.stringify(newData).trim();
+    }
     setParsedFrontmatter(newFmString);
-    const md = restoreBlankLines(fromWebviewImageUrls(
-      await editor.blocksToMarkdownLossy(processBlocksToMarkdown(editor.document) as any),
-      docBaseUriRef.current
-    ));
+    const md = await generateMarkdownFromEditor();
     saveToHost(newFmString, md);
   };
 
@@ -634,6 +654,16 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showSearchReplace]);
 
+  useEffect(() => {
+    const handleWindowScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll);
+    return () => window.removeEventListener('scroll', handleWindowScroll);
+  }, []);
+
   const toggleMode = async () => {
     // 모드 전환 시 현재 위치의 헤딩을 기억해 반대 모드에서 같은 지점으로 스크롤 (best-effort)
     try {
@@ -662,11 +692,14 @@ function App() {
     vscode.updateState({ isRawMode: !isRawMode });
 
     if (!isRawMode && editor) {
-      if (hasEdited.current) {
-        let markdown = await editor.blocksToMarkdownLossy(processBlocksToMarkdown(editor.document) as any);
-        markdown = restoreBlankLines(fromWebviewImageUrls(sanitizeMarkdownCodeBlocks(markdown), docBaseUriRef.current));
-        const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
-        setDocumentText(fullText);
+      try {
+        if (hasEdited.current) {
+          const markdown = await generateMarkdownFromEditor();
+          const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
+          setDocumentText(fullText);
+        }
+      } catch (err) {
+        console.error("Failed to generate markdown during mode toggle", err);
       }
       setEditor(null);
     }
@@ -762,185 +795,44 @@ function App() {
     vscode.postMessage({ type: 'updateConfig', key, value });
   };
 
+  const [bodyClass, setBodyClass] = useState(document.body.className);
+  
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setBodyClass(document.body.className);
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
   // Resolve 'auto' to 'light' or 'dark' based on body class (VS Code sets vscode-light, vscode-dark, etc)
-  const isVscodeDark = document.body.className.includes('vscode-dark') || document.body.className.includes('vscode-high-contrast');
+  const isVscodeDark = bodyClass.includes('vscode-dark') || bodyClass.includes('vscode-high-contrast');
   const activeTheme = config.theme === 'auto' ? (isVscodeDark ? 'dark' : 'light') : config.theme;
   
-  const isDark = activeTheme === 'dark' || activeTheme === 'nord' || activeTheme === 'one-half-dark' || activeTheme === 'solarized-dark';
+  // 테마 팔레트는 themes.ts에 중앙 정의 (THEMES 레코드에서 조회)
+  const themePalette = resolveTheme(activeTheme);
+  const isDark = themePalette.isDark;
 
   useEffect(() => {
     document.body.setAttribute('data-theme-dark', isDark ? 'true' : 'false');
     window.dispatchEvent(new Event('theme-changed'));
   }, [isDark]);
 
+  // 주입 CSS는 테마·폰트 크기에만 의존 — 매 렌더(키 입력마다) 재생성하지 않음
+  const editorCss = useMemo(
+    () => buildEditorStyles(themePalette, config.fontSize),
+    [themePalette, config.fontSize]
+  );
+
   if (documentText === "loading") {
     return <div>Loading document...</div>;
   }
-  
-  let bgColor = '#ffffff';
-  let textColor = '#333333';
-  let headerBg = '#f3f3f3';
-  let codeBg = '#f5f5f5';
-  let codeColor = '#333333';
-  let blockNoteTheme: "light" | "dark" = "light";
-  let cmTheme: any = cmThemes.vscodeLight;
 
-  if (activeTheme === 'dark') {
-    bgColor = '#1e1e1e';
-    textColor = '#d4d4d4';
-    headerBg = '#2d2d2d';
-    codeBg = '#252526';
-    codeColor = '#d4d4d4';
-    blockNoteTheme = "dark";
-    cmTheme = cmThemes.vscodeDark;
-  } else if (activeTheme === 'nord') {
-    bgColor = '#2e3440';
-    textColor = '#d8dee9';
-    headerBg = '#3b4252';
-    codeBg = '#3b4252';
-    codeColor = '#d8dee9';
-    blockNoteTheme = "dark";
-    cmTheme = cmThemes.nord;
-  } else if (activeTheme === 'one-half-dark') {
-    bgColor = '#282c34';
-    textColor = '#dcdfe4';
-    headerBg = '#2c323c';
-    codeBg = '#2c323c';
-    codeColor = '#dcdfe4';
-    blockNoteTheme = "dark";
-    cmTheme = cmThemes.atomone;
-  } else if (activeTheme === 'solarized-dark') {
-    bgColor = '#002b36';
-    textColor = '#839496';
-    headerBg = '#073642';
-    codeBg = '#073642';
-    codeColor = '#839496';
-    blockNoteTheme = "dark";
-    cmTheme = cmThemes.solarizedDark;
-  } else if (activeTheme === 'vintage') {
-    bgColor = '#f4ecd8';
-    textColor = '#3a3a3a';
-    headerBg = '#e8dcc3';
-    codeBg = '#e8dcc3';
-    codeColor = '#3a3a3a';
-    cmTheme = cmThemes.gruvboxLight;
-  }
+  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder, inputBg, accentColor } = themePalette;
 
-  const dropdownBg = isDark ? '#252526' : '#ffffff';
-  const dropdownBorder = isDark ? '#555555' : '#dddddd';
-  const inputBg = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
-
-  const renderFrontmatterUI = () => {
-    if (!parsedFrontmatter || !showProperties) return null;
-    if (!fmData) {
-      return <pre style={{ fontSize: '11px', opacity: 0.7, whiteSpace: 'pre-wrap', padding: '10px' }}>{parsedFrontmatter}</pre>;
-    }
-
-    return (
-      <div style={{ marginBottom: '16px', padding: '10px 14px', backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)', borderRadius: '6px', border: `1px solid ${dropdownBorder}` }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {Object.entries(fmData).map(([key, value]) => {
-            const isArray = Array.isArray(value);
-            
-            return (
-              <div key={key} style={{ display: 'flex', fontSize: '12px', alignItems: 'center' }}>
-                <span style={{ width: '150px', fontWeight: '600', opacity: 0.7 }}>{key}</span>
-                {isArray ? (
-                  <div style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '4px',
-                    padding: '4px 8px',
-                    backgroundColor: inputBg,
-                    borderRadius: '4px',
-                    minHeight: '24px',
-                    alignItems: 'center',
-                    flex: 1
-                  }}>
-                    {value.map((tag: string, i: number) => (
-                      <span key={i} style={{
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
-                        padding: '2px 6px',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        {tag}
-                        <button
-                          style={{ background: 'none', border: 'none', color: 'inherit', padding: 0, cursor: 'pointer', opacity: 0.5, display: 'flex', alignItems: 'center' }}
-                          onClick={() => {
-                            const newArr = [...value];
-                            newArr.splice(i, 1);
-                            handleFmChange(key, newArr);
-                          }}
-                          title="Remove"
-                        >
-                          <X size={10} />
-                        </button>
-                      </span>
-                    ))}
-                    <input
-                      type="text"
-                      placeholder="Add..."
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: textColor,
-                        outline: 'none',
-                        flex: 1,
-                        minWidth: '60px',
-                        fontSize: '11px',
-                        padding: 0,
-                        margin: 0
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                          handleFmChange(key, [...value, e.currentTarget.value.trim()]);
-                          e.currentTarget.value = '';
-                        } else if (e.key === 'Backspace' && !e.currentTarget.value && value.length > 0) {
-                          const newArr = [...value];
-                          newArr.pop();
-                          handleFmChange(key, newArr);
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (e.currentTarget.value.trim()) {
-                          handleFmChange(key, [...value, e.currentTarget.value.trim()]);
-                          e.currentTarget.value = '';
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <input 
-                    type="text" 
-                    value={String(value || '')}
-                    onChange={(e) => handleFmChange(key, e.target.value)}
-                    style={{ 
-                      flex: 1,
-                      background: inputBg, 
-                      border: '1px solid transparent', 
-                      borderRadius: '4px', 
-                      padding: '4px 8px', 
-                      color: 'inherit',
-                      fontSize: '12px'
-                    }}
-                    onFocus={(e) => e.target.style.border = `1px solid ${dropdownBorder}`}
-                    onBlur={(e) => e.target.style.border = '1px solid transparent'}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: bgColor, color: textColor }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: bgColor, color: textColor }}>
       
       {/* Search & Replace Widget */}
       {showSearchReplace && !isRawMode && (
@@ -1017,11 +909,11 @@ function App() {
                 userSelect: 'none',
                 flex: 1
               }}
-              title="Drag to move"
+              data-tooltip="Drag to move"
             >
               <span style={{ fontSize: '14px' }}>📑</span> Table of Contents
             </div>
-            <span title="Close TOC" onClick={() => updateConfig('showToc', false)} style={{ display: 'flex', cursor: 'pointer', opacity: 0.7 }}>
+            <span data-tooltip="Close" data-tooltip-pos="right" onClick={() => updateConfig('showToc', false)} style={{ display: 'flex', cursor: 'pointer', opacity: 0.7 }}>
               <X size={14} />
             </span>
           </div>
@@ -1053,11 +945,37 @@ function App() {
 
       <div style={{ padding: '4px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        {/* Built-in은 읽기 전용(비교 모드 왼쪽 창 등)에서도 유용하므로 항상 표시 */}
+        <button
+          onClick={() => vscode.postMessage({ type: 'openBuiltIn' })}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '2px 8px',
+            cursor: 'pointer',
+            border: `1px solid ${dropdownBorder}`,
+            borderRadius: '4px',
+            background: 'transparent',
+            color: textColor,
+            fontSize: '12px',
+            opacity: 0.7
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
+          data-tooltip="Open in VS Code built-in editor"
+          data-tooltip-pos="left"
+        >
+          <ExternalLink size={12} />
+          Built-in
+        </button>
         {!config.isReadOnly && (
           <>
+            {/* 확장을 벗어나는 동작이므로 모드 토글과 구분선으로 분리 */}
+            <div style={{ width: '1px', height: '16px', background: dropdownBorder }} />
             <div style={{ display: 'flex', borderRadius: '4px', overflow: 'hidden', border: `1px solid ${dropdownBorder}` }}>
-              <button 
-                onClick={() => { if (!isRawMode) toggleMode(); }} 
+              <button
+                onClick={() => { if (!isRawMode) toggleMode(); }}
                 style={{ 
                   padding: '2px 10px', 
                   cursor: 'pointer', 
@@ -1105,7 +1023,7 @@ function App() {
                   padding: '2px 6px',
                   marginLeft: '8px'
                 }}
-                title="Toggle Git Diff View"
+                data-tooltip="Toggle Git Diff View"
               >
                 <GitCompare size={14} style={{ marginRight: '4px' }} />
                 <span style={{ fontSize: '12px' }}>Diff</span>
@@ -1121,14 +1039,16 @@ function App() {
               <button 
                 onClick={() => updateConfig('showToc', !showToc)} 
                 style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', opacity: showToc ? 1 : 0.5, display: 'flex', alignItems: 'center', padding: '4px' }}
-                title="Toggle TOC"
+                data-tooltip="Toggle TOC"
+                data-tooltip-pos="right"
               >
                 <List size={16} />
               </button>
               <button 
                 onClick={() => updateConfig('showProperties', !showProperties)} 
                 style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', opacity: showProperties ? 1 : 0.5, display: 'flex', alignItems: 'center', padding: '4px' }}
-                title="Toggle Properties"
+                data-tooltip="Toggle Properties"
+                data-tooltip-pos="right"
               >
                 <Info size={16} />
               </button>
@@ -1137,7 +1057,8 @@ function App() {
           <button 
             onClick={() => vscode.postMessage({ type: 'refresh' })}
             style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-            title="Refresh"
+            data-tooltip="Refresh"
+            data-tooltip-pos="right"
           >
             <RefreshCw size={16} />
           </button>
@@ -1153,7 +1074,8 @@ function App() {
                 alignItems: 'center',
                 padding: '4px'
               }}
-              title="Settings"
+              data-tooltip="Settings"
+              data-tooltip-pos="right"
             >
               <Settings size={16} />
             </button>
@@ -1180,18 +1102,20 @@ function App() {
               
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', opacity: 0.8 }}>Theme</label>
-                <select 
-                  value={config.theme} 
+                <select
+                  className="settings-select"
+                  value={config.theme}
                   onChange={(e) => updateConfig('theme', e.target.value)}
-                  style={{ width: '100%', padding: '6px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor }}
                 >
                   <option value="auto">Auto (Match VS Code)</option>
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
-                  <option value="nord">Nord (Cool frosty dark)</option>
+                  <option value="nord">Nord</option>
                   <option value="one-half-dark">One Half Dark</option>
                   <option value="solarized-dark">Solarized Dark</option>
                   <option value="vintage">Vintage</option>
+                  <option value="gruvbox-dark">Gruvbox Dark</option>
+                  <option value="tokyo-night-day">Tokyo Night Day</option>
                 </select>
               </div>
 
@@ -1254,208 +1178,7 @@ function App() {
         style={{ flex: 1, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden' }}
         onKeyDownCapture={handleKeyDownCapture}
       >
-        <style>{`
-          /* Confluence Typography Base */
-          .bn-editor { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-            font-size: ${config.fontSize}px; 
-            background-color: transparent !important; 
-          }
-          
-          /* Confluence Link Style */
-          .bn-editor a {
-            color: ${isDark ? '#579dff' : '#0052cc'} !important;
-            text-decoration: none;
-          }
-          .bn-editor a:hover {
-            text-decoration: underline;
-          }
-          
-          .bn-container { color: ${textColor} !important; }
-          .cm-content { padding: 16px 32px !important; }
-          
-          /* Custom Code Block Theme Colors */
-          .bn-editor .bn-block-content[data-content-type="codeBlock"] {
-            background-color: ${isDark ? codeBg : '#ebecf0'} !important;
-            color: ${codeColor} !important;
-            border-radius: 6px !important;
-            border: 1px solid ${isDark ? '#333' : '#dfe1e6'} !important;
-          }
-          /* Override BlockNote default syntax highlighting background */
-          .bn-editor .bn-block-content[data-content-type="codeBlock"] pre {
-            background-color: transparent !important;
-            padding: 8px !important;
-            margin: 0 !important;
-          }
-          
-          /* Floating Copy Button Style */
-          .bn-floating-copy-btn {
-            background-color: ${isDark ? '#333' : '#ffffff'} !important;
-            color: ${isDark ? '#eee' : '#333'} !important;
-            border: 1px solid ${isDark ? '#555' : '#ccc'} !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-          }
-          .bn-floating-copy-btn:hover {
-            background-color: ${isDark ? '#444' : '#f0f0f0'} !important;
-          }
-          
-          /* Uniform Bullet Icons */
-          .bn-editor .bn-block-content[data-content-type="bulletListItem"]::before {
-            font-family: "Segoe UI Symbol", "Apple Color Emoji", "Arial", sans-serif !important;
-            font-size: 0.7em !important;
-            transform: translateY(0.2em);
-          }
-          
-          /* Level 1: Solid Circle */
-          .bn-editor .bn-block-outer:not([data-prev-type]) > .bn-block > .bn-block-content[data-content-type="bulletListItem"]::before,
-          .bn-editor .bn-block-outer[data-prev-type="bulletListItem"] > .bn-block > .bn-block-content::before,
-          .bn-editor .bn-block-outer:not([data-prev-type]) > .bn-block > div[data-type="modification"] > .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "●" !important;
-          }
-          
-          /* Level 2: Hollow Circle */
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer[data-prev-type="bulletListItem"] > .bn-block > .bn-block-content::before,
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer:not([data-prev-type]) > .bn-block > .bn-block-content[data-content-type="bulletListItem"]::before,
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer:not([data-prev-type]) > .bn-block > div[data-type="modification"] > .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "○" !important;
-            font-size: 0.85em !important; /* Hollow circle usually looks slightly smaller */
-          }
-          
-          /* Level 3: Solid Square */
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer[data-prev-type="bulletListItem"] > .bn-block > .bn-block-content::before,
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer:not([data-prev-type]) > .bn-block > .bn-block-content[data-content-type="bulletListItem"]::before,
-          .bn-editor [data-content-type="bulletListItem"] ~ .bn-block-group [data-content-type="bulletListItem"] ~ .bn-block-group > .bn-block-outer:not([data-prev-type]) > .bn-block > div[data-type="modification"] > .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "■" !important;
-          }
-          
-          /* Global Block Spacing Reduction - Aggressive Zero Gap */
-          .bn-editor .bn-block-outer,
-          .bn-editor .bn-block-group,
-          .bn-editor .bn-block,
-          .bn-editor .bn-block-content,
-          .bn-editor p,
-          .bn-editor h1, .bn-editor h2, .bn-editor h3, .bn-editor h4, .bn-editor h5, .bn-editor h6,
-          .bn-editor ul, .bn-editor ol, .bn-editor li,
-          .bn-editor [data-content-type="heading"],
-          .bn-editor .bn-inline-content {
-            margin-top: 0 !important;
-            margin-bottom: 0 !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-          }
-          
-          /* Heading Specific Margins (Override Zero Gap) */
-          .bn-editor h1, .bn-editor [data-content-type="heading"][data-level="1"] {
-            margin-top: 0.8cm !important;
-            margin-bottom: 0.5em !important;
-          }
-          .bn-editor h2, .bn-editor [data-content-type="heading"][data-level="2"] {
-            margin-top: 0.8cm !important;
-            margin-bottom: 0.4em !important;
-          }
-          .bn-editor h3, .bn-editor [data-content-type="heading"][data-level="3"] {
-            margin-top: 0.8cm !important;
-            margin-bottom: 0.3em !important;
-          }
-          .bn-editor h4, .bn-editor h5, .bn-editor h6,
-          .bn-editor [data-content-type="heading"][data-level="4"],
-          .bn-editor [data-content-type="heading"][data-level="5"],
-          .bn-editor [data-content-type="heading"][data-level="6"] {
-            margin-top: 0.25cm !important;
-            margin-bottom: 0.15em !important;
-          }
-
-          /* Remove spacing between consecutive headings */
-          .bn-editor .bn-block-outer:has([data-content-type="heading"]) + .bn-block-outer:has([data-content-type="heading"]) [data-content-type="heading"] {
-            margin-top: 0 !important;
-          }
-
-          /* Code Block Margins */
-          .bn-editor .bn-block-outer:has([data-content-type="codeBlock"]) {
-            margin-top: 0.25cm !important;
-            margin-bottom: 0.25cm !important;
-          }
-
-          /* Table Styles Enhancement */
-          /* 1. Target the table block itself */
-          .bn-editor .bn-block-outer:has([data-content-type="table"]),
-          .bn-editor .bn-block-outer:has([data-content-type="table"]) .bn-block,
-          .bn-editor .bn-block-outer:has([data-content-type="table"]) .bn-block-content {
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-            margin-top: 0 !important;
-            margin-bottom: 0 !important;
-          }
-          /* 2. Target the block BEFORE the table */
-          .bn-editor .bn-block-outer:has(+ .bn-block-outer [data-content-type="table"]),
-          .bn-editor .bn-block-outer:has(+ .bn-block-outer [data-content-type="table"]) .bn-block,
-          .bn-editor .bn-block-outer:has(+ .bn-block-outer [data-content-type="table"]) .bn-block-content {
-            padding-bottom: 0 !important;
-            margin-bottom: 0 !important;
-          }
-          /* 3. Target the block AFTER the table */
-          .bn-editor .bn-block-outer:has([data-content-type="table"]) + .bn-block-outer,
-          .bn-editor .bn-block-outer:has([data-content-type="table"]) + .bn-block-outer .bn-block,
-          .bn-editor .bn-block-outer:has([data-content-type="table"]) + .bn-block-outer .bn-block-content {
-            padding-top: 0 !important;
-            margin-top: 0 !important;
-          }
-          .bn-editor [data-content-type="table"] {
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow-x: auto;
-            line-height: 1.2 !important;
-          }
-          .bn-editor [data-content-type="table"] table {
-            border-collapse: collapse !important;
-            min-width: 100% !important;
-            border: 1px solid ${dropdownBorder} !important;
-            margin: 0 !important;
-          }
-          .bn-editor [data-content-type="table"] th {
-            background-color: ${isDark ? '#22272b' : '#f4f5f7'} !important;
-            color: ${isDark ? '#b6c2cf' : '#172b4d'} !important;
-            font-weight: 600 !important;
-          }
-          .bn-editor [data-content-type="table"] td, 
-          .bn-editor [data-content-type="table"] th {
-            border: 1px solid ${isDark ? '#a6c5e229' : '#dfe1e6'} !important;
-            padding: 2px 6px !important;
-            min-width: 100px;
-          }
-          
-          /* Blockquote Styles (Confluence) */
-          .bn-editor [data-content-type="blockQuote"] {
-            background-color: ${isDark ? 'rgba(87, 157, 255, 0.05)' : 'rgba(0, 82, 204, 0.03)'} !important;
-            border-left: 3px solid ${isDark ? '#579dff' : '#0052cc'} !important;
-            padding: 4px 12px !important;
-            color: ${isDark ? '#8c9bab' : '#172b4d'} !important;
-            border-radius: 0 4px 4px 0 !important;
-          }
-          /* Ensure child div doesn't add an extra black border */
-          .bn-editor [data-content-type="blockQuote"] > div {
-            border-left: none !important;
-            padding-left: 0 !important;
-          }
-          
-          /* Inline Code Styles (Confluence) */
-          .bn-editor code, .bn-editor [data-inline-style="code"] {
-            background-color: ${isDark ? 'rgba(166, 197, 226, 0.16)' : '#ebecf0'} !important;
-            padding: 2px 4px !important;
-            border-radius: 3px !important;
-            font-family: Consolas, 'Courier New', monospace !important;
-            font-size: 0.9em !important;
-            color: ${isDark ? '#b6c2cf' : '#172b4d'} !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          .bn-editor [data-content-type="table"] tr {
-            transition: background-color 0.1s ease;
-          }
-          .bn-editor [data-content-type="table"] tr:hover {
-            background-color: ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'} !important;
-          }
-        `}</style>
+        <style>{editorCss}</style>
         {isRawMode ? (
           isDiffMode ? (
             originalText === null ? (
@@ -1471,6 +1194,7 @@ function App() {
                     value={documentText as string}
                     extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
                     onChange={(val) => {
+                      lastEditTimeRef.current = Date.now();
                       setDocumentText(val);
                       postChange(val);
                     }}
@@ -1497,8 +1221,10 @@ function App() {
           ) : (
             <CodeMirror
               value={documentText as string}
+              className="raw-markdown-editor"
               extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
               onChange={(val) => {
+                lastEditTimeRef.current = Date.now();
                 setDocumentText(val);
                 postChange(val);
               }}
@@ -1543,12 +1269,100 @@ function App() {
             }}
           >
             <div style={{ padding: '16px 32px' }}>
-              {renderFrontmatterUI()}
-              {editor && <BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} />}
+              {parsedFrontmatter && showProperties ? (
+                <FrontmatterPanel
+                  parsedFrontmatter={parsedFrontmatter}
+                  fmData={fmData}
+                  collapsed={fmCollapsed}
+                  onToggleCollapsed={() => setFmCollapsed(!fmCollapsed)}
+                  isDark={isDark}
+                  textColor={textColor}
+                  accentColor={accentColor}
+                  onChange={handleFmChange}
+                />
+              ) : null}
+              {editor && <div onKeyDown={(e) => {
+                if (e.key === 'Tab' && !e.shiftKey) {
+                  const cursor = editor.getTextCursorPosition();
+                  if (cursor && cursor.block) {
+                    const block = cursor.block;
+                    
+                    // If it's a paragraph, Tab changes it to a bullet list instead of inserting spaces.
+                    if (block.type === 'paragraph' && (block.content.length === 0 || typeof cursor.prevCharacter === 'undefined')) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      editor.updateBlock(block, { type: 'bulletListItem' });
+                      return;
+                    }
+                    
+                    // Otherwise, it's a list item (or other block). Let BlockNote handle the Tab (which usually indents it).
+                    // After indenting, check the parent. If the parent is a numbered list, change this block to a bullet list.
+                    setTimeout(() => {
+                      const newCursor = editor.getTextCursorPosition();
+                      if (newCursor && newCursor.block && newCursor.block.type === 'numberedListItem') {
+                        const targetId = newCursor.block.id;
+                        
+                        // Recursive function to find the parent block
+                        const findParent = (blocks: any[], id: string, parent: any = null): any => {
+                          for (const b of blocks) {
+                            if (b.id === id) return parent;
+                            if (b.children && b.children.length > 0) {
+                              const p = findParent(b.children, id, b);
+                              if (p) return p;
+                            }
+                          }
+                          return null;
+                        };
+                        
+                        const parentBlock = findParent(editor.document, targetId);
+                        if (parentBlock && parentBlock.type === 'numberedListItem') {
+                           editor.updateBlock(newCursor.block, { type: 'bulletListItem' });
+                        }
+                      }
+                    }, 50);
+                  }
+                }
+              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} /></div>}
             </div>
           </div>
         )}
       </div>
+
+      {/* 코드블록 케밥(⋮) 메뉴 — UpNote식: 복사/잘라내기/삭제/언어/기본 코드 언어 */}
+      {codeMenu && editor && (
+        <CodeBlockMenu
+          x={codeMenu.x}
+          y={codeMenu.y}
+          currentLanguage={String(editor.getBlock(codeMenu.blockId)?.props?.language || 'text')}
+          defaultLanguage={config.defaultCodeLanguage}
+          onSelectLanguage={(id) => {
+            editor.updateBlock(codeMenu.blockId, { props: { language: id } });
+            setCodeMenu(null);
+          }}
+          onSelectDefault={(id) => {
+            updateConfig('defaultCodeLanguage', id);
+            setCodeMenu(null);
+          }}
+          onCopy={() => {
+            const b = editor.getBlock(codeMenu.blockId);
+            const text = b?.content?.map((c: any) => c.text || '').join('') || '';
+            navigator.clipboard.writeText(text);
+            setCodeMenu(null);
+          }}
+          onCut={() => {
+            const b = editor.getBlock(codeMenu.blockId);
+            const text = b?.content?.map((c: any) => c.text || '').join('') || '';
+            navigator.clipboard.writeText(text);
+            editor.removeBlocks([codeMenu.blockId]);
+            setCodeMenu(null);
+          }}
+          onDelete={() => {
+            editor.removeBlocks([codeMenu.blockId]);
+            setCodeMenu(null);
+          }}
+          onClose={() => setCodeMenu(null)}
+        />
+      )}
     </div>
   );
 }
