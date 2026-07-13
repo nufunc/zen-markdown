@@ -1,7 +1,7 @@
 {
   "name": "neat-markdown-editor",
   "publisher": "nufunc",
-  "displayName": "Neat MD Editor",
+  "displayName": "NeatMark Editor",
   "icon": "icon.png",
   "description": "Neat & Aesthetic WYSIWYG Markdown Editor with Mermaid",
   "version": "0.1.0",
@@ -33,7 +33,7 @@
     "customEditors": [
       {
         "viewType": "neatMdEditor.mdEditor",
-        "displayName": "Neat MD Editor",
+        "displayName": "NeatMark Editor",
         "selector": [
           {
             "filenamePattern": "*.md"
@@ -49,13 +49,13 @@
       {
         "command": "neatMdEditor.openWithTextEditor",
         "title": "Open with Text Editor",
-        "category": "Neat MD Editor",
+        "category": "NeatMark Editor",
         "icon": "$(go-to-file)"
       },
       {
         "command": "neatMdEditor.openWithNeatEditor",
-        "title": "Open with Neat MD Editor",
-        "category": "Neat MD Editor",
+        "title": "Open with NeatMark Editor",
+        "category": "NeatMark Editor",
         "icon": "$(open-preview)"
       }
     ],
@@ -74,12 +74,12 @@
       ]
     },
     "configuration": {
-      "title": "Neat MD Editor",
+      "title": "NeatMark Editor",
       "properties": {
         "neatMdEditor.fontSize": {
           "type": "number",
           "default": 16,
-          "description": "Font size for the Neat MD Editor"
+          "description": "Font size for the NeatMark Editor"
         },
         "neatMdEditor.theme": {
           "type": "string",
@@ -106,7 +106,7 @@
             "Tokyo Night Day (Cool pastel light)"
           ],
           "default": "auto",
-          "description": "Select the theme for the Neat MD Editor. 'auto' follows the VS Code theme."
+          "description": "Select the theme for the NeatMark Editor. 'auto' follows the VS Code theme."
         },
         "neatMdEditor.autoFix": {
           "type": "boolean",

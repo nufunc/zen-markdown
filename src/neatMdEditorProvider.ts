@@ -317,7 +317,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource} data:;">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${styleUri}" rel="stylesheet" />
-                <title>Neat MD Editor</title>
+                <title>NeatMark Editor</title>
             </head>
             <body>
                 <div id="root"></div>

@@ -1,4 +1,4 @@
-# Neat MD Editor 📝
+# NeatMark Editor 📝
 
 Neat & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experience a Notion-like block-based editing environment right inside your IDE!
 
@@ -10,7 +10,7 @@ Neat & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experience a No
 * **Mermaid Support**: Visualize complex diagrams and flowcharts seamlessly within the editor. Mermaid is loaded on demand, so documents without diagrams open fast.
 * **Image Paste & Drop**: Paste or drop images directly into the editor — they are saved to an `assets/` folder next to your document and linked with a relative path.
 * **Find & Replace**: Use the native VS Code find widget (`Ctrl/Cmd + F`) or the built-in replace panel (`Ctrl/Cmd + H`).
-* **Link Navigation**: `Ctrl/Cmd + Click` a link to follow it — relative `.md` links open in Neat MD Editor, other files open in VS Code, and external URLs open in your browser.
+* **Link Navigation**: `Ctrl/Cmd + Click` a link to follow it — relative `.md` links open in NeatMark Editor, other files open in VS Code, and external URLs open in your browser.
 * **Blank Line Preservation**: Two or more consecutive blank lines are shown as empty paragraphs in WYSIWYG mode and written back to your file unchanged.
 * **Smart Table of Contents (TOC)**: Easily navigate long documents with a draggable, floating TOC.
 * **Theme Support**: `auto` follows your VS Code light/dark theme, or pick a built-in theme (Nord, One Half Dark, Solarized Dark, Vintage).
@@ -26,7 +26,7 @@ Neat & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experience a No
 ## 🚀 Usage
 
 1. Open any `.md` or `.llm.md` file in VS Code.
-2. Click the **Open with Neat MD Editor** button in the editor title bar, or right-click the file and select "Open With..." → "Neat MD Editor".
+2. Click the **Open with NeatMark Editor** button in the editor title bar, or right-click the file and select "Open With..." → "NeatMark Editor".
 3. To go back to the plain text editor, click the **Open with Text Editor** button in the title bar.
 4. Enjoy writing!
 
