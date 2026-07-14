@@ -344,6 +344,35 @@ function App() {
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, [isRawMode, editor]);
 
+  // 가벼운 정규식 기반 언어 자동 인식기 (4개 언어 한정 - 비용 거의 0)
+  const detectLanguage = (text: string): string | null => {
+    const t = text.trim();
+    if (!t) return null;
+    
+    // 1. JSON
+    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+      try { JSON.parse(t); return 'json'; } catch {}
+    }
+    // 2. PowerShell
+    if (/\\b(Get|Set|Invoke|New|Remove|Start|Stop|Out)-[A-Z][a-zA-Z]+\\b/.test(t) || /\\$(null|true|false|_)\\b/.test(t)) {
+      return 'powershell';
+    }
+    // 3. Bash/Shell (shebang, 널리 쓰이는 CLI 커맨드 - az cli 포함)
+    if (t.startsWith('#!/bin/') || /^\\s*(kubectl|az|helm|docker|ls|grep|awk|sed|cat|echo|export|curl)\\b/m.test(t)) {
+      return 'shellscript';
+    }
+    // 4. YAML (JSON이 아니면서 key: value 패턴이 2줄 이상이거나 --- 시작)
+    if (t.startsWith('---')) return 'yaml';
+    const yamlLines = t.split('\\n').filter(l => /^[a-zA-Z0-9_-]+\\s*:\\s*.+/.test(l));
+    if (yamlLines.length >= 2 && !t.includes('{')) return 'yaml';
+    // 5. KQL (Azure Kusto Query Language)
+    if (/^\\s*(let|search|where|summarize|project|join|extend|parse|evaluate|print)\\b/im.test(t) && t.includes('|')) {
+      return 'kql';
+    }
+    
+    return null;
+  };
+
   const extractHeadings = (editorInstance: any) => {
     const newHeadings: {id: string, text: string, level: number}[] = [];
     editorInstance.forEachBlock((b: any) => {
@@ -351,6 +380,14 @@ function App() {
         const text = b.content?.map((c: any) => c.text || c.content?.map((cc:any)=>cc.text).join('') || '').join('') || '';
         if (text.trim()) {
           newHeadings.push({ id: b.id, text, level: b.props.level });
+        }
+      }
+      // 언어가 'text'인 코드블록 자동 인식 적용
+      if (b.type === 'codeBlock' && (!b.props.language || b.props.language === 'text')) {
+        const codeText = b.content?.map((c: any) => c.text || '').join('') || '';
+        const detected = detectLanguage(codeText);
+        if (detected) {
+          editorInstance.updateBlock(b.id, { props: { ...b.props, language: detected } });
         }
       }
       return true;
@@ -484,7 +521,7 @@ function App() {
     postChange(fullText);
   };
 
-  const generateMarkdownFromEditor = async () => {
+  const generateMarkdownFromEditor = async (skipAutoFix = false) => {
     if (!editor) return "";
     const blocksForMd = processBlocksToMarkdown(editor.document);
     let markdown = await editor.blocksToMarkdownLossy(blocksForMd as any);
@@ -505,7 +542,7 @@ function App() {
     markdown = enforceHyphens(markdown);
     markdown = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(markdown));
     
-    if (config.autoFix) {
+    if (config.autoFix && !skipAutoFix) {
       try {
         const prettier = await import('prettier/standalone');
         const prettierPluginMarkdown = await import('prettier/plugins/markdown');
@@ -523,21 +560,20 @@ function App() {
     if (!editor || isInitializing.current) return;
     hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
-    extractHeadings(editor);
-    // 직렬화(blocksToMarkdownLossy + 후처리 + autoFix prettier)가 비싸므로
-    // postMessage만이 아니라 파이프라인 전체를 디바운스 안쪽에서 실행
+    // 직렬화(blocksToMarkdownLossy + 후처리)를 디바운스 안쪽에서 실행
     if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
     changeDebounceRef.current = setTimeout(async () => {
       changeDebounceRef.current = null;
+      extractHeadings(editor);
       try {
-        const markdown = await generateMarkdownFromEditor();
+        const markdown = await generateMarkdownFromEditor(true);
         const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
         lastSentTextRef.current = fullText;
         vscode.postMessage({ type: 'change', text: fullText });
       } catch (err) {
         console.error('Failed to serialize document', err);
       }
-    }, 300);
+    }, 600);
 
     // Scroll cursor into view when editing (especially on line breaks)
     setTimeout(() => {
@@ -573,6 +609,26 @@ function App() {
     const md = await generateMarkdownFromEditor();
     saveToHost(newFmString, md);
   };
+
+  useEffect(() => {
+    const handleBlur = async () => {
+      if (hasEdited.current && config.autoFix && !isRawMode && editor) {
+        try {
+          // Blur 시점에 한 번만 autoFix 적용하여 저장
+          const markdown = await generateMarkdownFromEditor(false);
+          const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
+          if (lastSentTextRef.current !== fullText) {
+            lastSentTextRef.current = fullText;
+            vscode.postMessage({ type: 'change', text: fullText });
+          }
+        } catch (err) {
+          console.error("AutoFix on blur failed", err);
+        }
+      }
+    };
+    window.addEventListener('blur', handleBlur);
+    return () => window.removeEventListener('blur', handleBlur);
+  }, [config.autoFix, isRawMode, editor, parsedFrontmatter]);
 
   const handleFindNext = () => {
     if (!searchQuery) return;

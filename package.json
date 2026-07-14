@@ -4,7 +4,7 @@
   "displayName": "NeatMark Editor",
   "icon": "icon.png",
   "description": "Neat & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {

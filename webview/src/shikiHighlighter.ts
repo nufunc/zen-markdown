@@ -39,6 +39,7 @@ export const supportedLanguages: Record<string, { name: string; aliases?: string
   ini: { name: 'INI', aliases: ['properties', 'conf'] },
   toml: { name: 'TOML', aliases: [] },
   markdown: { name: 'Markdown', aliases: ['md'] },
+  kql: { name: 'KQL', aliases: ['kusto'] },
 };
 
 // 사전 컴파일 문법 + JS raw 엔진: WASM이 필요 없어 webview CSP에서 안전하게 동작.
@@ -85,6 +86,7 @@ const createHighlighterInternal = () =>
       import('@shikijs/langs-precompiled/ini'),
       import('@shikijs/langs-precompiled/toml'),
       import('@shikijs/langs-precompiled/markdown'),
+      import('@shikijs/langs-precompiled/kql'),
     ],
     engine: createJavaScriptRawEngine(),
   });
