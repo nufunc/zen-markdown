@@ -357,8 +357,8 @@ function App() {
     if (/\\b(Get|Set|Invoke|New|Remove|Start|Stop|Out)-[A-Z][a-zA-Z]+\\b/.test(t) || /\\$(null|true|false|_)\\b/.test(t)) {
       return 'powershell';
     }
-    // 3. Bash/Shell (shebang, 널리 쓰이는 CLI 커맨드 - az cli 포함)
-    if (t.startsWith('#!/bin/') || /^\\s*(kubectl|az|helm|docker|ls|grep|awk|sed|cat|echo|export|curl)\\b/m.test(t)) {
+    // 3. Bash/Shell (shebang, 널리 쓰이는 CLI 커맨드 - az cli, npm, git 등 포함)
+    if (t.startsWith('#!/bin/') || /^\s*(sudo|systemctl|service|apt-get|dpkg|npm|npx|yarn|pnpm|git|node|python|pip|brew|apt|yum|kubectl|az|helm|docker|ls|grep|awk|sed|cat|echo|export|curl|cd|mkdir|rm|mv|cp)\b/m.test(t)) {
       return 'shellscript';
     }
     // 4. YAML (JSON이 아니면서 key: value 패턴이 2줄 이상이거나 --- 시작)
@@ -415,7 +415,7 @@ function App() {
         setParsedFrontmatter(frontmatter);
         try {
           if (frontmatter) setFmData(YAML.parse(frontmatter));
-        } catch(e) {
+        } catch {
           setFmData(null);
         }
         const normalizedContent = content.replace(/\r\n/g, '\n');
@@ -585,7 +585,7 @@ function App() {
             blockElement.scrollIntoView({ block: 'nearest', behavior: 'auto' });
           }
         }
-      } catch (err) {
+      } catch {
         // Ignored
       }
     }, 10);
@@ -621,13 +621,14 @@ function App() {
             lastSentTextRef.current = fullText;
             vscode.postMessage({ type: 'change', text: fullText });
           }
-        } catch (err) {
-          console.error("AutoFix on blur failed", err);
+        } catch {
+          console.error("AutoFix on blur failed");
         }
       }
     };
     window.addEventListener('blur', handleBlur);
     return () => window.removeEventListener('blur', handleBlur);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.autoFix, isRawMode, editor, parsedFrontmatter]);
 
   const handleFindNext = () => {
@@ -775,7 +776,7 @@ function App() {
           });
           // We DO NOT preventDefault() here because we still want the editor to handle the indentation
         }
-      } catch (err) {
+      } catch {
         // Ignored if no cursor position can be resolved
       }
       return;
@@ -793,7 +794,7 @@ function App() {
             props: { level: parseInt(e.key) as any }
           });
         }
-      } catch(err) {}
+      } catch {}
       return;
     }
     
@@ -805,7 +806,7 @@ function App() {
         if (cursor) {
           editor.updateBlock(cursor.block, { type: 'bulletListItem' });
         }
-      } catch(err) {}
+      } catch {}
       return;
     }
 
@@ -817,7 +818,7 @@ function App() {
         if (cursor) {
           editor.updateBlock(cursor.block, { type: 'numberedListItem' });
         }
-      } catch(err) {}
+      } catch {}
       return;
     }
 
@@ -829,7 +830,7 @@ function App() {
         if (cursor) {
           editor.updateBlock(cursor.block, { type: 'checkListItem' });
         }
-      } catch(err) {}
+      } catch {}
       return;
     }
 
@@ -841,7 +842,80 @@ function App() {
         if (cursor) {
           editor.updateBlock(cursor.block, { type: 'blockQuote' });
         }
-      } catch(err) {}
+      } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + C : Code Block
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.updateBlock(cursor.block, { type: 'codeBlock', props: { language: 'text' } });
+        }
+      } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + M : Divider (inserted as '---' paragraph)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'm') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor) {
+          editor.insertBlocks([{ type: 'paragraph', content: '---' }], cursor.block, 'after');
+        }
+      } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + K : Inline Code
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      e.stopPropagation();
+      try { editor.toggleStyles({ code: true }); } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + X (or S) : Strikethrough
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 's')) {
+      e.preventDefault();
+      e.stopPropagation();
+      try { editor.toggleStyles({ strike: true }); } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + Shift + H : Highlight
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const active = editor.getActiveStyles();
+        if (active.backgroundColor === 'yellow') {
+          editor.removeStyles({ backgroundColor: 'yellow' });
+        } else {
+          editor.addStyles({ backgroundColor: 'yellow' });
+        }
+      } catch {}
+      return;
+    }
+
+    // Cmd/Ctrl + D : Duplicate Block
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const cursor = editor.getTextCursorPosition();
+        if (cursor && cursor.block) {
+          const block = editor.getBlock(cursor.block);
+          if (block) {
+            editor.insertBlocks([{ type: block.type, props: block.props, content: block.content }], block, "after");
+          }
+        }
+      } catch {}
       return;
     }
   };
