@@ -8,10 +8,10 @@ const ALLOWED_CONFIG_KEYS = ['theme', 'fontSize', 'autoFix', 'autoRefresh', 'sho
 // openLink에서 외부로 여는 것을 허용하는 URL 스킴
 const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
 
-export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
+export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
-        const provider = new NeatMdEditorProvider(context);
-        return vscode.window.registerCustomEditorProvider('neatMdEditor.mdEditor', provider, {
+        const provider = new ZenMdEditorProvider(context);
+        return vscode.window.registerCustomEditorProvider('zenMarkdown.mdEditor', provider, {
             webviewOptions: {
                 enableFindWidget: true,
                 // WYSIWYG 에디터 특성상 탭 전환 시 커서/스크롤/편집 상태 보존이 중요
@@ -56,7 +56,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         function sendConfig() {
-            const config = vscode.workspace.getConfiguration('neatMdEditor');
+            const config = vscode.workspace.getConfiguration('zenMarkdown');
             let theme = config.get<string>('theme') || 'auto';
             if (theme === 'auto') {
                 const kind = vscode.window.activeColorTheme.kind;
@@ -105,7 +105,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                 pendingWebviewTexts.splice(0, echoIdx + 1);
                 return;
             }
-            const currentConfig = vscode.workspace.getConfiguration('neatMdEditor');
+            const currentConfig = vscode.workspace.getConfiguration('zenMarkdown');
             const autoRefresh = currentConfig.get<boolean>('autoRefresh') ?? true;
             if (autoRefresh) {
                 // 분할 뷰 타이핑 등 연속 외부 변경은 디바운스해서 웹뷰 재파싱 비용을 줄임
@@ -123,7 +123,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
         });
 
         const configSubscription = vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('neatMdEditor')) {
+            if (e.affectsConfiguration('zenMarkdown')) {
                 sendConfig();
             }
         });
@@ -219,7 +219,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                             }
                             const targetUri = vscode.Uri.file(targetPath);
                             if (targetPath.toLowerCase().endsWith('.md')) {
-                                await vscode.commands.executeCommand('vscode.openWith', targetUri, 'neatMdEditor.mdEditor');
+                                await vscode.commands.executeCommand('vscode.openWith', targetUri, 'zenMarkdown.mdEditor');
                             } else {
                                 await vscode.commands.executeCommand('vscode.open', targetUri);
                             }
@@ -253,7 +253,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                     if (typeof e.key !== 'string' || !ALLOWED_CONFIG_KEYS.includes(e.key)) {
                         return;
                     }
-                    const config = vscode.workspace.getConfiguration('neatMdEditor');
+                    const config = vscode.workspace.getConfiguration('zenMarkdown');
                     // 타겟을 지정하지 않으면 가장 우선순위가 높은(현재 적용중인) 설정 위치를 업데이트함
                     config.update(e.key, e.value).then(undefined, (err: any) => {
                         vscode.window.showWarningMessage(`Cannot save setting "${e.key}": ${err?.message || err}`);
@@ -317,7 +317,7 @@ export class NeatMdEditorProvider implements vscode.CustomTextEditorProvider {
                 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource} data:;">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${styleUri}" rel="stylesheet" />
-                <title>NeatMark Editor</title>
+                <title>Zen Markdown</title>
             </head>
             <body>
                 <div id="root"></div>
