@@ -8,6 +8,7 @@ import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
 import { CodeBlockMenu } from './CodeBlockMenu';
+import { useDebouncedCallback } from './hooks/useDebounceCallback';
 
 // 기본 코드 언어 설정(neatMdEditor.defaultCodeLanguage)을 반영하기 위해
 // 스키마는 모듈 상수가 아니라 에디터 생성 시점에 만든다
@@ -24,7 +25,30 @@ const buildSchema = (defaultCodeLanguage: string) => BlockNoteSchema.create({
   },
 });
 
+const insertDateItem = (editor: any) => ({
+  title: "Insert Date",
+  onItemClick: () => {
+    const now = new Date();
+    const dateString = now.toLocaleString();
+    editor.insertBlocks(
+      [
+        {
+          type: "paragraph",
+          content: dateString,
+        },
+      ],
+      editor.getTextCursorPosition().block,
+      "after"
+    );
+  },
+  aliases: ["date", "time", "now"],
+  group: "Utilities",
+  icon: <span style={{ fontSize: '16px' }}>📅</span>,
+  subtext: "Insert current date and time",
+});
+
 import { BlockNoteView } from '@blocknote/mantine';
+import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
 import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -69,7 +93,6 @@ function App() {
   const isInitializing = useRef(false);
   // 호스트로 마지막에 보낸 전체 텍스트 — external_update가 자기 편집의 반사인지 판별용
   const lastSentTextRef = useRef<string>("");
-  const changeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 에디터에 마지막으로 반영한 documentText — setEditor로 인한 이펙트 재실행 시 이중 파싱 방지
   const lastInitializedTextRef = useRef<string | null>(null);
   const docBaseUriRef = useRef<string>("");
@@ -79,6 +102,19 @@ function App() {
   const hasRestoredScroll = useRef(false);
   const cmViewRef = useRef<any>(null);
   const pendingHeadingRef = useRef<string | null>(null);
+  const pendingExternalUpdateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handleFocusOut = (e: FocusEvent) => {
+      const isEditorBlurred = !(e.relatedTarget as Element)?.closest('.bn-editor, .ProseMirror, .bn-container');
+      if (isEditorBlurred && pendingExternalUpdateRef.current !== null) {
+        setDocumentText(pendingExternalUpdateRef.current);
+        pendingExternalUpdateRef.current = null;
+      }
+    };
+    document.addEventListener('focusout', handleFocusOut);
+    return () => document.removeEventListener('focusout', handleFocusOut);
+  }, []);
 
   useEffect(() => {
     const handleTocMouseMove = (e: MouseEvent) => {
@@ -164,12 +200,20 @@ function App() {
           const incoming = message.text || "";
           // 호스트가 이미 내용 비교로 echo를 걸러 보내므로 여기 오는 것은 대부분 진짜 외부 변경.
           // 단, 적용 실패 재동기화 등으로 자기 편집이 되돌아온 경우는 무시.
-          if (incoming === lastSentTextRef.current) return;
-          // 진행 중인 로컬 debounce는 이전 문서 기준의 stale 상태이므로 취소하고 외부 내용 채택
-          if (changeDebounceRef.current) {
-            clearTimeout(changeDebounceRef.current);
-            changeDebounceRef.current = null;
+          const incomingNormalized = incoming.replace(/\r\n/g, '\n');
+          const lastSentNormalized = lastSentTextRef.current.replace(/\r\n/g, '\n');
+          if (incomingNormalized === lastSentNormalized) return;
+          
+          // 위지윅 에디터가 포커스를 가진 상태라면 외부 업데이트 보류
+          const isEditorFocused = document.activeElement?.closest('.bn-editor, .ProseMirror, .bn-container') !== null;
+          if (isEditorFocused && documentText !== "loading") {
+            pendingExternalUpdateRef.current = incoming;
+            return;
           }
+
+          // 진행 중인 로컬 debounce는 이전 문서 기준의 stale 상태이므로 취소하고 외부 내용 채택
+          debouncedWysiwygSerialize.cancel();
+          postChange.cancel();
           setDocumentText(incoming);
           break;
         }
@@ -507,14 +551,23 @@ function App() {
   };
 
   // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
-  const postChange = (text: string) => {
-    if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
-    changeDebounceRef.current = setTimeout(() => {
-      changeDebounceRef.current = null;
-      lastSentTextRef.current = text;
-      vscode.postMessage({ type: 'change', text });
-    }, 300);
-  };
+  const postChange = useDebouncedCallback((text: string) => {
+    lastSentTextRef.current = text;
+    vscode.postMessage({ type: 'change', text });
+  }, 300);
+
+  const debouncedWysiwygSerialize = useDebouncedCallback(async () => {
+    if (!editor) return;
+    extractHeadings(editor);
+    try {
+      const markdown = await generateMarkdownFromEditor(true);
+      const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
+      lastSentTextRef.current = fullText;
+      vscode.postMessage({ type: 'change', text: fullText });
+    } catch (err) {
+      console.error('Failed to serialize document', err);
+    }
+  }, 600);
 
   const saveToHost = (fmString: string, mdString: string) => {
     const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
@@ -560,20 +613,7 @@ function App() {
     if (!editor || isInitializing.current) return;
     hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
-    // 직렬화(blocksToMarkdownLossy + 후처리)를 디바운스 안쪽에서 실행
-    if (changeDebounceRef.current) clearTimeout(changeDebounceRef.current);
-    changeDebounceRef.current = setTimeout(async () => {
-      changeDebounceRef.current = null;
-      extractHeadings(editor);
-      try {
-        const markdown = await generateMarkdownFromEditor(true);
-        const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
-        lastSentTextRef.current = fullText;
-        vscode.postMessage({ type: 'change', text: fullText });
-      } catch (err) {
-        console.error('Failed to serialize document', err);
-      }
-    }, 600);
+    debouncedWysiwygSerialize();
 
     // Scroll cursor into view when editing (especially on line breaks)
     setTimeout(() => {
@@ -766,15 +806,72 @@ function App() {
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
-    if (e.key === 'Tab' && !e.shiftKey) {
+    if (e.key === 'Tab') {
       try {
+        const selection = editor.getSelection();
         const cursor = editor.getTextCursorPosition();
-        if (cursor && cursor.block.type === 'numberedListItem') {
-          // Change the block type to bulletListItem right before the editor handles the Tab key for indentation
-          editor.updateBlock(cursor.block, {
-            type: 'bulletListItem',
-          });
-          // We DO NOT preventDefault() here because we still want the editor to handle the indentation
+        
+        let blocksToProcess: any[] = [];
+        if (selection && selection.blocks && selection.blocks.length > 0) {
+          blocksToProcess = selection.blocks;
+        } else if (cursor && cursor.block) {
+          blocksToProcess = [cursor.block];
+        }
+
+        if (blocksToProcess.length > 0) {
+          if (!e.shiftKey) {
+            // Tab (Indent)
+            let preventDefault = false;
+            for (const block of blocksToProcess) {
+              if (block.type === 'numberedListItem') {
+                editor.updateBlock(block, { type: 'bulletListItem' });
+              } else if (block.type === 'paragraph' && (block.content?.length === 0 || (cursor && typeof cursor.prevCharacter === 'undefined'))) {
+                // If it's an empty paragraph, Tab changes it to a bullet list instead of inserting spaces.
+                editor.updateBlock(block, { type: 'bulletListItem' });
+                preventDefault = true;
+              }
+            }
+            if (preventDefault) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          } else {
+            // Shift-Tab (Outdent)
+            let preventDefault = false;
+            for (const block of blocksToProcess) {
+              if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
+                // Recursive function to find the parent block
+                const findParent = (blocks: any[], id: string, parent: any = null): any => {
+                  for (const b of blocks) {
+                    if (b.id === id) return parent;
+                    if (b.children && b.children.length > 0) {
+                      const p = findParent(b.children, id, b);
+                      if (p) return p;
+                    }
+                  }
+                  return null;
+                };
+                const parentBlock = findParent(editor.document, block.id);
+                if (parentBlock) {
+                  const grandParentBlock = findParent(editor.document, parentBlock.id);
+                  const targetType = grandParentBlock ? grandParentBlock.type : parentBlock.type;
+                  if (targetType === 'numberedListItem' || targetType === 'bulletListItem') {
+                    editor.updateBlock(block, { type: targetType });
+                  }
+                } else {
+                  // At root level. Shift-Tab should convert to paragraph.
+                  editor.updateBlock(block, { type: 'paragraph' });
+                  preventDefault = true;
+                }
+              }
+            }
+            if (preventDefault) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
         }
       } catch {
         // Ignored if no cursor position can be resolved
@@ -1411,48 +1508,41 @@ function App() {
                   onChange={handleFmChange}
                 />
               ) : null}
-              {editor && <div onKeyDown={(e) => {
-                if (e.key === 'Tab' && !e.shiftKey) {
-                  const cursor = editor.getTextCursorPosition();
-                  if (cursor && cursor.block) {
-                    const block = cursor.block;
-                    
-                    // If it's a paragraph, Tab changes it to a bullet list instead of inserting spaces.
-                    if (block.type === 'paragraph' && (block.content.length === 0 || typeof cursor.prevCharacter === 'undefined')) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      editor.updateBlock(block, { type: 'bulletListItem' });
-                      return;
-                    }
-                    
-                    // Otherwise, it's a list item (or other block). Let BlockNote handle the Tab (which usually indents it).
-                    // After indenting, check the parent. If the parent is a numbered list, change this block to a bullet list.
-                    setTimeout(() => {
-                      const newCursor = editor.getTextCursorPosition();
-                      if (newCursor && newCursor.block && newCursor.block.type === 'numberedListItem') {
-                        const targetId = newCursor.block.id;
-                        
-                        // Recursive function to find the parent block
-                        const findParent = (blocks: any[], id: string, parent: any = null): any => {
-                          for (const b of blocks) {
-                            if (b.id === id) return parent;
-                            if (b.children && b.children.length > 0) {
-                              const p = findParent(b.children, id, b);
-                              if (p) return p;
-                            }
-                          }
-                          return null;
-                        };
-                        
-                        const parentBlock = findParent(editor.document, targetId);
-                        if (parentBlock && parentBlock.type === 'numberedListItem') {
-                           editor.updateBlock(newCursor.block, { type: 'bulletListItem' });
+              {editor && <div onCopy={async (e) => {
+                const selection = editor.getSelection();
+                if (selection && selection.blocks && selection.blocks.length > 0) {
+                  e.preventDefault();
+                  try {
+                    let markdown = await editor.blocksToMarkdownLossy(selection.blocks as any);
+                    const enforceHyphens = (md: string) => {
+                      const lines = md.split('\n');
+                      let inCodeBlock = false;
+                      for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].trim().startsWith('```')) {
+                          inCodeBlock = !inCodeBlock;
+                        } else if (!inCodeBlock) {
+                          lines[i] = lines[i].replace(/^(\s*)[*+]\s/, '$1- ');
                         }
                       }
-                    }, 50);
+                      return lines.join('\n');
+                    };
+                    markdown = enforceHyphens(markdown);
+                    e.clipboardData.setData('text/plain', markdown);
+                  } catch (err) {
+                    console.error("Failed to copy markdown", err);
                   }
                 }
-              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} /></div>}
+              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} slashMenu={false}>
+                <SuggestionMenuController
+                  triggerCharacter={"/"}
+                  getItems={async (query) => {
+                    const defaultItems = getDefaultReactSlashMenuItems(editor);
+                    const customItem = insertDateItem(editor);
+                    const allItems = [...defaultItems, customItem];
+                    return allItems.filter(item => item.title.toLowerCase().includes(query.toLowerCase()) || (item.aliases && item.aliases.some((a: string) => a.toLowerCase().includes(query.toLowerCase()))));
+                  }}
+                />
+              </BlockNoteView></div>}
             </div>
           </div>
         )}
