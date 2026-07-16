@@ -632,16 +632,21 @@ function App() {
   };
 
   const handleFmChange = async (key: string, value: any) => {
-    if (!fmData || !editor) return;
-    const newData = { ...fmData, [key]: value };
+    if (!editor) return;
+    const currentData = fmData || {};
+    const newData = { ...currentData, [key]: value };
     setFmData(newData);
     // Document API로 해당 키만 수정해 주석·빈 줄·인용 스타일을 보존
     // (전체 재직렬화는 frontmatter의 주석을 모두 날림)
     let newFmString: string;
     try {
-      const doc = YAML.parseDocument(parsedFrontmatter);
-      doc.set(key, value);
-      newFmString = doc.toString().trim();
+      if (parsedFrontmatter) {
+        const doc = YAML.parseDocument(parsedFrontmatter);
+        doc.set(key, value);
+        newFmString = doc.toString().trim();
+      } else {
+        newFmString = YAML.stringify(newData).trim();
+      }
     } catch {
       newFmString = YAML.stringify(newData).trim();
     }
@@ -1496,10 +1501,10 @@ function App() {
             }}
           >
             <div style={{ padding: '16px 32px' }}>
-              {parsedFrontmatter && showProperties ? (
+              {(parsedFrontmatter || showProperties) ? (
                 <FrontmatterPanel
                   parsedFrontmatter={parsedFrontmatter}
-                  fmData={fmData}
+                  fmData={fmData || { title: '', date: '', tags: [] }}
                   collapsed={fmCollapsed}
                   onToggleCollapsed={() => setFmCollapsed(!fmCollapsed)}
                   isDark={isDark}
