@@ -678,25 +678,39 @@ function App() {
 
   const handleFindNext = () => {
     if (!searchQuery) return;
+    const searchInput = document.getElementById('search-input') as HTMLInputElement;
+    const replaceInput = document.getElementById('replace-input') as HTMLInputElement;
+    let sVal = "", rVal = "";
+    if (searchInput) { sVal = searchInput.value; searchInput.value = ""; }
+    if (replaceInput) { rVal = replaceInput.value; replaceInput.value = ""; }
+    
     // @ts-ignore
     window.find(searchQuery, false, false, true, false, false, false);
+    
+    if (searchInput) searchInput.value = sVal;
+    if (replaceInput) replaceInput.value = rVal;
   };
 
   const handleFindPrev = () => {
     if (!searchQuery) return;
+    const searchInput = document.getElementById('search-input') as HTMLInputElement;
+    const replaceInput = document.getElementById('replace-input') as HTMLInputElement;
+    let sVal = "", rVal = "";
+    if (searchInput) { sVal = searchInput.value; searchInput.value = ""; }
+    if (replaceInput) { rVal = replaceInput.value; replaceInput.value = ""; }
+    
     // @ts-ignore
     window.find(searchQuery, false, true, true, false, false, false);
+    
+    if (searchInput) searchInput.value = sVal;
+    if (replaceInput) replaceInput.value = rVal;
   };
 
   const handleReplace = () => {
     if (!editor || !searchQuery) return;
     const selection = window.getSelection();
     if (selection && selection.toString().toLowerCase() === searchQuery.toLowerCase()) {
-      // @ts-ignore
-      if (editor._tiptapEditor) {
-        // @ts-ignore
-        editor._tiptapEditor.commands.insertContent(replaceQuery);
-      }
+      document.execCommand("insertText", false, replaceQuery);
       handleFindNext();
     } else {
       handleFindNext();
@@ -743,18 +757,20 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+F는 VS Code 네이티브 find 위젯(enableFindWidget)에 양보하고,
-      // 자체 Replace 위젯은 Ctrl+H로 연다
-      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
-        e.preventDefault();
-        setShowSearchReplace(prev => !prev);
+      // 자체 Search/Replace 위젯을 Ctrl+F와 Ctrl+H 모두에 연동한다 (WYSIWYG 모드에서)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'f')) {
+        if (!isRawMode) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowSearchReplace(true);
+        }
       } else if (e.key === 'Escape' && showSearchReplace) {
         setShowSearchReplace(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSearchReplace]);
+  }, [showSearchReplace, isRawMode]);
 
   useEffect(() => {
     const handleWindowScroll = () => {
@@ -1086,6 +1102,7 @@ function App() {
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             <Search size={14} style={{ opacity: 0.7, margin: '0 4px' }} />
             <input 
+              id="search-input"
               placeholder="Find..." 
               value={searchQuery} 
               onChange={e => setSearchQuery(e.target.value)} 
@@ -1093,20 +1110,22 @@ function App() {
               onKeyDown={e => e.key === 'Enter' && handleFindNext()} 
               autoFocus
             />
-            <button onClick={handleFindPrev} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronUp size={14}/></button>
-            <button onClick={handleFindNext} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronDown size={14}/></button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleFindPrev} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronUp size={14}/></button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleFindNext} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronDown size={14}/></button>
             <button onClick={() => setShowSearchReplace(false)} style={{ background: 'transparent', color: textColor, border: 'none', padding: '2px', cursor: 'pointer', marginLeft: '4px', opacity: 0.7 }}><X size={14}/></button>
           </div>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             <div style={{ width: '22px' }} />
             <input 
+              id="replace-input"
               placeholder="Replace..." 
               value={replaceQuery} 
               onChange={e => setReplaceQuery(e.target.value)} 
               style={{ padding: '4px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '150px', outline: 'none' }} 
+              onKeyDown={e => e.key === 'Enter' && handleReplace()}
             />
-            <button onClick={handleReplace} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace</button>
-            <button onClick={handleReplaceAll} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace All</button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleReplace} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace</button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleReplaceAll} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace All</button>
           </div>
         </div>
       )}
