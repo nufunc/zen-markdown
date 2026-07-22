@@ -1222,58 +1222,56 @@ function App() {
                   WYSIWYG
                 </button>
               </div>
-              <button
-                onClick={() => {
-                  if (!isRawMode) {
-                    setIsRawMode(true);
-                  }
-                  if (!isDiffMode && originalText === null) {
-                    vscode.postMessage({ type: 'getOriginalContent' });
-                  }
-                  setIsDiffMode(!isDiffMode);
-                }}
-                className={`tb-btn ${isDiffMode && isRawMode ? 'tb-btn-active' : ''}`}
-                data-tooltip="Toggle Git Diff View"
-              >
-                <GitCompare size={13} style={{ marginRight: '3px' }} />
-                Diff
-              </button>
+              {isRawMode ? (
+                <button
+                  onClick={() => {
+                    if (!isDiffMode && originalText === null) {
+                      vscode.postMessage({ type: 'getOriginalContent' });
+                    }
+                    setIsDiffMode(!isDiffMode);
+                  }}
+                  className={`tb-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
+                  data-tooltip="Toggle Git Diff View"
+                >
+                  <GitCompare size={13} style={{ marginRight: '3px' }} />
+                  Diff
+                </button>
+              ) : (
+                <button 
+                  onClick={() => updateConfig('showToc', !showToc)} 
+                  className={`tb-btn ${showToc ? 'tb-btn-active' : ''}`}
+                  style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
+                  data-tooltip="Toggle Table of Contents"
+                  data-tooltip-pos="right"
+                >
+                  <List size={13} style={{ marginRight: '3px' }} />
+                  <span>TOC</span>
+                </button>
+              )}
             </>
           )}
           <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
+          <button
+            onClick={() => {
+              const html = document.querySelector('.bn-editor')?.innerHTML || '';
+              vscode.postMessage({ type: 'exportPdf', html });
+            }}
+            className="tb-btn"
+            data-tooltip="Export Document as PDF"
+            data-tooltip-pos="right"
+          >
+            <Printer size={13} style={{ marginRight: '3px' }} />
+            <span>PDF</span>
+          </button>
           {parsedFrontmatter && (
-            <>
-              <button 
-                onClick={() => updateConfig('showToc', !showToc)} 
-                className={`tb-btn ${showToc ? 'tb-btn-active' : ''}`}
-                style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
-                data-tooltip="Toggle Table of Contents"
-                data-tooltip-pos="right"
-              >
-                <List size={13} style={{ marginRight: '3px' }} />
-                <span>TOC</span>
-              </button>
-              <button
-                onClick={() => {
-                  const html = document.querySelector('.bn-editor')?.innerHTML || '';
-                  vscode.postMessage({ type: 'exportPdf', html });
-                }}
-                className="tb-btn"
-                data-tooltip="Export Document as PDF"
-                data-tooltip-pos="right"
-              >
-                <Printer size={13} style={{ marginRight: '3px' }} />
-                <span>PDF</span>
-              </button>
-              <button 
-                onClick={() => updateConfig('showProperties', !showProperties)} 
-                className={`tb-btn ${showProperties ? 'tb-btn-active' : ''}`}
-                data-tooltip="Toggle Properties"
-                data-tooltip-pos="right"
-              >
-                <Info size={14} />
-              </button>
-            </>
+            <button 
+              onClick={() => updateConfig('showProperties', !showProperties)} 
+              className={`tb-btn ${showProperties ? 'tb-btn-active' : ''}`}
+              data-tooltip="Toggle Properties"
+              data-tooltip-pos="right"
+            >
+              <Info size={14} />
+            </button>
           )}
           <button 
             onClick={() => vscode.postMessage({ type: 'refresh' })}
