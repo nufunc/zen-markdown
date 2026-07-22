@@ -134,6 +134,20 @@ export const THEMES: Record<string, ThemePalette> = {
     inputBg: 'rgba(0,0,0,0.04)',
     accentColor: '#0052cc',
   },
+  orca: {
+    isDark: true,
+    bgColor: '#000000',
+    textColor: '#e2e8f0',
+    headerBg: '#09090b',
+    codeColor: '#e2e8f0',
+    codeTextColor: '#34d399',
+    blockNoteTheme: 'dark',
+    cmTheme: cmThemes.vscodeDark,
+    dropdownBg: '#09090b',
+    dropdownBorder: '#27272a',
+    inputBg: 'rgba(255,255,255,0.03)',
+    accentColor: '#10b981',
+  },
 };
 
 export function resolveTheme(name: string): ThemePalette {

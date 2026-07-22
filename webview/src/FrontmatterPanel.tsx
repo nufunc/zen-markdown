@@ -1,4 +1,4 @@
-import { X, ChevronDown, ChevronRight, List, Calendar, Hash, Type, CheckSquare } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, List, Calendar, Hash, Type, CheckSquare, AlertCircle } from 'lucide-react';
 
 // Frontmatter Properties: 태그 칩 파스텔 팔레트 — 문자열 해시로 색을 고정 배정 (Obsidian/Notion 감성)
 const TAG_COLORS_LIGHT = [
@@ -55,18 +55,39 @@ export function FrontmatterPanel({
   accentColor,
   onChange,
 }: FrontmatterPanelProps) {
+  const isTitleMissing = !fmData || !fmData.title;
+
   const fmHeader = (count?: number) => (
     <div
-      onClick={onToggleCollapsed}
       style={{
-        display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', userSelect: 'none',
-        fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
-        opacity: 0.55, marginBottom: collapsed ? 0 : '6px'
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: collapsed ? 0 : '6px'
       }}
     >
-      {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-      <span>Properties</span>
-      {typeof count === 'number' && <span style={{ fontWeight: 400, opacity: 0.8 }}>{count}</span>}
+      <div
+        onClick={onToggleCollapsed}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', userSelect: 'none',
+          fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
+          opacity: 0.55
+        }}
+      >
+        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        <span>Properties</span>
+        {typeof count === 'number' && <span style={{ fontWeight: 400, opacity: 0.8 }}>{count}</span>}
+      </div>
+      {isTitleMissing && (
+        <span 
+          style={{ 
+            display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', 
+            color: '#f59e0b', opacity: 0.85, fontWeight: 500
+          }}
+          data-tooltip="Title property is recommended for manual publishing"
+        >
+          <AlertCircle size={11} />
+          Title Missing
+        </span>
+      )}
     </div>
   );
 

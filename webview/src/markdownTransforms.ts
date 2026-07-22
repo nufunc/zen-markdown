@@ -202,3 +202,37 @@ export function extractFrontmatter(text: string): { frontmatter: string, content
   }
   return { frontmatter: "", content: text };
 }
+
+// GFM GitHub Alert 구문 패턴 (> [!NOTE], > [!TIP], > [!IMPORTANT], > [!WARNING], > [!CAUTION])
+export const GITHUB_ALERT_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
+
+// 상대경로 이미지 링크 유효성 감지 함수 (배포용 매뉴얼 링크 상태 체크)
+export function detectBrokenImageLinks(md: string): { alt: string; url: string; line: number }[] {
+  const broken: { alt: string; url: string; line: number }[] = [];
+  const lines = md.split('\n');
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().startsWith('```') || line.trim().startsWith('~~~')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    const matches = line.matchAll(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g);
+    for (const match of matches) {
+      const alt = match[1];
+      const url = match[2];
+      // 프로토콜이 없는 로컬 상대 경로 중 잘못된 확장자나 빈 경로 체크
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !url.startsWith('//') && !url.startsWith('data:')) {
+        if (!url || url.endsWith('/') || !/\.(png|jpe?g|gif|svg|webp|bmp)$/i.test(url)) {
+          broken.push({ alt, url, line: i + 1 });
+        }
+      }
+    }
+  }
+
+  return broken;
+}
+

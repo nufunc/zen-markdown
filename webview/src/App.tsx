@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks } from './markdownTransforms';
 import { formatCodeBlock } from './codeFormatter';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
@@ -49,7 +49,7 @@ const insertDateItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -61,6 +61,11 @@ import { EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 
 const { Original, Modified } = CodeMirrorMerge;
+
+const isEditorElement = (el: Element | null): boolean => {
+  if (!el) return false;
+  return !!el.closest('.bn-editor, .ProseMirror, .bn-container, .mantine-Menu-dropdown, .mantine-Popover-dropdown, .mantine-Select-dropdown, [role="menu"], [role="dialog"]');
+};
 
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
@@ -106,7 +111,7 @@ function App() {
 
   useEffect(() => {
     const handleFocusOut = (e: FocusEvent) => {
-      const isEditorBlurred = !(e.relatedTarget as Element)?.closest('.bn-editor, .ProseMirror, .bn-container');
+      const isEditorBlurred = !isEditorElement(e.relatedTarget as Element);
       if (isEditorBlurred && pendingExternalUpdateRef.current !== null) {
         setDocumentText(pendingExternalUpdateRef.current);
         pendingExternalUpdateRef.current = null;
@@ -204,9 +209,10 @@ function App() {
           const lastSentNormalized = lastSentTextRef.current.replace(/\r\n/g, '\n');
           if (incomingNormalized === lastSentNormalized) return;
           
-          // 위지윅 에디터가 포커스를 가진 상태라면 외부 업데이트 보류
-          const isEditorFocused = document.activeElement?.closest('.bn-editor, .ProseMirror, .bn-container') !== null;
-          if (isEditorFocused && documentText !== "loading") {
+          // 위지윅 에디터 포커스 여부와 최근 로컬 편집 여부 검사
+          const isEditorFocused = isEditorElement(document.activeElement);
+          const isRecentlyEdited = (Date.now() - lastEditTimeRef.current) < 2000;
+          if ((isEditorFocused || isRecentlyEdited) && documentText !== "loading") {
             pendingExternalUpdateRef.current = incoming;
             return;
           }
@@ -1313,6 +1319,23 @@ function App() {
           >
             <RefreshCw size={16} />
           </button>
+          <button 
+            onClick={() => {
+              if (typeof documentText === 'string') {
+                const broken = detectBrokenImageLinks(documentText);
+                if (broken.length === 0) {
+                  vscode.postMessage({ type: 'notify', message: '배포 매뉴얼 검사 완료: 모든 미디어 상대 경로가 정상이거나 유효합니다.' });
+                } else {
+                  vscode.postMessage({ type: 'notify', message: `배포 매뉴얼 경고: ${broken.length}개의 미디어 경로를 확인해 주세요. (Line ${broken[0].line}: ${broken[0].url})` });
+                }
+              }
+            }}
+            style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+            data-tooltip="Check Manual Links & Media"
+            data-tooltip-pos="right"
+          >
+            <AlertTriangle size={16} />
+          </button>
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -1367,6 +1390,7 @@ function App() {
                   <option value="vintage">Vintage</option>
                   <option value="gruvbox-dark">Gruvbox Dark</option>
                   <option value="tokyo-night-day">Tokyo Night Day</option>
+                  <option value="orca">Orca</option>
                 </select>
               </div>
 
@@ -1520,7 +1544,7 @@ function App() {
             }}
           >
             <div style={{ padding: '16px 32px' }}>
-              {(parsedFrontmatter || showProperties) ? (
+              {showProperties ? (
                 <FrontmatterPanel
                   parsedFrontmatter={parsedFrontmatter}
                   fmData={fmData || { title: '', date: '', tags: [] }}

@@ -4,7 +4,7 @@
   "displayName": "Zen Markdown",
   "icon": "icon.png",
   "description": "Minimalist & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {
@@ -92,7 +92,8 @@
             "solarized-dark",
             "vintage",
             "gruvbox-dark",
-            "tokyo-night-day"
+            "tokyo-night-day",
+            "orca"
           ],
           "enumDescriptions": [
             "Match VS Code theme",
@@ -103,7 +104,8 @@
             "Solarized Dark",
             "Vintage",
             "Gruvbox Dark (Warm retro dark)",
-            "Tokyo Night Day (Cool pastel light)"
+            "Tokyo Night Day (Cool pastel light)",
+            "Orca (Deep Black & Emerald)"
           ],
           "default": "auto",
           "description": "Select the theme for Zen Markdown. 'auto' follows the VS Code theme."

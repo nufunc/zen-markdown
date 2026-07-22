@@ -13,7 +13,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
         const provider = new ZenMdEditorProvider(context);
         return vscode.window.registerCustomEditorProvider('zenMarkdown.mdEditor', provider, {
             webviewOptions: {
-                enableFindWidget: true,
+                enableFindWidget: false,
                 // WYSIWYG 에디터 특성상 탭 전환 시 커서/스크롤/편집 상태 보존이 중요
                 retainContextWhenHidden: true
             }
