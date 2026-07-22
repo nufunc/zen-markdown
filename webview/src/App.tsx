@@ -49,7 +49,7 @@ const insertDateItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -1223,7 +1223,16 @@ function App() {
                 data-tooltip-pos="right"
               >
                 <List size={13} style={{ marginRight: '3px' }} />
-                <span>목차</span>
+                <span>TOC</span>
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="tb-btn"
+                data-tooltip="Export Document as PDF"
+                data-tooltip-pos="right"
+              >
+                <Printer size={13} style={{ marginRight: '3px' }} />
+                <span>PDF</span>
               </button>
               <button 
                 onClick={() => updateConfig('showProperties', !showProperties)} 
@@ -1472,16 +1481,6 @@ function App() {
           }} className="tb-btn" data-tooltip="Insert Image">
             <ImageIcon size={13} />
           </button>
-          <button
-            onClick={() => {
-              window.print();
-            }}
-            className="pdf-export-btn"
-            style={{ marginLeft: 'auto' }}
-            data-tooltip="Export Document as PDF"
-          >
-            <span>PDF로 내보내기</span>
-          </button>
         </div>
       )}
       
@@ -1515,7 +1514,7 @@ function App() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '12px', opacity: 0.85 }}>
                 <List size={14} />
-                <span>목차</span>
+                <span>TOC</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                 {[1, 2, 3, 4, 5].map(lvl => (
