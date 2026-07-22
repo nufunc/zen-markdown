@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFile } from 'child_process';
+import * as os from 'os';
+import { exec, execFile } from 'child_process';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = ['theme', 'fontSize', 'autoFix', 'autoRefresh', 'showToc', 'showProperties', 'defaultCodeLanguage'];
@@ -282,12 +283,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'exportPdf': {
                     (async () => {
                         try {
-                            if (document.uri.scheme !== 'file') {
-                                vscode.window.showWarningMessage('PDF export is available for saved files on disk.');
-                                return;
-                            }
-                            const docName = path.basename(document.uri.fsPath, '.md');
-                            const tmpHtmlPath = path.join(path.dirname(document.uri.fsPath), `.${docName}_preview.html`);
+                            const docName = document.uri.scheme === 'file' ? path.basename(document.uri.fsPath, '.md') : 'document';
+                            const tmpDir = os.tmpdir();
+                            const tmpHtmlPath = path.join(tmpDir, `zen_md_pdf_${Date.now()}_${docName}.html`);
                             const bodyHtml = String(e.html || '');
                             const fullHtml = `<!DOCTYPE html>
 <html>
@@ -312,10 +310,28 @@ window.onload = function() { window.print(); };
 </body>
 </html>`;
                             await vscode.workspace.fs.writeFile(vscode.Uri.file(tmpHtmlPath), Buffer.from(fullHtml, 'utf8'));
-                            await vscode.env.openExternal(vscode.Uri.file(tmpHtmlPath));
+                            
+                            const platform = process.platform;
+                            let openCmd = '';
+                            if (platform === 'win32') {
+                                openCmd = `start "" "${tmpHtmlPath}"`;
+                            } else if (platform === 'darwin') {
+                                openCmd = `open "${tmpHtmlPath}"`;
+                            } else {
+                                openCmd = `xdg-open "${tmpHtmlPath}"`;
+                            }
+
+                            exec(openCmd, (err) => {
+                                if (err) {
+                                    vscode.env.openExternal(vscode.Uri.file(tmpHtmlPath)).then(undefined, (openErr) => {
+                                        vscode.window.showWarningMessage(`PDF Export Error: ${openErr?.message || openErr}`);
+                                    });
+                                }
+                            });
+
                             setTimeout(async () => {
                                 try { await vscode.workspace.fs.delete(vscode.Uri.file(tmpHtmlPath)); } catch {}
-                            }, 60000);
+                            }, 120000);
                         } catch (err: any) {
                             vscode.window.showWarningMessage(`PDF Export Error: ${err?.message || err}`);
                         }
