@@ -67,6 +67,22 @@ const isEditorElement = (el: Element | null): boolean => {
   return !!el.closest('.bn-editor, .ProseMirror, .bn-container, .mantine-Menu-dropdown, .mantine-Popover-dropdown, .mantine-Select-dropdown, [role="menu"], [role="dialog"]');
 };
 
+function formatDocPath(rawUri: string): string {
+  if (!rawUri) return 'document.md';
+  try {
+    let decoded = decodeURIComponent(rawUri);
+    decoded = decoded.replace(/^https?:\/\/[^/]+\//i, '');
+    decoded = decoded.replace(/^file:\/\/\//i, '');
+    decoded = decoded.replace(/^file:\/\//i, '');
+    if (/^[a-z]:/i.test(decoded)) {
+      decoded = decoded.charAt(0).toUpperCase() + decoded.slice(1);
+    }
+    return decoded;
+  } catch {
+    return rawUri;
+  }
+}
+
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
   const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false, defaultCodeLanguage: 'text' });
@@ -1107,11 +1123,24 @@ function App() {
 
       {/* Top Action Header Bar */}
       <div style={{ padding: '6px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: '12px', opacity: 0.75, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>
-          {docBaseUriRef.current ? docBaseUriRef.current.replace(/^file:\/\/\//, '') : 'document.md'}
+        <div 
+          style={{ 
+            fontSize: '12px', 
+            opacity: 0.85, 
+            fontFamily: 'monospace', 
+            overflow: 'hidden', 
+            textOverflow: 'ellipsis', 
+            whiteSpace: 'nowrap', 
+            maxWidth: '65%',
+            flex: 1,
+            marginRight: '12px'
+          }}
+          title={formatDocPath(docBaseUriRef.current)}
+        >
+          {formatDocPath(docBaseUriRef.current)}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <button
             onClick={() => vscode.postMessage({ type: 'openBuiltIn' })}
             className="tb-btn"
@@ -1165,21 +1194,22 @@ function App() {
                   WYSIWYG
                 </button>
               </div>
-              {isRawMode && (
-                <button
-                  onClick={() => {
-                    if (!isDiffMode && originalText === null) {
-                      vscode.postMessage({ type: 'getOriginalContent' });
-                    }
-                    setIsDiffMode(!isDiffMode);
-                  }}
-                  className={`tb-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
-                  data-tooltip="Toggle Git Diff View"
-                >
-                  <GitCompare size={13} style={{ marginRight: '3px' }} />
-                  Diff
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (!isRawMode) {
+                    setIsRawMode(true);
+                  }
+                  if (!isDiffMode && originalText === null) {
+                    vscode.postMessage({ type: 'getOriginalContent' });
+                  }
+                  setIsDiffMode(!isDiffMode);
+                }}
+                className={`tb-btn ${isDiffMode && isRawMode ? 'tb-btn-active' : ''}`}
+                data-tooltip="Toggle Git Diff View"
+              >
+                <GitCompare size={13} style={{ marginRight: '3px' }} />
+                Diff
+              </button>
             </>
           )}
           <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
