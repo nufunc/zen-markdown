@@ -473,5 +473,32 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             opacity: 0.9;
             background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
           }
+
+          /* Rich Formatting Toolbar Buttons (Orca Style) */
+          .tb-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 7px;
+            border-radius: 4px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: color-mix(in srgb, var(--text-color) 75%, transparent);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            user-select: none;
+            transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+          }
+          .tb-btn:hover {
+            background: color-mix(in srgb, var(--text-color) 8%, transparent);
+            color: var(--text-color);
+            border-color: color-mix(in srgb, var(--text-color) 15%, transparent);
+          }
+          .tb-btn-active {
+            background: color-mix(in srgb, var(--accent-color) 15%, transparent) !important;
+            color: var(--accent-color) !important;
+            border-color: color-mix(in srgb, var(--accent-color) 30%, transparent) !important;
+          }
   `;
 }

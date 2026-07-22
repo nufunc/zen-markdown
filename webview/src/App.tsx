@@ -49,7 +49,7 @@ const insertDateItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -1200,124 +1200,111 @@ function App() {
         </div>
       )}
 
-      <div style={{ padding: '4px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-        {/* Built-in은 읽기 전용(비교 모드 왼쪽 창 등)에서도 유용하므로 항상 표시 */}
-        <button
-          onClick={() => vscode.postMessage({ type: 'openBuiltIn' })}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '2px 8px',
-            cursor: 'pointer',
-            border: `1px solid ${dropdownBorder}`,
-            borderRadius: '4px',
-            background: 'transparent',
-            color: textColor,
-            fontSize: '12px',
-            opacity: 0.7
-          }}
-          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
-          data-tooltip="Open in VS Code built-in editor"
-          data-tooltip-pos="left"
-        >
-          <ExternalLink size={12} />
-          Built-in
-        </button>
-        {!config.isReadOnly && (
-          <>
-            {/* 확장을 벗어나는 동작이므로 모드 토글과 구분선으로 분리 */}
-            <div style={{ width: '1px', height: '16px', background: dropdownBorder }} />
-            <div style={{ display: 'flex', borderRadius: '4px', overflow: 'hidden', border: `1px solid ${dropdownBorder}` }}>
-              <button
-                onClick={() => { if (!isRawMode) toggleMode(); }}
-                style={{ 
-                  padding: '2px 10px', 
-                  cursor: 'pointer', 
-                  border: 'none', 
-                  borderRight: `1px solid ${dropdownBorder}`,
-                  background: isRawMode ? textColor : 'transparent', 
-                  color: isRawMode ? bgColor : textColor,
-                  fontWeight: isRawMode ? 'bold' : 'normal',
-                  fontSize: '12px'
-                }}
-              >
-                Markdown
-              </button>
-              <button 
-                onClick={() => { if (isRawMode) toggleMode(); }} 
-                style={{ 
-                  padding: '2px 10px', 
-                  cursor: 'pointer', 
-                  border: 'none', 
-                  background: !isRawMode ? textColor : 'transparent', 
-                  color: !isRawMode ? bgColor : textColor,
-                  fontWeight: !isRawMode ? 'bold' : 'normal',
-                  fontSize: '12px'
-                }}
-              >
-                WYSIWYG
-              </button>
-            </div>
-            {isRawMode && (
-              <button
-                onClick={() => {
-                  if (!isDiffMode && originalText === null) {
-                    vscode.postMessage({ type: 'getOriginalContent' });
-                  }
-                  setIsDiffMode(!isDiffMode);
-                }}
-                style={{
-                  background: isDiffMode ? 'rgba(0, 150, 0, 0.2)' : 'transparent',
-                  border: `1px solid ${dropdownBorder}`,
-                  borderRadius: '4px',
-                  color: textColor,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '2px 6px',
-                  marginLeft: '8px'
-                }}
-                data-tooltip="Toggle Git Diff View"
-              >
-                <GitCompare size={14} style={{ marginRight: '4px' }} />
-                <span style={{ fontSize: '12px' }}>Diff</span>
-              </button>
-            )}
-          </>
-        )}
+      {/* Top Action Header Bar */}
+      <div style={{ padding: '6px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: '12px', opacity: 0.75, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>
+          {docBaseUriRef.current ? docBaseUriRef.current.replace(/^file:\/\/\//, '') : 'document.md'}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            onClick={() => vscode.postMessage({ type: 'openBuiltIn' })}
+            className="tb-btn"
+            data-tooltip="Open in VS Code built-in editor"
+            data-tooltip-pos="left"
+          >
+            <ExternalLink size={12} style={{ marginRight: '3px' }} />
+            Built-in
+          </button>
+          {!config.isReadOnly && (
+            <>
+              <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
+              <div style={{ display: 'flex', borderRadius: '4px', overflow: 'hidden', border: `1px solid ${dropdownBorder}` }}>
+                <button
+                  onClick={() => { if (!isRawMode) toggleMode(); }}
+                  style={{ 
+                    padding: '2px 8px', 
+                    cursor: 'pointer', 
+                    border: 'none', 
+                    borderRight: `1px solid ${dropdownBorder}`,
+                    background: isRawMode ? textColor : 'transparent', 
+                    color: isRawMode ? bgColor : textColor,
+                    fontWeight: isRawMode ? 'bold' : 'normal',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                  data-tooltip="Raw Code Mode"
+                >
+                  <Code size={12} />
+                  Raw
+                </button>
+                <button 
+                  onClick={() => { if (isRawMode) toggleMode(); }} 
+                  style={{ 
+                    padding: '2px 8px', 
+                    cursor: 'pointer', 
+                    border: 'none', 
+                    background: !isRawMode ? textColor : 'transparent', 
+                    color: !isRawMode ? bgColor : textColor,
+                    fontWeight: !isRawMode ? 'bold' : 'normal',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                  data-tooltip="WYSIWYG Rich Mode"
+                >
+                  <Edit3 size={12} />
+                  WYSIWYG
+                </button>
+              </div>
+              {isRawMode && (
+                <button
+                  onClick={() => {
+                    if (!isDiffMode && originalText === null) {
+                      vscode.postMessage({ type: 'getOriginalContent' });
+                    }
+                    setIsDiffMode(!isDiffMode);
+                  }}
+                  className={`tb-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
+                  data-tooltip="Toggle Git Diff View"
+                >
+                  <GitCompare size={13} style={{ marginRight: '3px' }} />
+                  Diff
+                </button>
+              )}
+            </>
+          )}
+          <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
           {parsedFrontmatter && (
             <>
               <button 
                 onClick={() => updateConfig('showToc', !showToc)} 
-                style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', opacity: showToc ? 1 : 0.5, display: 'flex', alignItems: 'center', padding: '4px' }}
-                data-tooltip="Toggle TOC"
+                className={`tb-btn ${showToc ? 'tb-btn-active' : ''}`}
+                data-tooltip="Toggle Table of Contents"
                 data-tooltip-pos="right"
               >
-                <List size={16} />
+                <List size={14} />
               </button>
               <button 
                 onClick={() => updateConfig('showProperties', !showProperties)} 
-                style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', opacity: showProperties ? 1 : 0.5, display: 'flex', alignItems: 'center', padding: '4px' }}
+                className={`tb-btn ${showProperties ? 'tb-btn-active' : ''}`}
                 data-tooltip="Toggle Properties"
                 data-tooltip-pos="right"
               >
-                <Info size={16} />
+                <Info size={14} />
               </button>
             </>
           )}
           <button 
             onClick={() => vscode.postMessage({ type: 'refresh' })}
-            style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-            data-tooltip="Refresh"
+            className="tb-btn"
+            data-tooltip="Refresh Editor"
             data-tooltip-pos="right"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={14} />
           </button>
           <button 
             onClick={() => {
@@ -1330,28 +1317,20 @@ function App() {
                 }
               }
             }}
-            style={{ background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+            className="tb-btn"
             data-tooltip="Check Manual Links & Media"
             data-tooltip-pos="right"
           >
-            <AlertTriangle size={16} />
+            <AlertTriangle size={14} />
           </button>
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: textColor,
-                display: 'flex',
-                alignItems: 'center',
-                padding: '4px'
-              }}
+              className="tb-btn"
               data-tooltip="Settings"
               data-tooltip-pos="right"
             >
-              <Settings size={16} />
+              <Settings size={14} />
             </button>
 
           {isSettingsOpen && (
@@ -1448,6 +1427,116 @@ function App() {
           </div>
         </div>
       </div>
+      
+      {/* 2층 Orca Rich Formatting Toolbar (WYSIWYG 모드일 때만 노출) */}
+      {!isRawMode && !config.isReadOnly && editor && (
+        <div style={{ padding: '3px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', overflowX: 'auto', userSelect: 'none' }}>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'paragraph' });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Paragraph (¶)">
+            <Pilcrow size={13} />
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 1 } });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Heading 1 (H1)" style={{ fontWeight: 'bold' }}>
+            H1
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 2 } });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Heading 2 (H2)" style={{ fontWeight: 'bold' }}>
+            H2
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 3 } });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Heading 3 (H3)" style={{ fontWeight: 'bold' }}>
+            H3
+          </button>
+          <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
+          <button onClick={() => { try { editor.toggleStyles({ bold: true }); } catch {} }} className="tb-btn" data-tooltip="Bold (Ctrl+B)">
+            <Bold size={13} />
+          </button>
+          <button onClick={() => { try { editor.toggleStyles({ italic: true }); } catch {} }} className="tb-btn" data-tooltip="Italic (Ctrl+I)">
+            <Italic size={13} />
+          </button>
+          <button onClick={() => { try { editor.toggleStyles({ strike: true }); } catch {} }} className="tb-btn" data-tooltip="Strikethrough (Ctrl+Shift+X)">
+            <Strikethrough size={13} />
+          </button>
+          <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'bulletListItem' });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Bullet List">
+            <List size={13} />
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'numberedListItem' });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Numbered List">
+            <ListOrdered size={13} />
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'checkListItem' });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Task List">
+            <CheckSquare size={13} />
+          </button>
+          <button onClick={() => {
+            try {
+              const cur = editor.getTextCursorPosition();
+              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'paragraph' });
+            } catch {}
+          }} className="tb-btn" data-tooltip="Blockquote">
+            <Quote size={13} />
+          </button>
+          <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
+          <button onClick={() => {
+            const url = prompt('Enter link URL:');
+            if (url) {
+              try { editor.createLink(url); } catch {}
+            }
+          }} className="tb-btn" data-tooltip="Insert Link">
+            <Link size={13} />
+          </button>
+          <button onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async (e: any) => {
+              const file = e.target?.files?.[0];
+              if (file && editor) {
+                try {
+                  const url = await uploadFile(file);
+                  const cur = editor.getTextCursorPosition();
+                  if (cur && cur.block) {
+                    editor.insertBlocks([{ type: 'paragraph', content: [{ type: 'text', text: `![${file.name || 'image'}](${url})`, styles: {} }] }], cur.block, 'after');
+                  }
+                } catch {}
+              }
+            };
+            input.click();
+          }} className="tb-btn" data-tooltip="Insert Image">
+            <ImageIcon size={13} />
+          </button>
+        </div>
+      )}
       
       <div 
         style={{ flex: 1, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden' }}
