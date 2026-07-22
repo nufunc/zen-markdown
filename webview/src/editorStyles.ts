@@ -500,5 +500,48 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             color: var(--accent-color) !important;
             border-color: color-mix(in srgb, var(--accent-color) 30%, transparent) !important;
           }
+
+          /* PDF Export Pill Button */
+          .pdf-export-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 4px 14px;
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--text-color) 8%, transparent);
+            border: 1px solid color-mix(in srgb, var(--text-color) 16%, transparent);
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 11.5px;
+            font-weight: 600;
+            user-select: none;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+          }
+          .pdf-export-btn:hover {
+            background: color-mix(in srgb, var(--text-color) 15%, transparent);
+            border-color: color-mix(in srgb, var(--text-color) 30%, transparent);
+          }
+
+          /* Media Print Rules for Clean PDF Export */
+          @media print {
+            body, html {
+              background: #ffffff !important;
+              color: #000000 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+            .tb-btn, .pdf-export-btn, [data-tooltip], .settings-select,
+            header, div[style*="borderBottom"], div[style*="border-bottom"],
+            div[style*="borderRight"], div[style*="border-right"] {
+              display: none !important;
+            }
+            .bn-editor, .bn-container {
+              color: #000000 !important;
+              background: #ffffff !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+          }
   `;
 }

@@ -1442,6 +1442,16 @@ function App() {
           }} className="tb-btn" data-tooltip="Insert Image">
             <ImageIcon size={13} />
           </button>
+          <button
+            onClick={() => {
+              window.print();
+            }}
+            className="pdf-export-btn"
+            style={{ marginLeft: 'auto' }}
+            data-tooltip="Export Document as PDF"
+          >
+            <span>PDF로 내보내기</span>
+          </button>
         </div>
       )}
       
