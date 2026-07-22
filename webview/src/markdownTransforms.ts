@@ -236,3 +236,37 @@ export function detectBrokenImageLinks(md: string): { alt: string; url: string; 
   return broken;
 }
 
+// 엑셀, TSV, CSV 등 구분자 텍스트를 마크다운 표 문자열로 파싱해준다.
+export function parseTableFromClipboardText(text: string): string | null {
+  if (!text || !text.includes('\n')) return null;
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+
+  // 탭(\t) 구분자 확인 (TSV / Excel 기본)
+  const isTsv = lines[0].includes('\t');
+  // 콤마(,) 구분자 확인
+  const isCsv = !isTsv && lines[0].includes(',');
+
+  if (!isTsv && !isCsv) return null;
+
+  const delimiter = isTsv ? '\t' : ',';
+  const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim()));
+  const colCount = Math.max(...rows.map(r => r.length));
+
+  if (colCount < 2) return null;
+
+  // Header row
+  const header = `| ${rows[0].map(c => c || ' ').join(' | ')} |`;
+  // Separator row
+  const separator = `| ${Array(colCount).fill('---').join(' | ')} |`;
+  // Data rows
+  const dataRows = rows.slice(1).map(row => {
+    const padded = [...row];
+    while (padded.length < colCount) padded.push(' ');
+    return `| ${padded.map(c => c || ' ').join(' | ')} |`;
+  }).join('\n');
+
+  return `${header}\n${separator}\n${dataRows}`;
+}
+
+

@@ -288,32 +288,49 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             padding-top: 0 !important;
             margin-top: 0 !important;
           }
-          .bn-editor [data-content-type="table"] {
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow-x: auto;
-            line-height: 1.2 !important;
-          }
           .bn-editor [data-content-type="table"] table {
             border-collapse: collapse !important;
             min-width: 100% !important;
-            border: 1px solid color-mix(in srgb, var(--text-color) 20%, transparent) !important;
-            margin: 0 !important;
+            border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent) !important;
+            margin: 0.5em 0 !important;
+            border-radius: 6px !important;
+            overflow: hidden !important;
           }
           .bn-editor [data-content-type="table"] th {
-            background-color: color-mix(in srgb, var(--text-color) 6%, transparent) !important;
+            background-color: color-mix(in srgb, var(--text-color) 8%, transparent) !important;
             color: var(--text-color) !important;
             font-weight: 600 !important;
+            text-align: left;
           }
           .bn-editor [data-content-type="table"] td,
           .bn-editor [data-content-type="table"] th {
-            border: 1px solid color-mix(in srgb, var(--text-color) 12%, transparent) !important;
-            padding: 2px 6px !important;
-            min-width: 100px;
+            border: 1px solid color-mix(in srgb, var(--text-color) 14%, transparent) !important;
+            padding: 6px 10px !important;
+            min-width: 90px;
             vertical-align: middle !important;
+            transition: background-color 0.12s ease;
           }
-          /* BlockNote가 셀 내부 p에 min-height(1.5rem)를 주어 텍스트가 p 상자 위쪽에 붙음.
-             td의 vertical-align은 p 상자만 정렬하므로, p 내부 줄박스도 세로 중앙 정렬 */
+          .bn-editor [data-content-type="table"] td:focus-within,
+          .bn-editor [data-content-type="table"] th:focus-within {
+            background-color: color-mix(in srgb, var(--accent-color) 12%, transparent) !important;
+            outline: 1px dashed color-mix(in srgb, var(--accent-color) 50%, transparent) !important;
+          }
+          .bn-editor [data-content-type="table"] tr:hover {
+            background-color: color-mix(in srgb, var(--text-color) 4%, transparent) !important;
+          }
+          /* GFM Table Alignment Styles */
+          .bn-editor [data-content-type="table"] td[align="center"],
+          .bn-editor [data-content-type="table"] th[align="center"] {
+            text-align: center !important;
+          }
+          .bn-editor [data-content-type="table"] td[align="right"],
+          .bn-editor [data-content-type="table"] th[align="right"] {
+            text-align: right !important;
+          }
+          .bn-editor [data-content-type="table"] td[align="left"],
+          .bn-editor [data-content-type="table"] th[align="left"] {
+            text-align: left !important;
+          }
           .bn-editor [data-content-type="table"] td > p,
           .bn-editor [data-content-type="table"] th > p {
             align-content: center;

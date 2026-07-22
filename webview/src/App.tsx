@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText } from './markdownTransforms';
 import { formatCodeBlock } from './codeFormatter';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
@@ -234,6 +234,34 @@ function App() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  // 클립보드 엑셀/TSV/CSV 붙여넣기 시 마크다운 표 자동 변환 생성
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (isRawMode || !editor) return;
+      const text = e.clipboardData?.getData('text/plain');
+      if (!text) return;
+
+      const tableMd = parseTableFromClipboardText(text);
+      if (tableMd) {
+        e.preventDefault();
+        try {
+          const blocks = await editor.tryParseMarkdownToBlocks(tableMd);
+          if (blocks && blocks.length > 0) {
+            const cur = editor.getTextCursorPosition();
+            if (cur && cur.block) {
+              editor.insertBlocks(blocks, cur.block, 'after');
+            }
+          }
+        } catch (err) {
+          console.error('Failed to parse TSV/CSV table paste', err);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isRawMode, editor]);
 
   // 코드블록 호버 시 Copy/Format 플로팅 버튼.
   // Format은 명시적 클릭 시에만 실행 — 커서 이탈 시 자동 재인덴트는 문자열/주석 안의
