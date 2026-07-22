@@ -279,6 +279,49 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     });
                     return;
                 }
+                case 'exportPdf': {
+                    (async () => {
+                        try {
+                            if (document.uri.scheme !== 'file') {
+                                vscode.window.showWarningMessage('PDF export is available for saved files on disk.');
+                                return;
+                            }
+                            const docName = path.basename(document.uri.fsPath, '.md');
+                            const tmpHtmlPath = path.join(path.dirname(document.uri.fsPath), `.${docName}_preview.html`);
+                            const bodyHtml = String(e.html || '');
+                            const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${docName}</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; }
+pre, code { background: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; }
+th { background: #f8f9fa; font-weight: 600; }
+img { max-width: 100%; height: auto; }
+@media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+${bodyHtml}
+<script>
+window.onload = function() { window.print(); };
+</script>
+</body>
+</html>`;
+                            await vscode.workspace.fs.writeFile(vscode.Uri.file(tmpHtmlPath), Buffer.from(fullHtml, 'utf8'));
+                            await vscode.env.openExternal(vscode.Uri.file(tmpHtmlPath));
+                            setTimeout(async () => {
+                                try { await vscode.workspace.fs.delete(vscode.Uri.file(tmpHtmlPath)); } catch {}
+                            }, 60000);
+                        } catch (err: any) {
+                            vscode.window.showWarningMessage(`PDF Export Error: ${err?.message || err}`);
+                        }
+                    })();
+                    return;
+                }
             }
         });
     }

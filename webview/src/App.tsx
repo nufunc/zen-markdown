@@ -1254,7 +1254,10 @@ function App() {
                 <span>TOC</span>
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={() => {
+                  const html = document.querySelector('.bn-editor')?.innerHTML || '';
+                  vscode.postMessage({ type: 'exportPdf', html });
+                }}
                 className="tb-btn"
                 data-tooltip="Export Document as PDF"
                 data-tooltip-pos="right"
@@ -1285,14 +1288,14 @@ function App() {
               if (typeof documentText === 'string') {
                 const broken = detectBrokenImageLinks(documentText);
                 if (broken.length === 0) {
-                  vscode.postMessage({ type: 'notify', message: '배포 매뉴얼 검사 완료: 모든 미디어 상대 경로가 정상이거나 유효합니다.' });
+                  vscode.postMessage({ type: 'notify', message: 'Manual Validation Passed: All media relative paths are valid.' });
                 } else {
-                  vscode.postMessage({ type: 'notify', message: `배포 매뉴얼 경고: ${broken.length}개의 미디어 경로를 확인해 주세요. (Line ${broken[0].line}: ${broken[0].url})` });
+                  vscode.postMessage({ type: 'notify', message: `Manual Validation Warning: Found ${broken.length} broken media link(s). (Line ${broken[0].line}: ${broken[0].url})` });
                 }
               }
             }}
             className="tb-btn"
-            data-tooltip="Check Manual Links & Media"
+            data-tooltip="Validate Media Links"
             data-tooltip-pos="right"
           >
             <AlertTriangle size={14} />
