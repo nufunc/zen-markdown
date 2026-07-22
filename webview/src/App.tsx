@@ -89,8 +89,6 @@ function App() {
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
-  const [tocPosition, setTocPosition] = useState({ right: 20, top: 80 });
-  const tocDragRef = useRef<{ startX: number, startY: number, startRight: number, startTop: number } | null>(null);
   
   const settingsRef = useRef<HTMLDivElement>(null);
   const hasEdited = useRef(false);
@@ -121,38 +119,7 @@ function App() {
     return () => document.removeEventListener('focusout', handleFocusOut);
   }, []);
 
-  useEffect(() => {
-    const handleTocMouseMove = (e: MouseEvent) => {
-      if (!tocDragRef.current) return;
-      const dx = e.clientX - tocDragRef.current.startX;
-      const dy = e.clientY - tocDragRef.current.startY;
-      setTocPosition({
-        right: Math.max(0, tocDragRef.current.startRight - dx),
-        top: Math.max(0, tocDragRef.current.startTop + dy)
-      });
-    };
 
-    const handleTocMouseUp = () => {
-      tocDragRef.current = null;
-    };
-
-    document.addEventListener('mousemove', handleTocMouseMove);
-    document.addEventListener('mouseup', handleTocMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleTocMouseMove);
-      document.removeEventListener('mouseup', handleTocMouseUp);
-    };
-  }, []);
-
-  const handleTocMouseDown = (e: React.MouseEvent) => {
-    tocDragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startRight: tocPosition.right,
-      startTop: tocPosition.top
-    };
-  };
 
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
@@ -1136,69 +1103,7 @@ function App() {
         </div>
       )}
 
-      {/* TOC Sidebar */}
-      {!isRawMode && showToc && headings.length > 0 && (
-        <div style={{
-          position: 'fixed',
-          top: `${tocPosition.top}px`,
-          right: `${tocPosition.right}px`,
-          width: '200px',
-          maxHeight: 'calc(100vh - 120px)',
-          overflowY: 'auto',
-          background: dropdownBg,
-          border: `1px solid ${dropdownBorder}`,
-          borderRadius: '8px',
-          padding: '12px',
-          fontSize: '12px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-          zIndex: 90
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <div 
-              onMouseDown={handleTocMouseDown}
-              style={{ 
-                fontWeight: 'bold', 
-                opacity: 0.8, 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '6px',
-                cursor: 'grab',
-                userSelect: 'none',
-                flex: 1
-              }}
-              data-tooltip="Drag to move"
-            >
-              <span style={{ fontSize: '14px' }}>📑</span> Table of Contents
-            </div>
-            <span data-tooltip="Close" data-tooltip-pos="right" onClick={() => updateConfig('showToc', false)} style={{ display: 'flex', cursor: 'pointer', opacity: 0.7 }}>
-              <X size={14} />
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {headings.map(h => (
-              <div 
-                key={h.id} 
-                style={{ 
-                  paddingLeft: `${(h.level - 1) * 12}px`, 
-                  cursor: 'pointer',
-                  opacity: 0.7,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis'
-                }}
-                onClick={() => {
-                  const el = document.querySelector(`[data-id="${h.id}"]`);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
-              >
-                {h.text}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* TOC is rendered as Orca Left Sidebar Panel below */}
 
       {/* Top Action Header Bar */}
       <div style={{ padding: '6px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1283,10 +1188,12 @@ function App() {
               <button 
                 onClick={() => updateConfig('showToc', !showToc)} 
                 className={`tb-btn ${showToc ? 'tb-btn-active' : ''}`}
+                style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
                 data-tooltip="Toggle Table of Contents"
                 data-tooltip-pos="right"
               >
-                <List size={14} />
+                <List size={13} style={{ marginRight: '3px' }} />
+                <span>목차</span>
               </button>
               <button 
                 onClick={() => updateConfig('showProperties', !showProperties)} 
@@ -1539,10 +1446,117 @@ function App() {
       )}
       
       <div 
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden' }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'row', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden' }}
         onKeyDownCapture={handleKeyDownCapture}
       >
         <style>{editorCss}</style>
+
+        {/* 좌측 사이드바 TOC 패널 (Orca 스타일) */}
+        {!isRawMode && showToc && headings.length > 0 && (
+          <div style={{
+            width: '240px',
+            flexShrink: 0,
+            backgroundColor: headerBg,
+            borderRight: `1px solid ${dropdownBorder}`,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            fontSize: '12px',
+            userSelect: 'none'
+          }}>
+            {/* TOC 패널 상단 헤더 툴바 */}
+            <div style={{
+              padding: '8px 12px',
+              borderBottom: `1px solid ${dropdownBorder}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '4px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '12px', opacity: 0.85 }}>
+                <List size={14} />
+                <span>목차</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                {[1, 2, 3, 4, 5].map(lvl => (
+                  <button
+                    key={lvl}
+                    onClick={() => {
+                      const firstHead = headings.find(h => h.level === lvl);
+                      if (firstHead) {
+                        const el = document.querySelector(`[data-id="${firstHead.id}"]`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }}
+                    className="tb-btn"
+                    style={{ padding: '1px 4px', fontSize: '10px', fontWeight: 600 }}
+                    data-tooltip={`Jump to H${lvl}`}
+                  >
+                    H{lvl}
+                  </button>
+                ))}
+                <button
+                  onClick={() => updateConfig('showToc', false)}
+                  className="tb-btn"
+                  style={{ padding: '2px', marginLeft: '2px' }}
+                  data-tooltip="Close TOC"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+
+            {/* TOC 계층 목록 (Tree View) */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {headings.map(h => (
+                <div
+                  key={h.id}
+                  style={{
+                    paddingLeft: `${(h.level - 1) * 12 + 8}px`,
+                    paddingRight: '8px',
+                    paddingTop: '4px',
+                    paddingBottom: '4px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    opacity: 0.78,
+                    fontSize: '11.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    transition: 'background-color 0.12s ease, opacity 0.12s ease'
+                  }}
+                  onClick={() => {
+                    const el = document.querySelector(`[data-id="${h.id}"]`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.opacity = '1';
+                    e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--text-color) 8%, transparent)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.opacity = '0.78';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {h.level === 1 ? (
+                    <ChevronDown size={11} style={{ flexShrink: 0, opacity: 0.6 }} />
+                  ) : (
+                    <span style={{ width: '11px', display: 'inline-block', flexShrink: 0, opacity: 0.4 }}>•</span>
+                  )}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {h.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 메인 에디터 영역 (오른쪽 패널) */}
+        <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {isRawMode ? (
           isDiffMode ? (
             originalText === null ? (
@@ -1683,6 +1697,7 @@ function App() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* 코드블록 케밥(⋮) 메뉴 — UpNote식: 복사/잘라내기/삭제/언어/기본 코드 언어 */}
