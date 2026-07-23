@@ -844,6 +844,74 @@ function App() {
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
+    // Delete 키: 줄 끝에서 삭제 시 아랫줄의 헤더/서식 정보 파괴 방지
+    if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      try {
+        const selection = editor.getSelection();
+        if (!selection || !selection.blocks || selection.blocks.length <= 1) {
+          const cursor = editor.getTextCursorPosition();
+          if (cursor && cursor.block) {
+            const currentBlock = cursor.block;
+            const isAtEnd = typeof cursor.nextCharacter === 'undefined';
+
+            if (isAtEnd) {
+              const doc = editor.document;
+              const findNextBlock = (blocks: any[], targetId: string): any => {
+                for (let i = 0; i < blocks.length; i++) {
+                  if (blocks[i].id === targetId) {
+                    if (i < blocks.length - 1) return blocks[i + 1];
+                    return null;
+                  }
+                  if (blocks[i].children && blocks[i].children.length > 0) {
+                    const res = findNextBlock(blocks[i].children, targetId);
+                    if (res) return res;
+                  }
+                }
+                return null;
+              };
+
+              const nextBlock = findNextBlock(doc, currentBlock.id);
+
+              if (nextBlock) {
+                const isCurrentEmpty = (!currentBlock.content ||
+                  (Array.isArray(currentBlock.content) && currentBlock.content.length === 0) ||
+                  (Array.isArray(currentBlock.content) && currentBlock.content.length === 1 && currentBlock.content[0].type === 'text' && currentBlock.content[0].text === '')) &&
+                  (!currentBlock.children || currentBlock.children.length === 0);
+
+                if (isCurrentEmpty) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  editor.removeBlocks([currentBlock.id]);
+                  editor.setTextCursorPosition(nextBlock, 'start');
+                  return;
+                }
+
+                const isNextEmpty = (!nextBlock.content ||
+                  (Array.isArray(nextBlock.content) && nextBlock.content.length === 0) ||
+                  (Array.isArray(nextBlock.content) && nextBlock.content.length === 1 && nextBlock.content[0].type === 'text' && nextBlock.content[0].text === '')) &&
+                  (!nextBlock.children || nextBlock.children.length === 0);
+
+                if (isNextEmpty) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  editor.removeBlocks([nextBlock.id]);
+                  return;
+                }
+
+                if (nextBlock.type !== 'paragraph') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error in Delete key handler', err);
+      }
+    }
+
     if (e.key === 'Tab') {
       try {
         const selection = editor.getSelection();
@@ -1751,7 +1819,7 @@ function App() {
                     console.error("Failed to copy markdown", err);
                   }
                 }
-              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} slashMenu={false}>
+              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
                 <SuggestionMenuController
                   triggerCharacter={"/"}
                   getItems={async (query) => {
