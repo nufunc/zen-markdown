@@ -912,10 +912,38 @@ function App() {
       }
     }
 
+    // Backspace 키: 블록 맨 앞에서 삭제 시 서식 보존 (서식 블록 -> paragraph 우선 전환)
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      try {
+        const selection = editor.getSelection();
+        if (!selection || !selection.blocks || selection.blocks.length <= 1) {
+          const cursor = editor.getTextCursorPosition();
+          if (cursor && cursor.block) {
+            const currentBlock = cursor.block;
+            const isAtStart = typeof cursor.prevCharacter === 'undefined';
+
+            if (isAtStart && currentBlock.type !== 'paragraph') {
+              e.preventDefault();
+              e.stopPropagation();
+              editor.updateBlock(currentBlock, { type: 'paragraph' });
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error in Backspace key handler', err);
+      }
+    }
+
     if (e.key === 'Tab') {
       try {
         const selection = editor.getSelection();
         const cursor = editor.getTextCursorPosition();
+        
+        if (cursor && cursor.block && cursor.block.type === 'codeBlock') {
+          // 코드 블록 내부에서는 커스텀 목록 탭 제어를 건너뛰어 코드 들여쓰기 보장
+          return;
+        }
         
         let blocksToProcess: any[] = [];
         if (selection && selection.blocks && selection.blocks.length > 0) {
@@ -1322,7 +1350,23 @@ function App() {
           <button
             onClick={() => {
               const editorEl = document.querySelector('.bn-container') || document.querySelector('.bn-editor');
-              const html = editorEl?.outerHTML || editorEl?.innerHTML || '';
+              let html = editorEl?.outerHTML || editorEl?.innerHTML || '';
+
+              const baseUri = docBaseUriRef.current;
+              if (baseUri) {
+                const cleanBase = baseUri.replace(/\\/g, '/');
+                const folderUri = cleanBase.substring(0, cleanBase.lastIndexOf('/'));
+                
+                html = html.replace(/src=["'](assets\/[^"']+)["']/g, (_, relPath) => {
+                  const fullPath = folderUri.startsWith('file://') ? `${folderUri}/${relPath}` : `file:///${folderUri.replace(/^[a-zA-Z]:/, (m) => m.toUpperCase())}/${relPath}`;
+                  return `src="${fullPath}"`;
+                });
+                html = html.replace(/src=["']https:\/\/file%2B[^/]+\/([^"']+)["']/g, (_, pathPart) => {
+                  const decoded = decodeURIComponent(pathPart);
+                  return `src="file:///${decoded}"`;
+                });
+              }
+
               const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent || s.innerHTML).join('\n');
               vscode.postMessage({ type: 'exportPdf', html, styles });
             }}

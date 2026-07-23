@@ -303,8 +303,10 @@ th, td { border: 1px solid #ddd; padding: 8px 12px; }
 th { background: #f8f9fa; font-weight: 600; }
 img { max-width: 100%; height: auto; }
 @media print {
-    body { padding: 0; max-width: 100%; }
-    @page { margin: 15mm; }
+    body { padding: 0; max-width: 100%; color: #000; }
+    @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
+    pre, table, blockquote, img, .bn-block-content, .bn-file-block { break-inside: avoid; page-break-inside: avoid; }
+    h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
 }
 </style>
 </head>
