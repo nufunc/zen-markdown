@@ -11,6 +11,8 @@ node_modules/**
 webview/**
 !webview/dist/**
 
-# 로컬 도구 산출물
+# 로컬 도구 산출물 & 에이전트 규칙
 *.log
 appmap.yml
+.agents/**
+

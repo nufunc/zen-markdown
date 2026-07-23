@@ -8,10 +8,12 @@ webview/dist/
 # Packaged extension
 *.vsix
 
-# Local session notes
+# Local session notes & Agent rules
 MEMORY.md
+.agents/
 
 # Logs & OS files
 *.log
 .DS_Store
 appmap.yml
+
