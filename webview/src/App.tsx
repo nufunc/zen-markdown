@@ -1321,8 +1321,10 @@ function App() {
           <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
           <button
             onClick={() => {
-              const html = document.querySelector('.bn-editor')?.innerHTML || '';
-              vscode.postMessage({ type: 'exportPdf', html });
+              const editorEl = document.querySelector('.bn-container') || document.querySelector('.bn-editor');
+              const html = editorEl?.outerHTML || editorEl?.innerHTML || '';
+              const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent || s.innerHTML).join('\n');
+              vscode.postMessage({ type: 'exportPdf', html, styles });
             }}
             className="tb-btn"
             data-tooltip="Export Document as PDF"

@@ -287,22 +287,28 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                             const tmpDir = os.tmpdir();
                             const tmpHtmlPath = path.join(tmpDir, `zen_md_pdf_${Date.now()}_${docName}.html`);
                             const bodyHtml = String(e.html || '');
+                            const capturedStyles = String(e.styles || '');
                             const fullHtml = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>${docName}</title>
 <style>
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; }
+${capturedStyles}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; background: #ffffff; }
+.bn-container, .bn-editor { background: transparent !important; color: inherit !important; font-size: inherit; }
 pre, code { background: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
 table { border-collapse: collapse; width: 100%; margin: 1em 0; }
 th, td { border: 1px solid #ddd; padding: 8px 12px; }
 th { background: #f8f9fa; font-weight: 600; }
 img { max-width: 100%; height: auto; }
-@media print { body { padding: 0; } }
+@media print {
+    body { padding: 0; max-width: 100%; }
+    @page { margin: 15mm; }
+}
 </style>
 </head>
-<body>
+<body class="bn-container">
 ${bodyHtml}
 <script>
 window.onload = function() { window.print(); };
