@@ -873,6 +873,24 @@ function App() {
     return [];
   };
 
+  const sanitizePropsForBlockType = (type: string, oldProps: Record<string, any> = {}, newProps: Record<string, any> = {}) => {
+    const baseProps: Record<string, any> = {
+      textAlignment: oldProps.textAlignment || 'left',
+      textColor: oldProps.textColor || 'default',
+      backgroundColor: oldProps.backgroundColor || 'default',
+    };
+
+    if (type === 'heading') {
+      baseProps.level = newProps.level || oldProps.level || 1;
+    } else if (type === 'codeBlock') {
+      baseProps.language = newProps.language || oldProps.language || 'text';
+    } else if (type === 'checkListItem') {
+      baseProps.checked = typeof newProps.checked !== 'undefined' ? newProps.checked : (oldProps.checked || false);
+    }
+
+    return { ...baseProps, ...newProps };
+  };
+
   const applyBlockTypeToSelection = (type: string, props?: Record<string, any>) => {
     if (!editor) return;
     try {
@@ -880,11 +898,13 @@ function App() {
       if (blocks.length === 0) return;
 
       if (blocks.length === 1) {
-        editor.updateBlock(blocks[0], props ? { type, props } : { type });
+        const b = blocks[0];
+        const cleanProps = sanitizePropsForBlockType(type, b.props, props);
+        editor.updateBlock(b, { type: type as any, props: cleanProps });
       } else {
         const newBlocks = blocks.map((b: any) => ({
           type: type as any,
-          props: props ? { ...b.props, ...props } : b.props,
+          props: sanitizePropsForBlockType(type, b.props, props),
           content: b.content,
           children: b.children,
         }));
@@ -1100,7 +1120,7 @@ function App() {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') {
       e.preventDefault();
       e.stopPropagation();
-      applyBlockTypeToSelection('blockQuote');
+      applyBlockTypeToSelection('quote');
       return;
     }
 
@@ -1574,7 +1594,7 @@ function App() {
           <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('checkListItem')} className="tb-btn" data-tooltip="Task List (Ctrl+9)">
             <CheckSquare size={13} />
           </button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('blockQuote')} className="tb-btn" data-tooltip="Blockquote (Ctrl+Shift+U)">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('quote')} className="tb-btn" data-tooltip="Blockquote (Ctrl+Shift+U)">
             <Quote size={13} />
           </button>
           <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
