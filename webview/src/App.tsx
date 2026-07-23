@@ -877,8 +877,18 @@ function App() {
     if (!editor) return;
     try {
       const blocks = getSelectedOrCursorBlocks(editor);
-      for (const block of blocks) {
-        editor.updateBlock(block, props ? { type, props } : { type });
+      if (blocks.length === 0) return;
+
+      if (blocks.length === 1) {
+        editor.updateBlock(blocks[0], props ? { type, props } : { type });
+      } else {
+        const newBlocks = blocks.map((b: any) => ({
+          type: type as any,
+          props: props ? { ...b.props, ...props } : b.props,
+          content: b.content,
+          children: b.children,
+        }));
+        editor.replaceBlocks(blocks, newBlocks);
       }
       editor.focus();
     } catch (err) {
@@ -1062,61 +1072,35 @@ function App() {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        const level = parseInt(e.key) as any;
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'heading', props: { level } });
-        }
-      } catch {}
+      applyBlockTypeToSelection('heading', { level: parseInt(e.key) });
       return;
     }
     
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '7') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'bulletListItem' });
-        }
-      } catch {}
+      applyBlockTypeToSelection('bulletListItem');
       return;
     }
 
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '8') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'numberedListItem' });
-        }
-      } catch {}
+      applyBlockTypeToSelection('numberedListItem');
       return;
     }
 
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '9') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'checkListItem' });
-        }
-      } catch {}
+      applyBlockTypeToSelection('checkListItem');
       return;
     }
 
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'blockQuote' });
-        }
-      } catch {}
+      applyBlockTypeToSelection('blockQuote');
       return;
     }
 
@@ -1124,12 +1108,7 @@ function App() {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
       e.preventDefault();
       e.stopPropagation();
-      try {
-        const blocks = getSelectedOrCursorBlocks(editor);
-        for (const b of blocks) {
-          editor.updateBlock(b, { type: 'codeBlock', props: { language: 'text' } });
-        }
-      } catch {}
+      applyBlockTypeToSelection('codeBlock', { language: 'text' });
       return;
     }
 
