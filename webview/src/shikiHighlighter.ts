@@ -42,12 +42,8 @@ export const supportedLanguages: Record<string, { name: string; aliases?: string
   kql: { name: 'KQL', aliases: ['kusto'] },
 };
 
-// 사전 컴파일 문법 + JS raw 엔진: WASM이 필요 없어 webview CSP에서 안전하게 동작.
-// 문법 청크는 하이라이터 최초 생성 시(코드블록이 처음 보일 때)에만 로드된다.
 export const createShikiHighlighter = () => {
   const promise = createHighlighterInternal();
-  // BlockNote는 이 프라미스를 전역 심볼에 캐시하므로, 일시 오류로 거부되면
-  // 세션 내내 하이라이팅이 죽는다 — 실패 시 캐시를 비워 다음 시도를 허용
   promise.catch(() => {
     const g = globalThis as any;
     const sym = Symbol.for('blocknote.shikiHighlighterPromise');
@@ -56,10 +52,32 @@ export const createShikiHighlighter = () => {
   return promise;
 };
 
-const createHighlighterInternal = () =>
-  createHighlighterCore({
+// 지연 로딩할 언어 목록
+const langLoaders: Record<string, () => Promise<any>> = {
+  c: () => import('@shikijs/langs-precompiled/c'),
+  cpp: () => import('@shikijs/langs-precompiled/cpp'),
+  csharp: () => import('@shikijs/langs-precompiled/csharp'),
+  go: () => import('@shikijs/langs-precompiled/go'),
+  rust: () => import('@shikijs/langs-precompiled/rust'),
+  php: () => import('@shikijs/langs-precompiled/php'),
+  ruby: () => import('@shikijs/langs-precompiled/ruby'),
+  docker: () => import('@shikijs/langs-precompiled/docker'),
+  diff: () => import('@shikijs/langs-precompiled/diff'),
+  ini: () => import('@shikijs/langs-precompiled/ini'),
+  toml: () => import('@shikijs/langs-precompiled/toml'),
+  kql: () => import('@shikijs/langs-precompiled/kql'),
+  java: () => import('@shikijs/langs-precompiled/java'),
+  sql: () => import('@shikijs/langs-precompiled/sql'),
+  xml: () => import('@shikijs/langs-precompiled/xml'),
+};
+
+const pendingLangs = new Set<string>();
+
+const createHighlighterInternal = async () => {
+  const highlighter = await createHighlighterCore({
     themes: [cssVariablesTheme],
     langs: [
+      // 핵심 언어만 초기 로드
       import('@shikijs/langs-precompiled/shellscript'),
       import('@shikijs/langs-precompiled/powershell'),
       import('@shikijs/langs-precompiled/yaml'),
@@ -69,24 +87,39 @@ const createHighlighterInternal = () =>
       import('@shikijs/langs-precompiled/typescript'),
       import('@shikijs/langs-precompiled/tsx'),
       import('@shikijs/langs-precompiled/python'),
-      import('@shikijs/langs-precompiled/sql'),
       import('@shikijs/langs-precompiled/html'),
       import('@shikijs/langs-precompiled/css'),
-      import('@shikijs/langs-precompiled/xml'),
-      import('@shikijs/langs-precompiled/java'),
-      import('@shikijs/langs-precompiled/c'),
-      import('@shikijs/langs-precompiled/cpp'),
-      import('@shikijs/langs-precompiled/csharp'),
-      import('@shikijs/langs-precompiled/go'),
-      import('@shikijs/langs-precompiled/rust'),
-      import('@shikijs/langs-precompiled/php'),
-      import('@shikijs/langs-precompiled/ruby'),
-      import('@shikijs/langs-precompiled/docker'),
-      import('@shikijs/langs-precompiled/diff'),
-      import('@shikijs/langs-precompiled/ini'),
-      import('@shikijs/langs-precompiled/toml'),
       import('@shikijs/langs-precompiled/markdown'),
-      import('@shikijs/langs-precompiled/kql'),
     ],
     engine: createJavaScriptRawEngine(),
   });
+
+  const originalCodeToHtml = highlighter.codeToHtml.bind(highlighter);
+
+  // 동기 호출되는 codeToHtml을 가로채서 로드되지 않은 언어는 동적 로드 시도 후 텍스트로 폴백
+  highlighter.codeToHtml = (code: string, options: any) => {
+    const lang = options.lang;
+    const loaded = highlighter.getLoadedLanguages();
+    
+    if (lang && lang !== 'text' && !loaded.includes(lang)) {
+      if (!pendingLangs.has(lang) && langLoaders[lang]) {
+        pendingLangs.add(lang);
+        langLoaders[lang]().then(mod => {
+          highlighter.loadLanguage(mod).then(() => {
+            // 언어 로드 완료 이벤트를 발생시켜 에디터가 재렌더링할 수 있도록 유도
+            window.dispatchEvent(new CustomEvent('shiki-lang-loaded', { detail: lang }));
+          }).catch(console.error);
+        }).catch(console.error);
+      }
+      return originalCodeToHtml(code, { ...options, lang: 'text' });
+    }
+
+    try {
+      return originalCodeToHtml(code, options);
+    } catch (e) {
+      return originalCodeToHtml(code, { ...options, lang: 'text' });
+    }
+  };
+
+  return highlighter;
+};

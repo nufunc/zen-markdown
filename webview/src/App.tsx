@@ -407,7 +407,8 @@ function App() {
 
   // 가벼운 정규식 기반 언어 자동 인식기 (4개 언어 한정 - 비용 거의 0)
   const detectLanguage = (text: string): string | null => {
-    const t = text.trim();
+    // 텍스트가 매우 길 경우 첫 500자만 검사하여 정규식 부하를 방지
+    const t = text.length > 500 ? text.slice(0, 500).trim() : text.trim();
     if (!t) return null;
     
     // 1. JSON
@@ -462,6 +463,22 @@ function App() {
       return newHeadings;
     });
   };
+
+  // Shiki 지연 로딩 완료 시 해당 언어를 사용하는 코드블록 강제 재렌더링
+  useEffect(() => {
+    const handleShikiLoaded = ((e: CustomEvent<string>) => {
+      if (!editor) return;
+      const lang = e.detail;
+      editor.forEachBlock((b: any) => {
+        if (b.type === 'codeBlock' && b.props.language === lang) {
+           editor.updateBlock(b.id, { props: { ...b.props } });
+        }
+        return true;
+      });
+    }) as EventListener;
+    window.addEventListener('shiki-lang-loaded', handleShikiLoaded);
+    return () => window.removeEventListener('shiki-lang-loaded', handleShikiLoaded);
+  }, [editor]);
 
   useEffect(() => {
     async function initEditor() {
@@ -841,6 +858,34 @@ function App() {
     setIsRawMode(!isRawMode);
   };
 
+  const getSelectedOrCursorBlocks = (editorInstance: any) => {
+    if (!editorInstance) return [];
+    try {
+      const selection = editorInstance.getSelection();
+      if (selection && selection.blocks && selection.blocks.length > 0) {
+        return selection.blocks;
+      }
+      const cursor = editorInstance.getTextCursorPosition();
+      if (cursor && cursor.block) {
+        return [cursor.block];
+      }
+    } catch {}
+    return [];
+  };
+
+  const applyBlockTypeToSelection = (type: string, props?: Record<string, any>) => {
+    if (!editor) return;
+    try {
+      const blocks = getSelectedOrCursorBlocks(editor);
+      for (const block of blocks) {
+        editor.updateBlock(block, props ? { type, props } : { type });
+      }
+      editor.focus();
+    } catch (err) {
+      console.error('Failed to apply block type', err);
+    }
+  };
+
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
@@ -1018,12 +1063,10 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, {
-            type: 'heading',
-            props: { level: parseInt(e.key) as any }
-          });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        const level = parseInt(e.key) as any;
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'heading', props: { level } });
         }
       } catch {}
       return;
@@ -1033,9 +1076,9 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, { type: 'bulletListItem' });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'bulletListItem' });
         }
       } catch {}
       return;
@@ -1045,9 +1088,9 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, { type: 'numberedListItem' });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'numberedListItem' });
         }
       } catch {}
       return;
@@ -1057,9 +1100,9 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, { type: 'checkListItem' });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'checkListItem' });
         }
       } catch {}
       return;
@@ -1069,9 +1112,9 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, { type: 'blockQuote' });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'blockQuote' });
         }
       } catch {}
       return;
@@ -1082,9 +1125,9 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.updateBlock(cursor.block, { type: 'codeBlock', props: { language: 'text' } });
+        const blocks = getSelectedOrCursorBlocks(editor);
+        for (const b of blocks) {
+          editor.updateBlock(b, { type: 'codeBlock', props: { language: 'text' } });
         }
       } catch {}
       return;
@@ -1519,92 +1562,54 @@ function App() {
       
       {/* 2층 Orca Rich Formatting Toolbar (WYSIWYG 모드일 때만 노출) */}
       {!isRawMode && !config.isReadOnly && editor && (
-        <div style={{ padding: '3px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', overflowX: 'auto', userSelect: 'none' }}>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'paragraph' });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Paragraph (¶)">
+        <div style={{ padding: '3px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', overflow: 'visible', flexWrap: 'wrap', userSelect: 'none' }}>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('paragraph')} className="tb-btn" data-tooltip="Paragraph (¶)">
             <Pilcrow size={13} />
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 1 } });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Heading 1 (H1)" style={{ fontWeight: 'bold' }}>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('heading', { level: 1 })} className="tb-btn" data-tooltip="Heading 1 (Ctrl+1)" style={{ fontWeight: 'bold' }}>
             H1
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 2 } });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Heading 2 (H2)" style={{ fontWeight: 'bold' }}>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('heading', { level: 2 })} className="tb-btn" data-tooltip="Heading 2 (Ctrl+2)" style={{ fontWeight: 'bold' }}>
             H2
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'heading', props: { level: 3 } });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Heading 3 (H3)" style={{ fontWeight: 'bold' }}>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('heading', { level: 3 })} className="tb-btn" data-tooltip="Heading 3 (Ctrl+3)" style={{ fontWeight: 'bold' }}>
             H3
           </button>
           <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
-          <button onClick={() => { try { editor.toggleStyles({ bold: true }); } catch {} }} className="tb-btn" data-tooltip="Bold (Ctrl+B)">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => { try { editor.toggleStyles({ bold: true }); editor.focus(); } catch {} }} className="tb-btn" data-tooltip="Bold (Ctrl+B)">
             <Bold size={13} />
           </button>
-          <button onClick={() => { try { editor.toggleStyles({ italic: true }); } catch {} }} className="tb-btn" data-tooltip="Italic (Ctrl+I)">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => { try { editor.toggleStyles({ italic: true }); editor.focus(); } catch {} }} className="tb-btn" data-tooltip="Italic (Ctrl+I)">
             <Italic size={13} />
           </button>
-          <button onClick={() => { try { editor.toggleStyles({ strike: true }); } catch {} }} className="tb-btn" data-tooltip="Strikethrough (Ctrl+Shift+X)">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => { try { editor.toggleStyles({ strike: true }); editor.focus(); } catch {} }} className="tb-btn" data-tooltip="Strikethrough (Ctrl+Shift+X)">
             <Strikethrough size={13} />
           </button>
           <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'bulletListItem' });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Bullet List">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('bulletListItem')} className="tb-btn" data-tooltip="Bullet List (Ctrl+7)">
             <List size={13} />
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'numberedListItem' });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Numbered List">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('numberedListItem')} className="tb-btn" data-tooltip="Numbered List (Ctrl+8)">
             <ListOrdered size={13} />
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'checkListItem' });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Task List">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('checkListItem')} className="tb-btn" data-tooltip="Task List (Ctrl+9)">
             <CheckSquare size={13} />
           </button>
-          <button onClick={() => {
-            try {
-              const cur = editor.getTextCursorPosition();
-              if (cur && cur.block) editor.updateBlock(cur.block, { type: 'paragraph' });
-            } catch {}
-          }} className="tb-btn" data-tooltip="Blockquote">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('blockQuote')} className="tb-btn" data-tooltip="Blockquote (Ctrl+Shift+U)">
             <Quote size={13} />
           </button>
           <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
-          <button onClick={() => {
+          <button onMouseDown={e => e.preventDefault()} onClick={() => {
             const url = prompt('Enter link URL:');
             if (url) {
-              try { editor.createLink(url); } catch {}
+              try { editor.createLink(url); editor.focus(); } catch {}
+            } else {
+              try { editor.focus(); } catch {}
             }
           }} className="tb-btn" data-tooltip="Insert Link">
             <Link size={13} />
           </button>
-          <button onClick={() => {
+          <button onMouseDown={e => e.preventDefault()} onClick={() => {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = 'image/*';
@@ -1617,6 +1622,7 @@ function App() {
                   if (cur && cur.block) {
                     editor.insertBlocks([{ type: 'paragraph', content: [{ type: 'text', text: `![${file.name || 'image'}](${url})`, styles: {} }] }], cur.block, 'after');
                   }
+                  editor.focus();
                 } catch {}
               }
             };
@@ -1892,16 +1898,19 @@ function App() {
           onSelectLanguage={(id) => {
             editor.updateBlock(codeMenu.blockId, { props: { language: id } });
             setCodeMenu(null);
+            try { editor.focus(); } catch {}
           }}
           onSelectDefault={(id) => {
             updateConfig('defaultCodeLanguage', id);
             setCodeMenu(null);
+            try { editor.focus(); } catch {}
           }}
           onCopy={() => {
             const b = editor.getBlock(codeMenu.blockId);
             const text = b?.content?.map((c: any) => c.text || '').join('') || '';
             navigator.clipboard.writeText(text);
             setCodeMenu(null);
+            try { editor.focus(); } catch {}
           }}
           onCut={() => {
             const b = editor.getBlock(codeMenu.blockId);
@@ -1909,12 +1918,17 @@ function App() {
             navigator.clipboard.writeText(text);
             editor.removeBlocks([codeMenu.blockId]);
             setCodeMenu(null);
+            try { editor.focus(); } catch {}
           }}
           onDelete={() => {
             editor.removeBlocks([codeMenu.blockId]);
             setCodeMenu(null);
+            try { editor.focus(); } catch {}
           }}
-          onClose={() => setCodeMenu(null)}
+          onClose={() => {
+            setCodeMenu(null);
+            try { editor.focus(); } catch {}
+          }}
         />
       )}
     </div>
