@@ -919,7 +919,7 @@ function App() {
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
-    // Delete 키: 줄 끝에서 삭제 시 아랫줄의 헤더/서식 정보 파괴 방지
+    // Delete 키: 줄 끝에서 삭제 시 안전하게 다음 블록 삭제 또는 에디터 표준 병합 동작 유도
     if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       try {
         const selection = editor.getSelection();
@@ -972,12 +972,6 @@ function App() {
                   editor.removeBlocks([nextBlock.id]);
                   return;
                 }
-
-                if (nextBlock.type !== 'paragraph') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return;
-                }
               }
             }
           }
@@ -987,7 +981,7 @@ function App() {
       }
     }
 
-    // Backspace 키: 블록 맨 앞에서 삭제 시 서식 보존 (서식 블록 -> paragraph 우선 전환)
+    // Backspace 키: 비어있는 서식 블록 맨 앞에서 삭제 시에만 paragraph 전환
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       try {
         const selection = editor.getSelection();
@@ -998,10 +992,17 @@ function App() {
             const isAtStart = typeof cursor.prevCharacter === 'undefined';
 
             if (isAtStart && currentBlock.type !== 'paragraph') {
-              e.preventDefault();
-              e.stopPropagation();
-              editor.updateBlock(currentBlock, { type: 'paragraph' });
-              return;
+              const isEmpty = (!currentBlock.content ||
+                (Array.isArray(currentBlock.content) && currentBlock.content.length === 0) ||
+                (Array.isArray(currentBlock.content) && currentBlock.content.length === 1 && currentBlock.content[0].type === 'text' && currentBlock.content[0].text === '')) &&
+                (!currentBlock.children || currentBlock.children.length === 0);
+
+              if (isEmpty) {
+                e.preventDefault();
+                e.stopPropagation();
+                editor.updateBlock(currentBlock, { type: 'paragraph' });
+                return;
+              }
             }
           }
         }
@@ -1032,10 +1033,8 @@ function App() {
             // Tab (Indent)
             let preventDefault = false;
             for (const block of blocksToProcess) {
-              if (block.type === 'numberedListItem') {
-                editor.updateBlock(block, { type: 'bulletListItem' });
-              } else if (block.type === 'paragraph' && (block.content?.length === 0 || (cursor && typeof cursor.prevCharacter === 'undefined'))) {
-                // If it's an empty paragraph, Tab changes it to a bullet list instead of inserting spaces.
+              if (block.type === 'paragraph' && (block.content?.length === 0 || (cursor && typeof cursor.prevCharacter === 'undefined'))) {
+                // 빈 문단에서 Tab 시 불릿 리스트로 전환
                 editor.updateBlock(block, { type: 'bulletListItem' });
                 preventDefault = true;
               }
@@ -1050,7 +1049,6 @@ function App() {
             let preventDefault = false;
             for (const block of blocksToProcess) {
               if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
-                // Recursive function to find the parent block
                 const findParent = (blocks: any[], id: string, parent: any = null): any => {
                   for (const b of blocks) {
                     if (b.id === id) return parent;
@@ -1062,14 +1060,8 @@ function App() {
                   return null;
                 };
                 const parentBlock = findParent(editor.document, block.id);
-                if (parentBlock) {
-                  const grandParentBlock = findParent(editor.document, parentBlock.id);
-                  const targetType = grandParentBlock ? grandParentBlock.type : parentBlock.type;
-                  if (targetType === 'numberedListItem' || targetType === 'bulletListItem') {
-                    editor.updateBlock(block, { type: targetType });
-                  }
-                } else {
-                  // At root level. Shift-Tab should convert to paragraph.
+                if (!parentBlock) {
+                  // 최상위 수준 리스트에서 Shift-Tab 시 문단으로 전환
                   editor.updateBlock(block, { type: 'paragraph' });
                   preventDefault = true;
                 }
