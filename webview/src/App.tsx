@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown } from './markdownTransforms';
 import { formatCodeBlock } from './codeFormatter';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
@@ -45,6 +45,48 @@ const insertDateItem = (editor: any) => ({
   group: "Utilities",
   icon: <span style={{ fontSize: '16px' }}>📅</span>,
   subtext: "Insert current date and time",
+});
+
+const insertMermaidItem = (editor: any) => ({
+  title: "Mermaid Diagram",
+  onItemClick: () => {
+    editor.insertBlocks(
+      [
+        {
+          type: "mermaid",
+          props: {
+            code: "graph TD;\n    A-->B;\n    A-->C;\n    B-->D;\n    C-->D;"
+          }
+        },
+      ],
+      editor.getTextCursorPosition().block,
+      "after"
+    );
+  },
+  aliases: ["mermaid", "flowchart", "diagram"],
+  group: "Advanced",
+  icon: <span style={{ fontSize: '16px' }}>📈</span>,
+  subtext: "Insert a Mermaid flowchart",
+});
+
+const insertCalloutItem = (editor: any) => ({
+  title: "Callout / Tip",
+  onItemClick: () => {
+    editor.insertBlocks(
+      [
+        {
+          type: "quote",
+          content: "💡 **Tip**: ",
+        },
+      ],
+      editor.getTextCursorPosition().block,
+      "after"
+    );
+  },
+  aliases: ["callout", "tip", "info", "warning"],
+  group: "Advanced",
+  icon: <span style={{ fontSize: '16px' }}>💡</span>,
+  subtext: "Insert a highlighted callout block",
 });
 
 import { BlockNoteView } from '@blocknote/mantine';
@@ -135,7 +177,48 @@ function App() {
     return () => document.removeEventListener('focusout', handleFocusOut);
   }, []);
 
+  // 글로벌 Drag & Drop 이벤트 (이미지 드롭 시 Base64로 호스트에 저장 후 삽입)
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
 
+    const handleDrop = async (e: DragEvent) => {
+      if (isRawMode || !editor) return;
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+
+      const file = files[0];
+      if (!file.type.startsWith('image/')) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        const url = await uploadFile(file);
+        // 드롭된 위치 혹은 현재 커서 위치에 이미지 삽입
+        const cursor = editor.getTextCursorPosition();
+        if (cursor && cursor.block) {
+          editor.insertBlocks(
+            [{ type: 'paragraph', content: [{ type: 'text', text: `![${file.name || 'image'}](${url})`, styles: {} }] }],
+            cursor.block,
+            'after'
+          );
+          editor.focus();
+        }
+      } catch (err) {
+        console.error('Drag & drop image save failed', err);
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [isRawMode, editor]);
 
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
@@ -497,9 +580,9 @@ function App() {
           setFmData(null);
         }
         const normalizedContent = content.replace(/\r\n/g, '\n');
-        const safeContent = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
+        const safeContent = parseWikilinks(preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
           preserveBlankLines(toWebviewImageUrls(normalizedContent, docBaseUriRef.current))
-        ));
+        )));
 
         isInitializing.current = true;
         if (!editor) {
@@ -595,7 +678,27 @@ function App() {
     extractHeadings(editor);
     try {
       const markdown = await generateMarkdownFromEditor(true);
-      const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
+      
+      // Phase 2: Tag Sync
+      const extractedTags = extractTagsFromMarkdown(markdown);
+      let updatedFmString = parsedFrontmatter;
+      
+      if (extractedTags.length > 0) {
+        setFmData(prev => {
+          const currentTags = prev?.tags || [];
+          const newTags = Array.from(new Set([...currentTags, ...extractedTags]));
+          
+          if (newTags.length !== currentTags.length) {
+            const newData = { ...(prev || { title: '', date: '' }), tags: newTags };
+            updatedFmString = YAML.stringify(newData).trim();
+            setParsedFrontmatter(updatedFmString);
+            return newData;
+          }
+          return prev;
+        });
+      }
+
+      const fullText = updatedFmString ? `---\n${updatedFmString}\n---\n${markdown}` : markdown;
       lastSentTextRef.current = fullText;
       vscode.postMessage({ type: 'change', text: fullText });
     } catch (err) {
@@ -640,7 +743,7 @@ function App() {
     }
     
     markdown = enforceHyphens(markdown);
-    return restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current));
+    return serializeWikilinks(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current)));
   };
 
   const handleWysiwygChange = () => {
@@ -918,6 +1021,24 @@ function App() {
 
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
+
+    // Cmd/Ctrl + Z / Y : 호스트 기반 Undo/Redo 통합
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        vscode.postMessage({ type: 'redo' });
+      } else {
+        vscode.postMessage({ type: 'undo' });
+      }
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      e.stopPropagation();
+      vscode.postMessage({ type: 'redo' });
+      return;
+    }
 
     // Delete 키: 줄 끝에서 삭제 시 안전하게 다음 블록 삭제 또는 에디터 표준 병합 동작 유도
     if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1868,7 +1989,9 @@ function App() {
                   getItems={async (query) => {
                     const defaultItems = getDefaultReactSlashMenuItems(editor);
                     const customItem = insertDateItem(editor);
-                    const allItems = [...defaultItems, customItem];
+                    const mermaidItem = insertMermaidItem(editor);
+                    const calloutItem = insertCalloutItem(editor);
+                    const allItems = [...defaultItems, customItem, mermaidItem, calloutItem];
                     return allItems.filter(item => item.title.toLowerCase().includes(query.toLowerCase()) || (item.aliases && item.aliases.some((a: string) => a.toLowerCase().includes(query.toLowerCase()))));
                   }}
                 />

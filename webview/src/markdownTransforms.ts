@@ -269,4 +269,32 @@ export function parseTableFromClipboardText(text: string): string | null {
   return `${header}\n${separator}\n${dataRows}`;
 }
 
+// --- Phase 2: Obsidian Integration Helpers ---
 
+// 본문 내 #태그를 추출하여 중복 없는 배열로 반환
+export function extractTagsFromMarkdown(md: string): string[] {
+  const tags = new Set<string>();
+  mapOutsideCodeFences(md, part => {
+    // 공백 문자나 문장 시작 뒤에 오는 #태그 추출
+    const matches = part.matchAll(/(?:^|\s)#([A-Za-z0-9가-힣_-]+)/g);
+    for (const match of matches) {
+      tags.add(match[1]);
+    }
+    return part;
+  });
+  return Array.from(tags);
+}
+
+// [[문서명]] -> [문서명](문서명.md) 로 변환하여 에디터 렌더링 지원
+export function parseWikilinks(md: string): string {
+  return mapOutsideCodeFences(md, part => 
+    part.replace(/\[\[([^\]]+)\]\]/g, (_, docName) => `[${docName}](${docName}.md)`)
+  );
+}
+
+// 저장 시 [문서명](문서명.md) 형태를 다시 [[문서명]]으로 원상 복구
+export function serializeWikilinks(md: string): string {
+  return mapOutsideCodeFences(md, part => 
+    part.replace(/\[([^\]]+)\]\(\1\.md\)/g, (_, docName) => `[[${docName}]]`)
+  );
+}
