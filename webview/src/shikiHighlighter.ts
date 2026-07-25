@@ -116,7 +116,7 @@ const createHighlighterInternal = async () => {
 
     try {
       return originalCodeToHtml(code, options);
-    } catch (e) {
+    } catch {
       return originalCodeToHtml(code, { ...options, lang: 'text' });
     }
   };

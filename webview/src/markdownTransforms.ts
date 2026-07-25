@@ -1,7 +1,7 @@
 // 마크다운 <-> BlockNote 왕복 변환에 쓰이는 순수 함수 모음.
 // 컴포넌트 상태에 의존하지 않으므로 독립적으로 테스트 가능하다.
 
-export const NBSP = ' ';
+export const NBSP = '\xA0';
 
 export const isMermaidCode = (text: string): boolean => {
   const lines = text.split('\n')
@@ -138,6 +138,108 @@ export function mapOutsideCodeFences(markdown: string, fn: (part: string) => str
   }
   flush();
   return out.join('\n');
+}
+
+// 마크다운 저장 시 모든 연속된 숫자 리스트가 1. 로 직렬화되는 현상을 1., 2., 3. 순차적으로 수정
+export function normalizeOrderedListNumbers(md: string): string {
+  const lines = md.split('\n');
+  let indentCounters: { [indent: number]: number } = {};
+  let openFence: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // 코드 펜스 처리
+    const m = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (openFence === null && m) {
+      openFence = m[1];
+      continue;
+    } else if (openFence !== null) {
+      if (m && m[1][0] === openFence[0] && m[1].length >= openFence.length) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    const match = line.match(/^(\s*)(\d+)\.(?=\s)(.*)/);
+    if (match) {
+      const indent = match[1].length;
+      if (indentCounters[indent] === undefined) {
+        indentCounters[indent] = parseInt(match[2], 10);
+      } else {
+        indentCounters[indent]++;
+      }
+      lines[i] = `${match[1]}${indentCounters[indent]}.${match[3]}`;
+      
+      // 하위 레벨 카운터 리셋
+      for (const key in indentCounters) {
+        if (parseInt(key) > indent) {
+          delete indentCounters[key];
+        }
+      }
+    } else {
+      // 헤더를 만나면 모든 카운터를 리셋 (사용자 요청: 헤더 내 단락 안에서는 숫자가 순차적으로 설정)
+      if (/^#{1,6}\s/.test(line)) {
+        indentCounters = {};
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+// 다단계 불릿 리스트를 -와 * 번갈아가며 표시하도록 직렬화 정규화
+export function normalizeUnorderedListBullets(md: string): string {
+  const lines = md.split('\n');
+  let activeIndents: number[] = [];
+  let openFence: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // 코드 펜스 처리
+    const m = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (openFence === null && m) {
+      openFence = m[1];
+      continue;
+    } else if (openFence !== null) {
+      if (m && m[1][0] === openFence[0] && m[1].length >= openFence.length) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    // 마크다운 불릿 리스트 매칭 (- * +). 단, 수평선(---, ***)은 제외.
+    const match = line.match(/^(\s*)([-*+])\s+(.*)/);
+    const isHr = line.match(/^\s*([-*+])\s*\1\s*\1/);
+    
+    if (match && !isHr) {
+      const indent = match[1].length;
+      
+      // 현재보다 깊은 들여쓰기는 스택에서 제거
+      activeIndents = activeIndents.filter(ind => ind < indent);
+      
+      if (!activeIndents.includes(indent)) {
+        activeIndents.push(indent);
+      }
+      
+      const level = activeIndents.indexOf(indent);
+      // 레벨 0: -, 레벨 1: *, 레벨 2: -, 레벨 3: *
+      const bullet = level % 2 === 0 ? '-' : '*';
+      lines[i] = `${match[1]}${bullet} ${match[3]}`;
+    } else {
+      // 헤더를 만나면 초기화
+      if (/^#{1,6}\s/.test(line)) {
+        activeIndents = [];
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+export function preserveEmptyHeadings(md: string): string {
+  // 줄이 오직 '#' 기호 1~6개로만 이루어져 있는 경우 (trailing space가 잘린 빈 헤더)
+  // BlockNote 파서가 이를 단락으로 오인하지 않도록 강제로 공백을 추가
+  return md.replace(/^#{1,6}$/gm, "$& ");
 }
 
 // 문단 내부의 단일 개행을 하드브레이크(후행 공백 2개)로 만들어 BlockNote 왕복에서

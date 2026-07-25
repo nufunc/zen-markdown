@@ -33,6 +33,46 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
           .bn-container { color: var(--text-color) !important; }
           .raw-markdown-editor .cm-content { padding: 16px 32px !important; }
 
+          /* 
+           * WYSIWYG Numbered List Override 
+           * To match the Markdown export behavior (where numbers continue across paragraphs/bullets 
+           * until a heading is encountered), we override the root level BlockNote CSS counters.
+           */
+          .bn-editor {
+            counter-reset: root-bn-numbered-list;
+          }
+          .bn-editor > .bn-block-group > .bn-block[data-content-type="heading"] {
+            counter-reset: root-bn-numbered-list;
+          }
+          .bn-editor > .bn-block-group > .bn-block[data-content-type="numberedListItem"] > .bn-block-content.bn-numbered-list-item {
+            counter-increment: root-bn-numbered-list 1 !important;
+          }
+          .bn-editor > .bn-block-group > .bn-block[data-content-type="numberedListItem"] > .bn-block-content.bn-numbered-list-item::before {
+            content: counter(root-bn-numbered-list) ". " !important;
+          }
+
+          /* Alternate Bullet Lists: - and * */
+          .bn-editor .bn-bullet-list-item::before {
+            content: "- " !important;
+            font-weight: bold;
+            color: color-mix(in srgb, var(--text-color) 70%, transparent);
+          }
+          .bn-editor .bn-block-group .bn-block-group .bn-bullet-list-item::before {
+            content: "* " !important;
+            font-weight: bold;
+            font-size: 1.1em;
+          }
+          .bn-editor .bn-block-group .bn-block-group .bn-block-group .bn-bullet-list-item::before {
+            content: "- " !important;
+            font-weight: bold;
+            font-size: 1em;
+          }
+          .bn-editor .bn-block-group .bn-block-group .bn-block-group .bn-block-group .bn-bullet-list-item::before {
+            content: "* " !important;
+            font-weight: bold;
+            font-size: 1.1em;
+          }
+
           /* Code Block (GitHub-style: background one step off the page, no border) */
           .bn-editor .bn-block-content[data-content-type="codeBlock"] {
             color: ${codeColor} !important;
@@ -174,28 +214,37 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             background: radial-gradient(circle, ${accentColor} 0 3px, transparent 3.5px);
           }
 
-          /* Uniform Bullet Icons */
+          /* Uniform Bullet Icons - Elegant Design */
           .bn-editor .bn-block-content[data-content-type="bulletListItem"]::before {
-            font-family: "Segoe UI Symbol", "Apple Color Emoji", "Arial", sans-serif !important;
-            font-size: 0.75em !important;
+            font-family: "Inter", "Segoe UI", "Apple Color Emoji", sans-serif !important;
+            font-size: 0.9em !important;
+            transform: translateY(0.05em);
+          }
+
+          /* Level 1: Standard Bullet (Solid) */
+          .bn-editor .bn-block-content[data-content-type="bulletListItem"]::before {
+            content: "•" !important;
+          }
+
+          /* Level 2: Hollow Bullet */
+          .bn-editor .bn-block-group .bn-block-group .bn-block-content[data-content-type="bulletListItem"]::before {
+            content: "◦" !important;
+            font-size: 1.1em !important;
+            transform: translateY(-0.02em);
+          }
+
+          /* Level 3: Small Solid Square */
+          .bn-editor .bn-block-group .bn-block-group .bn-block-group .bn-block-content[data-content-type="bulletListItem"]::before {
+            content: "▪" !important;
+            font-size: 0.8em !important;
             transform: translateY(0.1em);
           }
 
-          /* Level 1: Solid Circle (Default) */
-          .bn-editor .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "●" !important;
-          }
-
-          /* Level 2: Hollow Circle */
-          .bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "○" !important;
-            font-size: 0.85em !important;
-          }
-
-          /* Level 3: Solid Square */
-          .bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group .bn-block-content[data-content-type="bulletListItem"]::before {
-            content: "■" !important;
-            font-size: 0.75em !important;
+          /* Level 4+: Small Hollow Square */
+          .bn-editor .bn-block-group .bn-block-group .bn-block-group .bn-block-group .bn-block-content[data-content-type="bulletListItem"]::before {
+            content: "▫" !important;
+            font-size: 0.8em !important;
+            transform: translateY(0.1em);
           }
 
           /* Disable BlockNote internal scroll to prevent double scrollbars */

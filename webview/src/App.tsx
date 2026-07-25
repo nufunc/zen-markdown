@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, preserveEmptyHeadings } from './markdownTransforms';
 import { formatCodeBlock } from './codeFormatter';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
@@ -271,8 +271,8 @@ function App() {
           const incoming = message.text || "";
           // 호스트가 이미 내용 비교로 echo를 걸러 보내므로 여기 오는 것은 대부분 진짜 외부 변경.
           // 단, 적용 실패 재동기화 등으로 자기 편집이 되돌아온 경우는 무시.
-          const incomingNormalized = incoming.replace(/\r\n/g, '\n');
-          const lastSentNormalized = lastSentTextRef.current.replace(/\r\n/g, '\n');
+          const incomingNormalized = incoming.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
+          const lastSentNormalized = lastSentTextRef.current.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
           if (incomingNormalized === lastSentNormalized) return;
           
           // 위지윅 에디터 포커스 여부와 최근 로컬 편집 여부 검사
@@ -304,6 +304,7 @@ function App() {
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentText]);
 
   useEffect(() => {
@@ -333,7 +334,12 @@ function App() {
           if (blocks && blocks.length > 0) {
             const cur = editor.getTextCursorPosition();
             if (cur && cur.block) {
-              editor.insertBlocks(blocks, cur.block, 'after');
+              const isBlockEmpty = !cur.block.content || (Array.isArray(cur.block.content) && cur.block.content.every((c: any) => c.type === 'text' && !c.text));
+              if (isBlockEmpty && cur.block.type === 'paragraph') {
+                editor.replaceBlocks([cur.block], blocks);
+              } else {
+                editor.insertBlocks(blocks, cur.block, 'after');
+              }
             }
           }
         } catch (err) {
@@ -580,9 +586,9 @@ function App() {
           setFmData(null);
         }
         const normalizedContent = content.replace(/\r\n/g, '\n');
-        const safeContent = parseWikilinks(preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
+        const safeContent = preserveEmptyHeadings(parseWikilinks(preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
           preserveBlankLines(toWebviewImageUrls(normalizedContent, docBaseUriRef.current))
-        )));
+        ))));
 
         isInitializing.current = true;
         if (!editor) {
@@ -716,20 +722,10 @@ function App() {
     const blocksForMd = processBlocksToMarkdown(editor.document);
     let markdown = await editor.blocksToMarkdownLossy(blocksForMd as any);
     
-    const enforceHyphens = (md: string) => {
-      const lines = md.split('\n');
-      let inCodeBlock = false;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim().startsWith('```')) {
-          inCodeBlock = !inCodeBlock;
-        } else if (!inCodeBlock) {
-          lines[i] = lines[i].replace(/^(\s*)[*+]\s/, '$1- ');
-        }
-      }
-      return lines.join('\n');
-    };
 
-    markdown = enforceHyphens(markdown);
+
+    markdown = normalizeOrderedListNumbers(markdown);
+    markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(markdown));
     
     if (config.autoFix && !skipAutoFix) {
@@ -742,8 +738,7 @@ function App() {
       }
     }
     
-    markdown = enforceHyphens(markdown);
-    return serializeWikilinks(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current)));
+    return serializeWikilinks(preserveEmptyHeadings(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current))));
   };
 
   const handleWysiwygChange = () => {
@@ -952,6 +947,8 @@ function App() {
           const markdown = await generateMarkdownFromEditor();
           const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
           setDocumentText(fullText);
+          lastSentTextRef.current = fullText;
+          vscode.postMessage({ type: 'change', text: fullText });
         }
       } catch (err) {
         console.error("Failed to generate markdown during mode toggle", err);
@@ -1022,6 +1019,9 @@ function App() {
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
+    // 한국어 등 IME 합성(입력 중) 상태에서는 단축키 이벤트를 가로채지 않음 (글자 씹힘 및 겹침 방지)
+    if (e.nativeEvent.isComposing) return;
+
     // Cmd/Ctrl + Z / Y : 호스트 기반 Undo/Redo 통합
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();
@@ -1040,97 +1040,7 @@ function App() {
       return;
     }
 
-    // Delete 키: 줄 끝에서 삭제 시 안전하게 다음 블록 삭제 또는 에디터 표준 병합 동작 유도
-    if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      try {
-        const selection = editor.getSelection();
-        if (!selection || !selection.blocks || selection.blocks.length <= 1) {
-          const cursor = editor.getTextCursorPosition();
-          if (cursor && cursor.block) {
-            const currentBlock = cursor.block;
-            const isAtEnd = typeof cursor.nextCharacter === 'undefined';
 
-            if (isAtEnd) {
-              const doc = editor.document;
-              const findNextBlock = (blocks: any[], targetId: string): any => {
-                for (let i = 0; i < blocks.length; i++) {
-                  if (blocks[i].id === targetId) {
-                    if (i < blocks.length - 1) return blocks[i + 1];
-                    return null;
-                  }
-                  if (blocks[i].children && blocks[i].children.length > 0) {
-                    const res = findNextBlock(blocks[i].children, targetId);
-                    if (res) return res;
-                  }
-                }
-                return null;
-              };
-
-              const nextBlock = findNextBlock(doc, currentBlock.id);
-
-              if (nextBlock) {
-                const isCurrentEmpty = (!currentBlock.content ||
-                  (Array.isArray(currentBlock.content) && currentBlock.content.length === 0) ||
-                  (Array.isArray(currentBlock.content) && currentBlock.content.length === 1 && currentBlock.content[0].type === 'text' && currentBlock.content[0].text === '')) &&
-                  (!currentBlock.children || currentBlock.children.length === 0);
-
-                if (isCurrentEmpty) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  editor.removeBlocks([currentBlock.id]);
-                  editor.setTextCursorPosition(nextBlock, 'start');
-                  return;
-                }
-
-                const isNextEmpty = (!nextBlock.content ||
-                  (Array.isArray(nextBlock.content) && nextBlock.content.length === 0) ||
-                  (Array.isArray(nextBlock.content) && nextBlock.content.length === 1 && nextBlock.content[0].type === 'text' && nextBlock.content[0].text === '')) &&
-                  (!nextBlock.children || nextBlock.children.length === 0);
-
-                if (isNextEmpty) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  editor.removeBlocks([nextBlock.id]);
-                  return;
-                }
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error in Delete key handler', err);
-      }
-    }
-
-    // Backspace 키: 비어있는 서식 블록 맨 앞에서 삭제 시에만 paragraph 전환
-    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      try {
-        const selection = editor.getSelection();
-        if (!selection || !selection.blocks || selection.blocks.length <= 1) {
-          const cursor = editor.getTextCursorPosition();
-          if (cursor && cursor.block) {
-            const currentBlock = cursor.block;
-            const isAtStart = typeof cursor.prevCharacter === 'undefined';
-
-            if (isAtStart && currentBlock.type !== 'paragraph') {
-              const isEmpty = (!currentBlock.content ||
-                (Array.isArray(currentBlock.content) && currentBlock.content.length === 0) ||
-                (Array.isArray(currentBlock.content) && currentBlock.content.length === 1 && currentBlock.content[0].type === 'text' && currentBlock.content[0].text === '')) &&
-                (!currentBlock.children || currentBlock.children.length === 0);
-
-              if (isEmpty) {
-                e.preventDefault();
-                e.stopPropagation();
-                editor.updateBlock(currentBlock, { type: 'paragraph' });
-                return;
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Error in Backspace key handler', err);
-      }
-    }
 
     if (e.key === 'Tab') {
       try {
@@ -1158,6 +1068,23 @@ function App() {
                 // 빈 문단에서 Tab 시 불릿 리스트로 전환
                 editor.updateBlock(block, { type: 'bulletListItem' });
                 preventDefault = true;
+              } else if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
+                preventDefault = true; // 무조건 기본 동작(포커스 이동) 차단
+                if (cursor && editor.canNestBlock()) {
+                  editor.nestBlock();
+                  if (block.type === 'numberedListItem') {
+                    // 숫자 리스트에서 들여쓰기(Tab) 시 기본 들여쓰기 동작 후 불릿 리스트로 전환
+                    setTimeout(() => {
+                      try {
+                        editor.updateBlock(block.id, { type: 'bulletListItem' });
+                        const isBlockEmpty = !block.content || (Array.isArray(block.content) && block.content.every((c: any) => c.type === 'text' && !c.text));
+                        if (isBlockEmpty) {
+                          editor.setTextCursorPosition(block.id, 'end');
+                        }
+                      } catch {}
+                    }, 0);
+                  }
+                }
               }
             }
             if (preventDefault) {
@@ -1170,6 +1097,7 @@ function App() {
             let preventDefault = false;
             for (const block of blocksToProcess) {
               if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
+                preventDefault = true; // 무조건 기본 동작 차단 (커서 이탈 방지)
                 const findParent = (blocks: any[], id: string, parent: any = null): any => {
                   for (const b of blocks) {
                     if (b.id === id) return parent;
@@ -1181,10 +1109,22 @@ function App() {
                   return null;
                 };
                 const parentBlock = findParent(editor.document, block.id);
-                if (!parentBlock) {
-                  // 최상위 수준 리스트에서 Shift-Tab 시 문단으로 전환
-                  editor.updateBlock(block, { type: 'paragraph' });
-                  preventDefault = true;
+                if (parentBlock) { // 최상위(1레벨)에서는 아무 동작 안 함
+                  if (cursor && editor.canUnnestBlock()) {
+                    editor.unnestBlock();
+                    if (parentBlock.type === 'numberedListItem' && block.type === 'bulletListItem') {
+                      // 숫자 리스트 하위의 불릿 리스트를 내어쓰기할 경우 다시 숫자 리스트로 전환
+                      setTimeout(() => {
+                        try {
+                          editor.updateBlock(block.id, { type: 'numberedListItem' });
+                          const isBlockEmpty = !block.content || (Array.isArray(block.content) && block.content.every((c: any) => c.type === 'text' && !c.text));
+                          if (isBlockEmpty) {
+                            editor.setTextCursorPosition(block.id, 'end');
+                          }
+                        } catch {}
+                      }, 0);
+                    }
+                  }
                 }
               }
             }
@@ -1965,19 +1905,9 @@ function App() {
                   e.preventDefault();
                   try {
                     let markdown = await editor.blocksToMarkdownLossy(selection.blocks as any);
-                    const enforceHyphens = (md: string) => {
-                      const lines = md.split('\n');
-                      let inCodeBlock = false;
-                      for (let i = 0; i < lines.length; i++) {
-                        if (lines[i].trim().startsWith('```')) {
-                          inCodeBlock = !inCodeBlock;
-                        } else if (!inCodeBlock) {
-                          lines[i] = lines[i].replace(/^(\s*)[*+]\s/, '$1- ');
-                        }
-                      }
-                      return lines.join('\n');
-                    };
-                    markdown = enforceHyphens(markdown);
+                    markdown = normalizeOrderedListNumbers(markdown);
+                    markdown = normalizeUnorderedListBullets(markdown);
+
                     e.clipboardData.setData('text/plain', markdown);
                   } catch (err) {
                     console.error("Failed to copy markdown", err);

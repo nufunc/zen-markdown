@@ -7,7 +7,7 @@ import { supportedLanguages } from './shikiHighlighter';
 const LANGUAGE_ENTRIES = Object.entries(supportedLanguages).map(([id, v]) => ({ id, name: v.name }));
 
 // 별칭(ps1, yml 등)을 supportedLanguages의 대표 id로 정규화
-export function normalizeLanguageId(lang: string): string {
+function normalizeLanguageId(lang: string): string {
   const lower = (lang || '').toLowerCase();
   for (const [id, v] of Object.entries(supportedLanguages)) {
     if (id === lower || v.aliases?.includes(lower)) return id;

@@ -17,3 +17,5 @@ MEMORY.md
 .DS_Store
 appmap.yml
 
+# Other untracked files
+release_notes.txt
