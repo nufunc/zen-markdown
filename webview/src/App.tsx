@@ -151,6 +151,7 @@ function App() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const hasEdited = useRef(false);
   const lastEditTimeRef = useRef(0);
+  const lastUndoTimeRef = useRef(0);
   const isInitializing = useRef(false);
   // 호스트로 마지막에 보낸 전체 텍스트 — external_update가 자기 편집의 반사인지 판별용
   const lastSentTextRef = useRef<string>("");
@@ -278,7 +279,8 @@ function App() {
           // 위지윅 에디터 포커스 여부와 최근 로컬 편집 여부 검사
           const isEditorFocused = isEditorElement(document.activeElement);
           const isRecentlyEdited = (Date.now() - lastEditTimeRef.current) < 2000;
-          if ((isEditorFocused || isRecentlyEdited) && documentText !== "loading") {
+          const isUndoing = (Date.now() - lastUndoTimeRef.current) < 1000;
+          if (!isUndoing && (isEditorFocused || isRecentlyEdited) && documentText !== "loading") {
             pendingExternalUpdateRef.current = incoming;
             return;
           }
@@ -1026,6 +1028,7 @@ function App() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       e.stopPropagation();
+      lastUndoTimeRef.current = Date.now();
       if (e.shiftKey) {
         vscode.postMessage({ type: 'redo' });
       } else {
@@ -1036,6 +1039,7 @@ function App() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
       e.preventDefault();
       e.stopPropagation();
+      lastUndoTimeRef.current = Date.now();
       vscode.postMessage({ type: 'redo' });
       return;
     }

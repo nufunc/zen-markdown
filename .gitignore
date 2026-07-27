@@ -19,3 +19,9 @@ appmap.yml
 
 # Other untracked files
 release_notes.txt
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
