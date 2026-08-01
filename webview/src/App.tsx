@@ -272,8 +272,9 @@ function App() {
           const incoming = message.text || "";
           // 호스트가 이미 내용 비교로 echo를 걸러 보내므로 여기 오는 것은 대부분 진짜 외부 변경.
           // 단, 적용 실패 재동기화 등으로 자기 편집이 되돌아온 경우는 무시.
-          const incomingNormalized = incoming.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
-          const lastSentNormalized = lastSentTextRef.current.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').trim();
+          const normalizeMd = (str: string) => str.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim();
+          const incomingNormalized = normalizeMd(incoming);
+          const lastSentNormalized = normalizeMd(lastSentTextRef.current);
           if (incomingNormalized === lastSentNormalized) return;
           
           // 위지윅 에디터 포커스 여부와 최근 로컬 편집 여부 검사
@@ -464,32 +465,38 @@ function App() {
   useEffect(() => {
     if (isRawMode || !editor) return;
 
+    let isHandlingSelection = false;
     const handleSelectionChange = () => {
-      try {
-        const cursor = editor.getTextCursorPosition();
-        const currentBlockId = cursor?.block?.id || null;
-        const currentBlockType = cursor?.block?.type || null;
+      if (isHandlingSelection) return;
+      isHandlingSelection = true;
+      requestAnimationFrame(() => {
+        try {
+          const cursor = editor.getTextCursorPosition();
+          const currentBlockId = cursor?.block?.id || null;
+          const currentBlockType = cursor?.block?.type || null;
 
-        if (activeCodeBlockIdRef.current && activeCodeBlockIdRef.current !== currentBlockId) {
-          const prevBlockId = activeCodeBlockIdRef.current;
-          const prevBlock = editor.getBlock(prevBlockId);
-          if (prevBlock && prevBlock.type === 'codeBlock') {
-            const text = prevBlock.content?.map((c: any) => c.text || '').join('') || '';
-            const lang = prevBlock.props?.language || '';
-            formatCodeBlock(text, lang).then(formatted => {
-              if (formatted === null || formatted === text) return;
-              // 비동기 완료 시점에 블록이 여전히 존재하고 내용이 그대로일 때만 반영
-              const stillThere = editor.getBlock(prevBlockId);
-              if (!stillThere || stillThere.type !== 'codeBlock') return;
-              const currentText = stillThere.content?.map((c: any) => c.text || '').join('') || '';
-              if (currentText !== text) return;
-              editor.updateBlock(prevBlockId, { content: [{ type: 'text', text: formatted, styles: {} }] });
-            }).catch(() => { /* noop */ });
+          if (activeCodeBlockIdRef.current && activeCodeBlockIdRef.current !== currentBlockId) {
+            const prevBlockId = activeCodeBlockIdRef.current;
+            const prevBlock = editor.getBlock(prevBlockId);
+            if (prevBlock && prevBlock.type === 'codeBlock') {
+              const text = prevBlock.content?.map((c: any) => c.text || '').join('') || '';
+              const lang = prevBlock.props?.language || '';
+              formatCodeBlock(text, lang).then(formatted => {
+                if (formatted === null || formatted === text) return;
+                // 비동기 완료 시점에 블록이 여전히 존재하고 내용이 그대로일 때만 반영
+                const stillThere = editor.getBlock(prevBlockId);
+                if (!stillThere || stillThere.type !== 'codeBlock') return;
+                const currentText = stillThere.content?.map((c: any) => c.text || '').join('') || '';
+                if (currentText !== text) return;
+                editor.updateBlock(prevBlockId, { content: [{ type: 'text', text: formatted, styles: {} }] });
+              }).catch(() => { /* noop */ });
+            }
           }
-        }
 
-        activeCodeBlockIdRef.current = currentBlockType === 'codeBlock' ? currentBlockId : null;
-      } catch { /* noop */ }
+          activeCodeBlockIdRef.current = currentBlockType === 'codeBlock' ? currentBlockId : null;
+        } catch { /* noop */ }
+        isHandlingSelection = false;
+      });
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
@@ -629,19 +636,45 @@ function App() {
           // replaceBlocks는 커서를 문서 끝으로 보내므로, 블록 인덱스 기준으로 복원
           // (블록 id는 재파싱 시 재생성되어 id로는 복원 불가)
           let cursorIdx = -1;
+          let tipTapSelection: any = null;
           try {
+            const tiptap = (editor as any)._tiptapEditor;
+            if (tiptap && tiptap.state && tiptap.state.selection) {
+              tipTapSelection = {
+                from: tiptap.state.selection.from,
+                to: tiptap.state.selection.to
+              };
+            }
             const cur = editor.getTextCursorPosition();
             cursorIdx = editor.document.findIndex((b: any) => b.id === cur?.block?.id);
           } catch { /* noop */ }
+          
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           editor.replaceBlocks(editor.document, blocks);
           extractHeadings(editor);
-          if (cursorIdx >= 0) {
+          
+          if (tipTapSelection) {
+            try {
+              const tiptap = (editor as any)._tiptapEditor;
+              if (tiptap) {
+                // DOM 업데이트 후 selection 복원
+                setTimeout(() => {
+                  try {
+                    const docSize = tiptap.state.doc.content.size;
+                    tiptap.commands.setTextSelection({
+                      from: Math.min(tipTapSelection.from, docSize),
+                      to: Math.min(tipTapSelection.to, docSize)
+                    });
+                  } catch {}
+                }, 0);
+              }
+            } catch { /* noop */ }
+          } else if (cursorIdx >= 0) {
             try {
               const doc = editor.document;
               const target = doc[Math.min(cursorIdx, doc.length - 1)];
-              if (target) editor.setTextCursorPosition(target, 'start');
+              if (target) editor.setTextCursorPosition(target, 'end');
             } catch { /* noop */ }
           }
         }
@@ -756,7 +789,12 @@ function App() {
         if (cursor && cursor.block) {
           const blockElement = document.querySelector(`[data-id="${cursor.block.id}"]`);
           if (blockElement) {
-            blockElement.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+            const rect = blockElement.getBoundingClientRect();
+            // 뷰포트를 벗어난 경우에만 스크롤 이동
+            const isOutOfViewport = rect.top < 0 || rect.bottom > (window.innerHeight || document.documentElement.clientHeight);
+            if (isOutOfViewport) {
+              blockElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
           }
         }
       } catch {

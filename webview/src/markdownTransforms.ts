@@ -178,8 +178,8 @@ export function normalizeOrderedListNumbers(md: string): string {
         }
       }
     } else {
-      // 헤더를 만나면 모든 카운터를 리셋 (사용자 요청: 헤더 내 단락 안에서는 숫자가 순차적으로 설정)
-      if (/^#{1,6}\s/.test(line)) {
+      // 헤더를 만나거나 빈 줄을 만나면 모든 카운터를 리셋
+      if (/^#{1,6}\s/.test(line) || line.trim() === '') {
         indentCounters = {};
       }
     }
