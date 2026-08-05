@@ -601,7 +601,16 @@ function App() {
 
         isInitializing.current = true;
         if (!editor) {
-          const newEditor = BlockNoteEditor.create({ schema: buildSchema(configRef.current.defaultCodeLanguage), uploadFile });
+          const newEditor = BlockNoteEditor.create({ 
+            schema: buildSchema(configRef.current.defaultCodeLanguage), 
+            uploadFile,
+            pasteHandler: ({ defaultPasteHandler }) => {
+              return defaultPasteHandler({
+                plainTextAsMarkdown: true,
+                prioritizeMarkdownOverHTML: true
+              });
+            }
+          });
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
