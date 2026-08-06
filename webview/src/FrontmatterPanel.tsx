@@ -56,7 +56,6 @@ export function FrontmatterPanel({
 }: FrontmatterPanelProps) {
   const [isAddingProp, setIsAddingProp] = useState(false);
   const [newPropKey, setNewPropKey] = useState('');
-  const [activeTagInput, setActiveTagInput] = useState<string | null>(null);
 
   const isTitleMissing = !fmData || !fmData.title;
 
@@ -210,57 +209,46 @@ export function FrontmatterPanel({
                       </span>
                     );
                   })}
-                  {activeTagInput === key ? (
-                    <input
-                      type="text"
-                      autoFocus
-                      style={{
-                        background: 'rgba(125,125,125,0.1)',
-                        border: '1px solid rgba(125,125,125,0.3)',
-                        borderRadius: '12px',
-                        color: textColor,
-                        outline: 'none',
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        minWidth: '70px'
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                          onChange(key, [...value, e.currentTarget.value.trim()]);
-                          e.currentTarget.value = '';
-                          setActiveTagInput(null);
-                        } else if (e.key === 'Escape') {
-                          setActiveTagInput(null);
+                  <input
+                    type="text"
+                    placeholder={Array.isArray(value) && value.length === 0 ? "Add tags..." : ""}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: textColor,
+                      outline: 'none',
+                      flex: 1,
+                      minWidth: '70px',
+                      fontSize: '11px',
+                      padding: '2px 4px',
+                      margin: 0
+                    }}
+                    onKeyDown={(e) => {
+                      const val = e.currentTarget.value.trim();
+                      if ((e.key === 'Enter' || e.key === ',') && val) {
+                        e.preventDefault();
+                        const tagArr = Array.isArray(value) ? value : [];
+                        if (!tagArr.includes(val)) {
+                          onChange(key, [...tagArr, val]);
                         }
-                      }}
-                      onBlur={(e) => {
-                        if (e.currentTarget.value.trim()) {
-                          onChange(key, [...value, e.currentTarget.value.trim()]);
+                        e.currentTarget.value = '';
+                      } else if (e.key === 'Backspace' && !e.currentTarget.value && Array.isArray(value) && value.length > 0) {
+                        const tagArr = [...value];
+                        tagArr.pop();
+                        onChange(key, tagArr);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.currentTarget.value.trim();
+                      if (val) {
+                        const tagArr = Array.isArray(value) ? value : [];
+                        if (!tagArr.includes(val)) {
+                          onChange(key, [...tagArr, val]);
                         }
-                        setActiveTagInput(null);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => setActiveTagInput(key)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px dashed rgba(125,125,125,0.3)',
-                        borderRadius: '12px',
-                        color: textColor,
-                        opacity: 0.6,
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '2px'
-                      }}
-                    >
-                      <Plus size={10} />
-                      <span>Tag</span>
-                    </button>
-                  )}
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                  />
                 </div>
               ) : isBool ? (
                 <div className="fm-value" style={{ flex: 1, padding: '2px 6px', display: 'flex', alignItems: 'center' }}>
