@@ -63,7 +63,9 @@ export function FrontmatterPanel({
   const handleAddProperty = () => {
     if (newPropKey.trim()) {
       const key = newPropKey.trim();
-      onChange(key, '');
+      const lower = key.toLowerCase();
+      const initialValue = (lower === 'tags' || lower === 'tag' || lower === 'categories') ? [] : '';
+      onChange(key, initialValue);
       setNewPropKey('');
       setIsAddingProp(false);
     }
