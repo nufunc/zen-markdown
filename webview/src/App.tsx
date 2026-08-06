@@ -127,7 +127,7 @@ function formatDocPath(rawUri: string): string {
 
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
-  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string, focusMode: boolean, spellCheck: boolean, contentWidth: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false, defaultCodeLanguage: 'text', focusMode: false, spellCheck: false, contentWidth: 'standard' });
+  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string, focusMode: boolean, spellCheck: boolean, contentWidth: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: true, isReadOnly: false, defaultCodeLanguage: 'text', focusMode: false, spellCheck: false, contentWidth: 'standard' });
   // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
   const configRef = useRef(config);
   configRef.current = config;
