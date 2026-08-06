@@ -255,3 +255,7 @@ input:checked + .toggle-slider:before {
   transform: scale(1.06);
 }
 
+.fm-row:hover {
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(125, 125, 125, 0.08));
+}
+

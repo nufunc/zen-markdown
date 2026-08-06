@@ -52,7 +52,7 @@ export function FrontmatterPanel({
   onToggleCollapsed,
   isDark,
   textColor,
-  accentColor,
+  _accentColor,
   onChange,
 }: FrontmatterPanelProps) {
   const isTitleMissing = !fmData || !fmData.title;
@@ -61,26 +61,38 @@ export function FrontmatterPanel({
     <div
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: collapsed ? 0 : '6px'
+        marginBottom: collapsed ? 0 : '10px'
       }}
     >
       <div
         onClick={onToggleCollapsed}
         style={{
-          display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', userSelect: 'none',
+          display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none',
           fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
-          opacity: 0.55
+          color: textColor, opacity: 0.7
         }}
       >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         <span>Properties</span>
-        {typeof count === 'number' && <span style={{ fontWeight: 400, opacity: 0.8 }}>{count}</span>}
+        {typeof count === 'number' && (
+          <span style={{
+            fontSize: '10px',
+            fontWeight: 500,
+            padding: '1px 6px',
+            borderRadius: '10px',
+            background: 'rgba(125,125,125,0.15)',
+            color: textColor
+          }}>
+            {count}
+          </span>
+        )}
       </div>
       {isTitleMissing && (
         <span 
           style={{ 
-            display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', 
-            color: '#f59e0b', opacity: 0.85, fontWeight: 500
+            display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', 
+            color: '#d97706', backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#fef3c7',
+            border: '1px solid rgba(217, 119, 6, 0.3)', borderRadius: '12px', padding: '2px 8px', fontWeight: 500
           }}
           data-tooltip="Title property is recommended for manual publishing"
         >
@@ -92,8 +104,8 @@ export function FrontmatterPanel({
   );
 
   const panelStyle: React.CSSProperties = {
-    marginBottom: '16px',
-    paddingBottom: '10px',
+    marginBottom: '20px',
+    paddingBottom: '12px',
     borderBottom: '1px solid color-mix(in srgb, var(--text-color) 14%, transparent)'
   };
 
@@ -116,7 +128,7 @@ export function FrontmatterPanel({
     <div style={panelStyle}>
       {fmHeader(entries.length)}
       {!collapsed && (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {entries.map(([key, value]) => {
           const isArray = Array.isArray(value);
           const isBool = typeof value === 'boolean';
@@ -125,13 +137,22 @@ export function FrontmatterPanel({
           const KeyIcon = isArray ? List : isDate ? Calendar : isBool ? CheckSquare : isNum ? Hash : Type;
 
           return (
-            <div key={key} className="fm-row" style={{ display: 'flex', fontSize: '12px', alignItems: 'center', minHeight: '26px', gap: '8px' }}>
-              <span style={{ width: '130px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, opacity: 0.6 }}>
-                <KeyIcon size={12} style={{ opacity: 0.7, flexShrink: 0 }} />
+            <div key={key} className="fm-row" style={{
+              display: 'flex',
+              fontSize: '12px',
+              alignItems: 'center',
+              minHeight: '30px',
+              gap: '12px',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              transition: 'background-color 0.15s ease'
+            }}>
+              <span style={{ width: '130px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, opacity: 0.65, color: textColor }}>
+                <KeyIcon size={13} style={{ opacity: 0.75, flexShrink: 0 }} />
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{key}</span>
               </span>
               {isArray ? (
-                <div className="fm-value" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '3px 8px', minHeight: '20px', alignItems: 'center', flex: 1 }}>
+                <div className="fm-value" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '3px 6px', minHeight: '22px', alignItems: 'center', flex: 1 }}>
                   {value.map((tag: any, i: number) => {
                     const c = (isDark ? TAG_COLORS_DARK : TAG_COLORS_LIGHT)[tagColorIndex(String(tag))];
                     return (
@@ -149,7 +170,7 @@ export function FrontmatterPanel({
                         {String(tag)}
                         <button
                           className="fm-chip-x"
-                          style={{ background: 'none', border: 'none', color: 'inherit', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                          style={{ background: 'none', border: 'none', color: 'inherit', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.7 }}
                           onClick={() => {
                             const newArr = [...value];
                             newArr.splice(i, 1);
@@ -195,13 +216,15 @@ export function FrontmatterPanel({
                   />
                 </div>
               ) : isBool ? (
-                <div className="fm-value" style={{ flex: 1, padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={value}
-                    onChange={(e) => onChange(key, e.target.checked)}
-                    style={{ accentColor: accentColor, cursor: 'pointer', margin: 0 }}
-                  />
+                <div className="fm-value" style={{ flex: 1, padding: '2px 6px', display: 'flex', alignItems: 'center' }}>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={value}
+                      onChange={(e) => onChange(key, e.target.checked)}
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
                 </div>
               ) : isDate ? (
                 <div className="fm-value" style={{ flex: 1 }}>
@@ -210,7 +233,7 @@ export function FrontmatterPanel({
                     type="date"
                     value={toDateInputValue(value)}
                     onChange={(e) => onChange(key, e.target.value)}
-                    style={{ colorScheme: isDark ? 'dark' : 'light' }}
+                    style={{ colorScheme: isDark ? 'dark' : 'light', color: textColor }}
                   />
                 </div>
               ) : isNum ? (
@@ -223,6 +246,7 @@ export function FrontmatterPanel({
                       const n = parseFloat(e.target.value);
                       onChange(key, isNaN(n) ? e.target.value : n);
                     }}
+                    style={{ color: textColor }}
                   />
                 </div>
               ) : (
@@ -232,6 +256,7 @@ export function FrontmatterPanel({
                     type="text"
                     value={String(value ?? '')}
                     onChange={(e) => onChange(key, e.target.value)}
+                    style={{ color: textColor }}
                   />
                 </div>
               )}
