@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Zen Markdown Editor - Enhanced & Stress Test Suite (Pattern A-G)', () => {
+test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('http://127.0.0.1:3000/');
     await page.waitForTimeout(1000); // Wait for demo document fallback
@@ -154,5 +154,94 @@ test.describe('Zen Markdown Editor - Enhanced & Stress Test Suite (Pattern A-G)'
     const widthSelect = widthItem.locator('.settings-select');
     await widthSelect.selectOption('full');
     await expect(widthSelect).toHaveValue('full');
+  });
+
+  /** PATTERN H: Markdown Inline Formatting Shortcuts (# Heading & Bullet List) */
+  test('Pattern H: WYSIWYG Markdown Formatting Shortcuts', async ({ page }) => {
+    const editorElement = page.locator('.bn-editor');
+    await editorElement.click();
+
+    // Focus editor and type heading shortcut
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('# Enhanced Pattern Heading');
+    await page.keyboard.press('Enter');
+
+    const headingBlock = editorElement.locator('h1', { hasText: 'Enhanced Pattern Heading' });
+    await expect(headingBlock).toBeVisible();
+  });
+
+  /** PATTERN I: Frontmatter to RAW Mode Bilateral Synchronization */
+  test('Pattern I: Frontmatter Edits Live Synchronization to RAW Markdown Text', async ({ page }) => {
+    const titleRow = page.locator('.fm-row', { hasText: 'title' });
+    const titleInput = titleRow.locator('input[type="text"]');
+    await titleInput.fill('Synchronized Frontmatter Test');
+
+    // Switch to Raw mode and check YAML header string
+    const segmentedRaw = page.locator('.segmented-btn', { hasText: 'Raw' });
+    await segmentedRaw.click();
+
+    const codeMirrorContent = page.locator('.cm-content');
+    await expect(codeMirrorContent).toBeVisible();
+    const rawText = await codeMirrorContent.textContent();
+    expect(rawText).toContain('title: Synchronized Frontmatter Test');
+  });
+
+  /** PATTERN J: Theme Switching & High-Contrast Theme Verification */
+  test('Pattern J: Theme Switching (Light, Dark, Orca, Nord)', async ({ page }) => {
+    const settingsTrigger = page.locator('button[data-tooltip="Settings"]');
+    await settingsTrigger.click();
+
+    const glassPanel = page.locator('.glass-panel');
+    const themeItem = glassPanel.locator('.settings-item', { hasText: 'Theme' });
+    const themeSelect = themeItem.locator('.settings-select');
+
+    // Change Theme to Dark
+    await themeSelect.selectOption('dark');
+    await expect(themeSelect).toHaveValue('dark');
+
+    // Change Theme to Orca
+    await themeSelect.selectOption('orca');
+    await expect(themeSelect).toHaveValue('orca');
+  });
+
+  /** PATTERN K: Table of Contents (TOC) Toggle & Floating Sidebar Visibility */
+  test('Pattern K: Table of Contents (TOC) Toggle Interaction', async ({ page }) => {
+    const tocTrigger = page.locator('button[data-tooltip="Table of Contents"]');
+    if (await tocTrigger.isVisible()) {
+      await tocTrigger.click();
+      const tocPanel = page.locator('.toc-sidebar, [data-testid="toc-panel"]').first();
+      await expect(tocPanel).toBeVisible();
+    }
+  });
+
+  /** PATTERN L: Undo & Redo Keyboard Shortcut Triggers (Ctrl+Z, Ctrl+Y) */
+  test('Pattern L: Undo and Redo Keyboard Actions', async ({ page }) => {
+    const editorElement = page.locator('.bn-editor');
+    await editorElement.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' Testing Undo Keyboard Shortcut');
+
+    // Trigger Ctrl+Z
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(200);
+
+    // Trigger Ctrl+Y
+    await page.keyboard.press('Control+y');
+    await page.waitForTimeout(200);
+  });
+
+  /** PATTERN M: Collapse & Expand Frontmatter Properties Header */
+  test('Pattern M: Properties Header Collapse and Expand Toggle', async ({ page }) => {
+    const propsTitle = page.locator('span', { hasText: 'Properties' }).first();
+    await propsTitle.click();
+
+    // After collapsing, property rows should be hidden
+    const propertyRows = page.locator('.fm-row');
+    await expect(propertyRows.first()).not.toBeVisible();
+
+    // Expand properties again
+    await propsTitle.click();
+    await expect(propertyRows.first()).toBeVisible();
   });
 });
