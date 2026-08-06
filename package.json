@@ -134,6 +134,22 @@
           "type": "string",
           "default": "text",
           "description": "Default language for newly created code blocks."
+        },
+        "zenMarkdown.focusMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Dim inactive blocks to help you focus on the current block."
+        },
+        "zenMarkdown.spellCheck": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable native spell checking in the editor."
+        },
+        "zenMarkdown.contentWidth": {
+          "type": "string",
+          "enum": ["narrow", "standard", "full"],
+          "default": "standard",
+          "description": "Maximum width of the editor content. Narrow (700px), Standard (900px), Full (100% - default max of VS Code)."
         }
       }
     },

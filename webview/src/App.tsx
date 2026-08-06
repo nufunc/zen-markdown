@@ -91,7 +91,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap } from 'lucide-react';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -127,7 +127,7 @@ function formatDocPath(rawUri: string): string {
 
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
-  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false, defaultCodeLanguage: 'text' });
+  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string, focusMode: boolean, spellCheck: boolean, contentWidth: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: false, isReadOnly: false, defaultCodeLanguage: 'text', focusMode: false, spellCheck: false, contentWidth: 'standard' });
   // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
   const configRef = useRef(config);
   configRef.current = config;
@@ -221,6 +221,34 @@ function App() {
     };
   }, [isRawMode, editor]);
 
+  // Focus Mode active block tracking
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (!configRef.current.focusMode || !editor) return;
+      
+      try {
+        const cur = editor.getTextCursorPosition();
+        const blockId = cur?.block?.id;
+        
+        document.querySelectorAll('.bn-block-outer.focus-active-block').forEach(el => {
+          el.classList.remove('focus-active-block');
+        });
+        
+        if (blockId) {
+          const el = document.querySelector(`.bn-block-outer[data-id="${blockId}"]`);
+          if (el) {
+            el.classList.add('focus-active-block');
+          }
+        }
+      } catch {
+        // Ignore selection errors
+      }
+    };
+    
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [editor]);
+
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
   }, []);
@@ -257,7 +285,10 @@ function App() {
             showToc: message.showToc,
             showProperties: message.showProperties,
             isReadOnly: message.isReadOnly,
-            defaultCodeLanguage: message.defaultCodeLanguage || 'text'
+            defaultCodeLanguage: message.defaultCodeLanguage || 'text',
+            focusMode: message.focusMode || false,
+            spellCheck: message.spellCheck || false,
+            contentWidth: message.contentWidth || 'standard'
           });
           if (message.isReadOnly) {
             setIsRawMode(true);
@@ -609,6 +640,11 @@ function App() {
                 plainTextAsMarkdown: true,
                 prioritizeMarkdownOverHTML: true
               });
+            },
+            editorProps: {
+              attributes: {
+                spellcheck: configRef.current.spellCheck ? "true" : "false"
+              }
             }
           });
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
@@ -784,6 +820,15 @@ function App() {
     
     return serializeWikilinks(preserveEmptyHeadings(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current))));
   };
+
+  useEffect(() => {
+    if (editor) {
+      const editorDom = document.querySelector('.bn-editor') as HTMLElement;
+      if (editorDom) {
+        editorDom.setAttribute('spellcheck', config.spellCheck ? "true" : "false");
+      }
+    }
+  }, [config.spellCheck, editor]);
 
   const handleWysiwygChange = () => {
     if (!editor || isInitializing.current) return;
@@ -1576,87 +1621,151 @@ function App() {
               marginTop: '4px',
               backgroundColor: dropdownBg,
               border: `1px solid ${dropdownBorder}`,
-              borderRadius: '6px',
+              borderRadius: '8px',
               padding: '16px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
               zIndex: 1000,
-              minWidth: '220px',
-              color: textColor
+              minWidth: '320px',
+              color: textColor,
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '14px' }}>Editor Settings</h3>
-                <X size={16} cursor="pointer" onClick={() => setIsSettingsOpen(false)} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Editor Settings</h3>
+                <X size={16} cursor="pointer" onClick={() => setIsSettingsOpen(false)} style={{ opacity: 0.7 }} />
               </div>
+
+              <div className="settings-group-title">Appearance</div>
               
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', opacity: 0.8 }}>Theme</label>
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <Palette size={14} opacity={0.7} />
+                  <span>Theme</span>
+                </div>
                 <select
                   className="settings-select"
                   value={config.theme}
                   onChange={(e) => updateConfig('theme', e.target.value)}
+                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
                 >
-                  <option value="auto">Auto (Match VS Code)</option>
+                  <option value="auto">Auto (VS Code)</option>
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
                   <option value="nord">Nord</option>
                   <option value="one-half-dark">One Half Dark</option>
-                  <option value="solarized-dark">Solarized Dark</option>
+                  <option value="solarized-dark">Solarized</option>
                   <option value="vintage">Vintage</option>
-                  <option value="gruvbox-dark">Gruvbox Dark</option>
-                  <option value="tokyo-night-day">Tokyo Night Day</option>
+                  <option value="gruvbox-dark">Gruvbox</option>
+                  <option value="tokyo-night-day">Tokyo Night</option>
                   <option value="orca">Orca</option>
                 </select>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', marginBottom: '4px', opacity: 0.8 }}>Font Size</label>
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <Type size={14} opacity={0.7} />
+                  <span>Font Size</span>
+                </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <button 
                     onClick={() => updateConfig('fontSize', Math.max(10, config.fontSize - 1))}
-                    style={{ padding: '4px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
+                    style={{ padding: '2px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
                   >-</button>
-                  <span style={{ flex: 1, textAlign: 'center', fontSize: '14px' }}>{config.fontSize}px</span>
+                  <span style={{ fontSize: '12px', minWidth: '24px', textAlign: 'center' }}>{config.fontSize}</span>
                   <button 
                     onClick={() => updateConfig('fontSize', Math.min(32, config.fontSize + 1))}
-                    style={{ padding: '4px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
+                    style={{ padding: '2px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
                   >+</button>
                 </div>
               </div>
 
-              <div style={{ marginTop: '12px', borderTop: `1px solid ${dropdownBorder}`, paddingTop: '12px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', marginBottom: '8px' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={config.autoFix} 
-                    onChange={(e) => updateConfig('autoFix', e.target.checked)}
-                  />
-                  <span>Auto Fix (Format on edit)</span>
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <Maximize2 size={14} opacity={0.7} />
+                  <span>Content Width</span>
+                </div>
+                <select
+                  className="settings-select"
+                  value={config.contentWidth}
+                  onChange={(e) => updateConfig('contentWidth', e.target.value)}
+                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
+                >
+                  <option value="narrow">Narrow</option>
+                  <option value="standard">Standard</option>
+                  <option value="full">Full Width</option>
+                </select>
+              </div>
+
+              <div className="settings-group-title">Behavior</div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <Zap size={14} opacity={0.7} />
+                  <span>Auto Fix on Edit</span>
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', marginBottom: '8px' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={config.autoRefresh} 
-                    onChange={(e) => updateConfig('autoRefresh', e.target.checked)}
-                  />
-                  <span>Auto Refresh (Sync external changes)</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', marginBottom: '8px' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={config.showToc} 
-                    onChange={(e) => updateConfig('showToc', e.target.checked)}
-                  />
-                  <span>Show Table of Contents by default</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={config.showProperties} 
-                    onChange={(e) => updateConfig('showProperties', e.target.checked)}
-                  />
-                  <span>Show Document Properties by default</span>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.autoFix} onChange={(e) => updateConfig('autoFix', e.target.checked)} />
+                  <span className="toggle-slider"></span>
                 </label>
               </div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <RefreshCcw size={14} opacity={0.7} />
+                  <span>Auto Refresh File</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.autoRefresh} onChange={(e) => updateConfig('autoRefresh', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <Eye size={14} opacity={0.7} />
+                  <span>Focus Mode</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.focusMode} onChange={(e) => updateConfig('focusMode', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <Wand2 size={14} opacity={0.7} />
+                  <span>Spell Check</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.spellCheck} onChange={(e) => updateConfig('spellCheck', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-group-title">Document</div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <List size={14} opacity={0.7} />
+                  <span>Show Table of Contents</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.showToc} onChange={(e) => updateConfig('showToc', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <FileText size={14} opacity={0.7} />
+                  <span>Show Document Properties</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.showProperties} onChange={(e) => updateConfig('showProperties', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
             </div>
           )}
           </div>
@@ -1937,7 +2046,7 @@ function App() {
               scrollSaveTimer.current = setTimeout(() => vscode.updateState({ scrollTop: top }), 200);
             }}
           >
-            <div style={{ padding: '16px 32px' }}>
+            <div style={{ padding: '16px 32px', maxWidth: config.contentWidth === 'narrow' ? '700px' : config.contentWidth === 'standard' ? '900px' : 'none', margin: '0 auto', width: '100%' }}>
               {showProperties ? (
                 <FrontmatterPanel
                   parsedFrontmatter={parsedFrontmatter}
@@ -1950,7 +2059,7 @@ function App() {
                   onChange={handleFmChange}
                 />
               ) : null}
-              {editor && <div onCopy={async (e) => {
+              {editor && <div className={config.focusMode ? "focus-mode-active" : ""} onCopy={async (e) => {
                 const selection = editor.getSelection();
                 if (selection && selection.blocks && selection.blocks.length > 0) {
                   e.preventDefault();

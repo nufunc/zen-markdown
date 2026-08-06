@@ -123,7 +123,6 @@ test.describe('WYSIWYG Editing Features', () => {
     await page.keyboard.type('This is a quote');
 
     // 인용구 태그 또는 커스텀 속성 검증
-    const blockquote = editor.locator('blockquote, p.bn-block-content[data-content-type="paragraph"]');
     // BlockNote는 때때로 커스텀 스타일을 쓰지만 기본적으로 HTML 구조에 반영될 것을 기대함
     // 텍스트가 정상적으로 입력되었는지는 확인 가능
     await expect(editor).toContainText('This is a quote');

@@ -69,6 +69,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const showToc = config.get<boolean>('showToc') ?? false;
             const showProperties = config.get<boolean>('showProperties') ?? false;
             const defaultCodeLanguage = config.get<string>('defaultCodeLanguage') || 'text';
+            const focusMode = config.get<boolean>('focusMode') ?? false;
+            const spellCheck = config.get<boolean>('spellCheck') ?? false;
+            const contentWidth = config.get<string>('contentWidth') || 'standard';
             const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
             // 문서 폴더의 webview URI — 상대경로 이미지 미리보기용
             const docBaseUri = docDir
@@ -83,6 +86,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 autoRefresh,
                 showToc,
                 showProperties,
+                focusMode,
+                spellCheck,
+                contentWidth,
                 isReadOnly,
                 defaultCodeLanguage,
                 docBaseUri
