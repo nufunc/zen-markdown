@@ -45,13 +45,13 @@ export interface FrontmatterPanelProps {
 }
 
 export function FrontmatterPanel({
-  _parsedFrontmatter,
+  parsedFrontmatter: _parsedFrontmatter,
   fmData,
   collapsed,
   onToggleCollapsed,
   isDark,
   textColor,
-  _accentColor,
+  accentColor: _accentColor,
   onChange,
 }: FrontmatterPanelProps) {
   const [isAddingProp, setIsAddingProp] = useState(false);
