@@ -1,4 +1,5 @@
-import { X, ChevronDown, ChevronRight, List, Calendar, Hash, Type, CheckSquare, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
+import { X, ChevronDown, ChevronRight, List, Calendar, Hash, Type, CheckSquare, AlertCircle, Plus } from 'lucide-react';
 
 // Frontmatter Properties: 태그 칩 파스텔 팔레트 — 문자열 해시로 색을 고정 배정 (Obsidian/Notion 감성)
 const TAG_COLORS_LIGHT = [
@@ -43,8 +44,6 @@ export interface FrontmatterPanelProps {
   onChange: (key: string, value: any) => void;
 }
 
-// Properties: Notion식 — 박스 없이 문서 상단에 스며들고, 값은 hover 시에만 편집 UI가 드러남
-// (hover-reveal/포커스 링 CSS는 editorStyles.ts의 .fm-* 규칙에 정의)
 export function FrontmatterPanel({
   parsedFrontmatter,
   fmData,
@@ -55,7 +54,20 @@ export function FrontmatterPanel({
   _accentColor,
   onChange,
 }: FrontmatterPanelProps) {
+  const [isAddingProp, setIsAddingProp] = useState(false);
+  const [newPropKey, setNewPropKey] = useState('');
+  const [activeTagInput, setActiveTagInput] = useState<string | null>(null);
+
   const isTitleMissing = !fmData || !fmData.title;
+
+  const handleAddProperty = () => {
+    if (newPropKey.trim()) {
+      const key = newPropKey.trim();
+      onChange(key, '');
+      setNewPropKey('');
+      setIsAddingProp(false);
+    }
+  };
 
   const fmHeader = (count?: number) => (
     <div
@@ -87,19 +99,35 @@ export function FrontmatterPanel({
           </span>
         )}
       </div>
-      {isTitleMissing && (
-        <span 
-          style={{ 
-            display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', 
-            color: '#d97706', backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#fef3c7',
-            border: '1px solid rgba(217, 119, 6, 0.3)', borderRadius: '12px', padding: '2px 8px', fontWeight: 500
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {isTitleMissing && (
+          <span 
+            style={{ 
+              display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', 
+              color: '#d97706', backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#fef3c7',
+              border: '1px solid rgba(217, 119, 6, 0.3)', borderRadius: '12px', padding: '2px 8px', fontWeight: 500
+            }}
+            data-tooltip="Title property is recommended for manual publishing"
+          >
+            <AlertCircle size={11} />
+            Title Missing
+          </span>
+        )}
+        <button
+          onClick={() => setIsAddingProp(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px',
+            padding: '2px 8px', border: 'none', borderRadius: '12px',
+            background: 'rgba(125,125,125,0.12)', color: textColor, cursor: 'pointer',
+            fontWeight: 500, transition: 'all 0.2s ease'
           }}
-          data-tooltip="Title property is recommended for manual publishing"
+          className="tb-btn"
+          data-tooltip="Add New Property"
         >
-          <AlertCircle size={11} />
-          Title Missing
-        </span>
-      )}
+          <Plus size={12} />
+          <span>Add Property</span>
+        </button>
+      </div>
     </div>
   );
 
@@ -145,7 +173,8 @@ export function FrontmatterPanel({
               gap: '12px',
               padding: '2px 8px',
               borderRadius: '6px',
-              transition: 'background-color 0.15s ease'
+              transition: 'background-color 0.15s ease',
+              position: 'relative'
             }}>
               <span style={{ width: '130px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 500, opacity: 0.65, color: textColor }}>
                 <KeyIcon size={13} style={{ opacity: 0.75, flexShrink: 0 }} />
@@ -176,44 +205,64 @@ export function FrontmatterPanel({
                             newArr.splice(i, 1);
                             onChange(key, newArr);
                           }}
-                          data-tooltip="Remove"
+                          data-tooltip="Remove Tag"
                         >
                           <X size={10} />
                         </button>
                       </span>
                     );
                   })}
-                  <input
-                    type="text"
-                    placeholder="Add..."
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: textColor,
-                      outline: 'none',
-                      flex: 1,
-                      minWidth: '60px',
-                      fontSize: '11px',
-                      padding: 0,
-                      margin: 0
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                        onChange(key, [...value, e.currentTarget.value.trim()]);
-                        e.currentTarget.value = '';
-                      } else if (e.key === 'Backspace' && !e.currentTarget.value && value.length > 0) {
-                        const newArr = [...value];
-                        newArr.pop();
-                        onChange(key, newArr);
-                      }
-                    }}
-                    onBlur={(e) => {
-                      if (e.currentTarget.value.trim()) {
-                        onChange(key, [...value, e.currentTarget.value.trim()]);
-                        e.currentTarget.value = '';
-                      }
-                    }}
-                  />
+                  {activeTagInput === key ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      style={{
+                        background: 'rgba(125,125,125,0.1)',
+                        border: '1px solid rgba(125,125,125,0.3)',
+                        borderRadius: '12px',
+                        color: textColor,
+                        outline: 'none',
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        minWidth: '70px'
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                          onChange(key, [...value, e.currentTarget.value.trim()]);
+                          e.currentTarget.value = '';
+                          setActiveTagInput(null);
+                        } else if (e.key === 'Escape') {
+                          setActiveTagInput(null);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (e.currentTarget.value.trim()) {
+                          onChange(key, [...value, e.currentTarget.value.trim()]);
+                        }
+                        setActiveTagInput(null);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setActiveTagInput(key)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px dashed rgba(125,125,125,0.3)',
+                        borderRadius: '12px',
+                        color: textColor,
+                        opacity: 0.6,
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '2px'
+                      }}
+                    >
+                      <Plus size={10} />
+                      <span>Tag</span>
+                    </button>
+                  )}
                 </div>
               ) : isBool ? (
                 <div className="fm-value" style={{ flex: 1, padding: '2px 6px', display: 'flex', alignItems: 'center' }}>
@@ -260,9 +309,73 @@ export function FrontmatterPanel({
                   />
                 </div>
               )}
+
+              {/* Property Delete Action */}
+              <button
+                onClick={() => onChange(key, undefined)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: textColor,
+                  opacity: 0.4,
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                className="fm-prop-del-btn"
+                data-tooltip="Delete Property"
+              >
+                <X size={12} />
+              </button>
             </div>
           );
         })}
+
+        {/* Inline New Property Input Row */}
+        {isAddingProp && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '4px 8px', background: 'rgba(125,125,125,0.08)', borderRadius: '6px', marginTop: '4px' }}>
+            <input
+              type="text"
+              placeholder="Property name (e.g. author, status, tags)..."
+              value={newPropKey}
+              onChange={(e) => setNewPropKey(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddProperty();
+                else if (e.key === 'Escape') setIsAddingProp(false);
+              }}
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: textColor,
+                fontSize: '11px'
+              }}
+            />
+            <button
+              onClick={handleAddProperty}
+              style={{
+                padding: '2px 8px', borderRadius: '4px', border: 'none',
+                background: 'var(--vscode-button-background, #007acc)', color: '#fff',
+                fontSize: '11px', cursor: 'pointer'
+              }}
+            >
+              Add
+            </button>
+            <button
+              onClick={() => setIsAddingProp(false)}
+              style={{
+                padding: '2px 6px', borderRadius: '4px', border: 'none',
+                background: 'transparent', color: textColor, opacity: 0.7,
+                fontSize: '11px', cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
       )}
     </div>

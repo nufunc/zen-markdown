@@ -259,3 +259,15 @@ input:checked + .toggle-slider:before {
   background-color: var(--vscode-toolbar-hoverBackground, rgba(125, 125, 125, 0.08));
 }
 
+.fm-prop-del-btn {
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+.fm-row:hover .fm-prop-del-btn {
+  opacity: 0.5;
+}
+.fm-prop-del-btn:hover {
+  opacity: 1 !important;
+  color: #ef4444 !important;
+}
+
