@@ -143,7 +143,8 @@ input:checked + .toggle-slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  gap: 16px;
+  margin-bottom: 12px;
   font-size: 13px;
 }
 .settings-item-label {
@@ -153,6 +154,14 @@ input:checked + .toggle-slider:before {
   cursor: pointer;
   flex: 1;
   white-space: nowrap;
+}
+.settings-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 130px;
+  cursor: pointer;
+  outline: none;
 }
 
 /* Focus Mode */
@@ -164,3 +173,85 @@ input:checked + .toggle-slider:before {
   opacity: 1;
   transition: opacity 0.3s ease;
 }
+
+/* Modern Segmented Control for View Modes */
+.segmented-control {
+  display: inline-flex;
+  background-color: var(--vscode-editor-inactiveSelectionBackground, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.1));
+}
+.segmented-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--vscode-foreground, inherit);
+  opacity: 0.7;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.segmented-btn:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.segmented-btn.active {
+  opacity: 1;
+  background-color: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #ffffff);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Quick Stats Bar */
+.quick-stats-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  opacity: 0.75;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.quick-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Glassmorphism Panel Overlay */
+.glass-panel {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+/* Micro Hover Effect for Action Buttons */
+.action-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground, inherit);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: all 0.2s ease;
+}
+.action-icon-btn:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+  transform: scale(1.06);
+}
+

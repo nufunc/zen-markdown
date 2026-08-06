@@ -251,6 +251,15 @@ function App() {
 
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
+    const timer = setTimeout(() => {
+      setDocumentText(prev => {
+        if (prev === "loading") {
+          return `# 🚀 Zen Markdown Editor\n\nWelcome to **Zen Markdown Editor**! Enjoy rich WYSIWYG editing, focus mode, and modern themes.\n\n## 🌟 Key Features\n- **Segmented Control**: Switch seamlessly between WYSIWYG and Raw mode.\n- **Glassmorphism Settings**: Modern UI toggle switches with semi-transparent blur.\n- **Quick Stats**: Real-time word and character counter.\n\n\`\`\`python\ndef hello_world():\n    print("Hello from Zen Markdown Editor!")\n\`\`\`\n\n> 💡 **Tip**: Try pressing \`Ctrl+1\` ~ \`Ctrl+3\` to switch heading levels or click on **Settings** to customize your theme.`;
+        }
+        return prev;
+      });
+    }, 600);
+    return () => clearTimeout(timer);
   }, []);
 
   // Ctrl/Cmd+클릭으로 링크 열기 — 상대경로 .md는 Neat 에디터로, 그 외는 VS Code/외부로
@@ -1467,48 +1476,39 @@ function App() {
           </button>
           {!config.isReadOnly && (
             <>
-              <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
-              <div style={{ display: 'flex', borderRadius: '4px', overflow: 'hidden', border: `1px solid ${dropdownBorder}` }}>
+              <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 4px' }} />
+              
+              {/* Segmented View Mode Toggle */}
+              <div className="segmented-control">
                 <button
-                  onClick={() => { if (!isRawMode) toggleMode(); }}
-                  style={{ 
-                    padding: '2px 8px', 
-                    cursor: 'pointer', 
-                    border: 'none', 
-                    borderRight: `1px solid ${dropdownBorder}`,
-                    background: isRawMode ? textColor : 'transparent', 
-                    color: isRawMode ? bgColor : textColor,
-                    fontWeight: isRawMode ? 'bold' : 'normal',
-                    fontSize: '11px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px'
-                  }}
-                  data-tooltip="Raw Code Mode"
-                >
-                  <Code size={12} />
-                  Raw
-                </button>
-                <button 
-                  onClick={() => { if (isRawMode) toggleMode(); }} 
-                  style={{ 
-                    padding: '2px 8px', 
-                    cursor: 'pointer', 
-                    border: 'none', 
-                    background: !isRawMode ? textColor : 'transparent', 
-                    color: !isRawMode ? bgColor : textColor,
-                    fontWeight: !isRawMode ? 'bold' : 'normal',
-                    fontSize: '11px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '3px'
-                  }}
+                  onClick={() => { if (isRawMode) toggleMode(); }}
+                  className={`segmented-btn ${!isRawMode ? 'active' : ''}`}
                   data-tooltip="WYSIWYG Rich Mode"
                 >
-                  <Edit3 size={12} />
-                  WYSIWYG
+                  <Edit3 size={13} />
+                  <span>WYSIWYG</span>
+                </button>
+                <button
+                  onClick={() => { if (!isRawMode) toggleMode(); }}
+                  className={`segmented-btn ${isRawMode ? 'active' : ''}`}
+                  data-tooltip="Raw Markdown Mode"
+                >
+                  <Code size={13} />
+                  <span>Raw</span>
                 </button>
               </div>
+
+              {/* Quick Stats Badge */}
+              <div className="quick-stats-badge" style={{ marginLeft: '6px', marginRight: '6px' }}>
+                <span className="quick-stat-item">
+                  {typeof documentText === 'string' && documentText.trim() ? documentText.trim().split(/\s+/).length : 0} words
+                </span>
+                <span>•</span>
+                <span className="quick-stat-item">
+                  {typeof documentText === 'string' ? documentText.length : 0} chars
+                </span>
+              </div>
+
               {isRawMode ? (
                 <button
                   onClick={() => {
@@ -1517,7 +1517,7 @@ function App() {
                     }
                     setIsDiffMode(!isDiffMode);
                   }}
-                  className={`tb-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
+                  className={`tb-btn action-icon-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
                   data-tooltip="Toggle Git Diff View"
                 >
                   <GitCompare size={13} style={{ marginRight: '3px' }} />
@@ -1526,7 +1526,7 @@ function App() {
               ) : (
                 <button 
                   onClick={() => updateConfig('showToc', !showToc)} 
-                  className={`tb-btn ${showToc ? 'tb-btn-active' : ''}`}
+                  className={`tb-btn action-icon-btn ${showToc ? 'tb-btn-active' : ''}`}
                   style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
                   data-tooltip="Toggle Table of Contents"
                   data-tooltip-pos="right"
@@ -1561,7 +1561,7 @@ function App() {
               const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent || s.innerHTML).join('\n');
               vscode.postMessage({ type: 'exportPdf', html, styles });
             }}
-            className="tb-btn"
+            className="tb-btn action-icon-btn"
             data-tooltip="Export Document as PDF"
             data-tooltip-pos="right"
           >
@@ -1571,7 +1571,7 @@ function App() {
           {parsedFrontmatter && (
             <button 
               onClick={() => updateConfig('showProperties', !showProperties)} 
-              className={`tb-btn ${showProperties ? 'tb-btn-active' : ''}`}
+              className={`tb-btn action-icon-btn ${showProperties ? 'tb-btn-active' : ''}`}
               data-tooltip="Toggle Properties"
               data-tooltip-pos="right"
             >
@@ -1580,7 +1580,7 @@ function App() {
           )}
           <button 
             onClick={() => vscode.postMessage({ type: 'refresh' })}
-            className="tb-btn"
+            className="tb-btn action-icon-btn"
             data-tooltip="Refresh Editor"
             data-tooltip-pos="right"
           >
@@ -1597,7 +1597,7 @@ function App() {
                 }
               }
             }}
-            className="tb-btn"
+            className="tb-btn action-icon-btn"
             data-tooltip="Validate Media Links"
             data-tooltip-pos="right"
           >
@@ -1606,7 +1606,7 @@ function App() {
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className="tb-btn"
+              className="tb-btn action-icon-btn"
               data-tooltip="Settings"
               data-tooltip-pos="right"
             >
@@ -1614,7 +1614,7 @@ function App() {
             </button>
 
           {isSettingsOpen && (
-            <div style={{
+            <div className="glass-panel" style={{
               position: 'absolute',
               top: '100%',
               right: 0,
@@ -1623,12 +1623,9 @@ function App() {
               border: `1px solid ${dropdownBorder}`,
               borderRadius: '8px',
               padding: '16px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
               zIndex: 1000,
-              minWidth: '320px',
+              minWidth: '350px',
               color: textColor,
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Editor Settings</h3>
