@@ -138,16 +138,37 @@ export function FrontmatterPanel({
     borderBottom: '1px solid color-mix(in srgb, var(--text-color) 14%, transparent)'
   };
 
-  const DEFAULT_FIXED_KEYS = ['title', 'date', 'tags', 'author', 'status'];
-  const mergedData: Record<string, any> = { ...fmData };
+  const FIXED_KEYS_ORDER = ['title', 'date', 'tags', 'author', 'status'];
 
-  for (const key of DEFAULT_FIXED_KEYS) {
-    if (!(key in mergedData)) {
-      mergedData[key] = key === 'tags' ? [] : '';
+  const handleRemoveProperty = (key: string) => {
+    if (FIXED_KEYS_ORDER.includes(key)) {
+      // 고정 키는 위치 및 행 유지를 위해 값을 빈 값으로 초기화
+      const resetValue = key === 'tags' ? [] : '';
+      onChange(key, resetValue);
+    } else {
+      // 커스텀 키는 아예 완전 삭제
+      onChange(key, undefined);
+    }
+  };
+
+  // 고정 키 순서대로 먼저 수집하여 위치가 변경되지 않도록 고정
+  const fixedEntries: [string, any][] = [];
+  const customEntries: [string, any][] = [];
+
+  for (const key of FIXED_KEYS_ORDER) {
+    const val = (fmData && key in fmData) ? fmData[key] : (key === 'tags' ? [] : '');
+    fixedEntries.push([key, val]);
+  }
+
+  if (fmData) {
+    for (const [key, val] of Object.entries(fmData)) {
+      if (!FIXED_KEYS_ORDER.includes(key)) {
+        customEntries.push([key, val]);
+      }
     }
   }
 
-  const entries = Object.entries(mergedData);
+  const entries = [...fixedEntries, ...customEntries];
 
   return (
     <div style={panelStyle}>
@@ -296,9 +317,9 @@ export function FrontmatterPanel({
                 </div>
               )}
 
-              {/* Property Delete Action */}
+              {/* Property Delete / Reset Action */}
               <button
-                onClick={() => onChange(key, undefined)}
+                onClick={() => handleRemoveProperty(key)}
                 style={{
                   background: 'none',
                   border: 'none',

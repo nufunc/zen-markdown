@@ -870,15 +870,24 @@ function App() {
   const handleFmChange = async (key: string, value: any) => {
     if (!editor) return;
     const currentData = fmData || {};
-    const newData = { ...currentData, [key]: value };
+    const newData = { ...currentData };
+    if (value === undefined) {
+      delete newData[key];
+    } else {
+      newData[key] = value;
+    }
     setFmData(newData);
-    // Document API로 해당 키만 수정해 주석·빈 줄·인용 스타일을 보존
+    // Document API로 해당 키만 수정/삭제해 주석·빈 줄·인용 스타일을 보존
     // (전체 재직렬화는 frontmatter의 주석을 모두 날림)
     let newFmString: string;
     try {
       if (parsedFrontmatter) {
         const doc = YAML.parseDocument(parsedFrontmatter);
-        doc.set(key, value);
+        if (value === undefined) {
+          doc.delete(key);
+        } else {
+          doc.set(key, value);
+        }
         newFmString = doc.toString().trim();
       } else {
         newFmString = YAML.stringify(newData).trim();
