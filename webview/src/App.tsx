@@ -803,6 +803,7 @@ function App() {
 
   const saveToHost = (fmString: string, mdString: string) => {
     const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
+    setDocumentText(fullText);
     postChange(fullText);
   };
 
@@ -2047,7 +2048,7 @@ function App() {
               {showProperties ? (
                 <FrontmatterPanel
                   parsedFrontmatter={parsedFrontmatter}
-                  fmData={fmData || { title: '', date: '', tags: [] }}
+                  fmData={fmData || {}}
                   collapsed={fmCollapsed}
                   onToggleCollapsed={() => setFmCollapsed(!fmCollapsed)}
                   isDark={isDark}

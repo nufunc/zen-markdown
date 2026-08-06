@@ -45,7 +45,7 @@ export interface FrontmatterPanelProps {
 }
 
 export function FrontmatterPanel({
-  parsedFrontmatter,
+  _parsedFrontmatter,
   fmData,
   collapsed,
   onToggleCollapsed,
@@ -139,20 +139,16 @@ export function FrontmatterPanel({
     borderBottom: '1px solid color-mix(in srgb, var(--text-color) 14%, transparent)'
   };
 
-  if (!fmData) {
-    return (
-      <div style={panelStyle}>
-        {fmHeader()}
-        {!collapsed && (
-          <pre style={{ fontSize: '11px', opacity: 0.65, whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'ui-monospace, Consolas, monospace' }}>
-            {parsedFrontmatter}
-          </pre>
-        )}
-      </div>
-    );
+  const DEFAULT_FIXED_KEYS = ['title', 'date', 'tags', 'author', 'status'];
+  const mergedData: Record<string, any> = { ...fmData };
+
+  for (const key of DEFAULT_FIXED_KEYS) {
+    if (!(key in mergedData)) {
+      mergedData[key] = key === 'tags' ? [] : '';
+    }
   }
 
-  const entries = Object.entries(fmData);
+  const entries = Object.entries(mergedData);
 
   return (
     <div style={panelStyle}>
