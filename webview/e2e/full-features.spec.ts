@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://127.0.0.1:3000/');
+    await page.goto('/');
     await page.waitForTimeout(1000); // Wait for demo document fallback
 
     // Ensure Properties panel is expanded if hidden

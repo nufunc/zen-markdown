@@ -16,21 +16,10 @@ body.vscode-body {
   box-sizing: inherit;
 }
 
-/* Notion-style nested list bullets */
-.bn-editor [data-content-type="bulletListItem"] {
-  display: list-item !important;
-  list-style-type: disc !important;
-  margin-left: 1em;
-}
+/* Notion-style nested list indent */
+.bn-editor [data-content-type="bulletListItem"],
 .bn-editor [data-content-type="numberedListItem"] {
-  display: list-item !important;
-  margin-left: 1em;
-}
-.bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group [data-content-type="bulletListItem"] {
-  list-style-type: circle !important;
-}
-.bn-editor .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group .bn-block-outer:has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"]) .bn-block-group [data-content-type="bulletListItem"] {
-  list-style-type: square !important;
+  margin-left: 0.5em;
 }
 
 /* Ensure uniform size and spacing for the bullet icons */
@@ -270,4 +259,18 @@ input:checked + .toggle-slider:before {
   opacity: 1 !important;
   color: #ef4444 !important;
 }
+
+/* Editor Search Highlight Styles */
+.search-highlight {
+  background-color: rgba(255, 235, 59, 0.45) !important;
+  border-radius: 2px;
+  color: inherit;
+}
+.search-highlight-active {
+  background-color: rgba(255, 140, 0, 0.85) !important;
+  color: #ffffff !important;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 140, 0, 1);
+}
+
 

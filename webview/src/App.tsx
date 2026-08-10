@@ -9,6 +9,7 @@ import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
 import { CodeBlockMenu } from './CodeBlockMenu';
 import { useDebouncedCallback } from './hooks/useDebounceCallback';
+import { createSearchPlugin, searchPluginKey, SearchHighlightExtension } from './searchPlugin';
 
 // 기본 코드 언어 설정(neatMdEditor.defaultCodeLanguage)을 반영하기 위해
 // 스키마는 모듈 상수가 아니라 에디터 생성 시점에 만든다
@@ -144,6 +145,9 @@ function App() {
   const [showSearchReplace, setShowSearchReplace] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [replaceQuery, setReplaceQuery] = useState("");
+  const [matchCase, setMatchCase] = useState(false);
+  const [matchCount, setMatchCount] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
@@ -644,10 +648,13 @@ function App() {
           const newEditor = BlockNoteEditor.create({ 
             schema: buildSchema(configRef.current.defaultCodeLanguage), 
             uploadFile,
+            _tiptapOptions: {
+              extensions: [SearchHighlightExtension],
+            },
             pasteHandler: ({ defaultPasteHandler }) => {
               return defaultPasteHandler({
                 plainTextAsMarkdown: true,
-                prioritizeMarkdownOverHTML: true
+                prioritizeMarkdownOverHTML: false
               });
             },
             editorProps: {
@@ -659,6 +666,24 @@ function App() {
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
+          try {
+            const tiptap = (newEditor as any)._tiptapEditor;
+            if (tiptap) {
+              const state = tiptap.editorState || tiptap.state;
+              const view = tiptap.editorView || tiptap.view;
+              if (typeof tiptap.registerPlugin === 'function') {
+                tiptap.registerPlugin(createSearchPlugin());
+              } else if (state && view) {
+                const searchPlugin = createSearchPlugin();
+                const existingPlugins = state.plugins || [];
+                const filteredPlugins = existingPlugins.filter((p: any) => p.key !== (searchPluginKey as any).key);
+                const newState = state.reconfigure({ plugins: [searchPlugin, ...filteredPlugins] });
+                view.updateState(newState);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to register searchPlugin", err);
+          }
           setEditor(newEditor);
           extractHeadings(newEditor);
           // Reset edit flag after initialization
@@ -716,10 +741,15 @@ function App() {
                 setTimeout(() => {
                   try {
                     const docSize = tiptap.state.doc.content.size;
+                    const safeFrom = Math.max(1, Math.min(tipTapSelection.from, docSize - 1));
+                    const safeTo = Math.max(1, Math.min(tipTapSelection.to, docSize - 1));
                     tiptap.commands.setTextSelection({
-                      from: Math.min(tipTapSelection.from, docSize),
-                      to: Math.min(tipTapSelection.to, docSize)
+                      from: safeFrom,
+                      to: safeTo
                     });
+                    if (document.activeElement && document.activeElement.closest('.bn-editor')) {
+                      tiptap.commands.focus();
+                    }
                   } catch {}
                 }, 0);
               }
@@ -921,83 +951,106 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.autoFix, isRawMode, editor, parsedFrontmatter]);
 
+  // 에디터 검색 하이라이트 & 카운트 실시간 동기화
+  useEffect(() => {
+    if (!editor) return;
+    const tiptap = (editor as any)._tiptapEditor;
+    if (!tiptap) return;
+    const state = tiptap.editorState || tiptap.state;
+    const view = tiptap.editorView || tiptap.view;
+    if (!state || !view) return;
+
+    if (!showSearchReplace || !searchQuery) {
+      try {
+        const tr = state.tr.setMeta(searchPluginKey, { query: '', matchCase: false, activeIndex: 0 });
+        view.dispatch(tr);
+      } catch {}
+      setMatchCount(0);
+      setActiveIndex(0);
+      return;
+    }
+
+    try {
+      const currentState = tiptap.editorState || tiptap.state;
+      const currentView = tiptap.editorView || tiptap.view;
+      const tr = currentState.tr.setMeta(searchPluginKey, {
+        query: searchQuery,
+        matchCase,
+        activeIndex,
+      });
+      currentView.dispatch(tr);
+      const searchState = searchPluginKey.getState(currentView.state || currentState);
+      if (searchState) {
+        const len = searchState.matches.length;
+        setMatchCount(len);
+        if (len > 0 && searchState.matches[activeIndex]) {
+          const curMatch = searchState.matches[activeIndex];
+          try {
+            tiptap.commands.setTextSelection({ from: curMatch.from, to: curMatch.to });
+            const activeEl = document.querySelector('.search-highlight-active');
+            if (activeEl) {
+              activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          } catch {}
+        }
+      } else {
+        setMatchCount(0);
+      }
+    } catch (err) {
+      console.error('Error updating search highlight:', err);
+    }
+  }, [editor, searchQuery, matchCase, activeIndex, showSearchReplace]);
+
   const handleFindNext = () => {
-    if (!searchQuery) return;
-    const searchInput = document.getElementById('search-input') as HTMLInputElement;
-    const replaceInput = document.getElementById('replace-input') as HTMLInputElement;
-    let sVal = "", rVal = "";
-    if (searchInput) { sVal = searchInput.value; searchInput.value = ""; }
-    if (replaceInput) { rVal = replaceInput.value; replaceInput.value = ""; }
-    
-    // @ts-ignore
-    window.find(searchQuery, false, false, true, false, false, false);
-    
-    if (searchInput) searchInput.value = sVal;
-    if (replaceInput) replaceInput.value = rVal;
+    if (!searchQuery || matchCount === 0) return;
+    setActiveIndex(prev => (prev + 1) % matchCount);
   };
 
   const handleFindPrev = () => {
-    if (!searchQuery) return;
-    const searchInput = document.getElementById('search-input') as HTMLInputElement;
-    const replaceInput = document.getElementById('replace-input') as HTMLInputElement;
-    let sVal = "", rVal = "";
-    if (searchInput) { sVal = searchInput.value; searchInput.value = ""; }
-    if (replaceInput) { rVal = replaceInput.value; replaceInput.value = ""; }
-    
-    // @ts-ignore
-    window.find(searchQuery, false, true, true, false, false, false);
-    
-    if (searchInput) searchInput.value = sVal;
-    if (replaceInput) replaceInput.value = rVal;
+    if (!searchQuery || matchCount === 0) return;
+    setActiveIndex(prev => (prev - 1 + matchCount) % matchCount);
   };
 
   const handleReplace = () => {
-    if (!editor || !searchQuery) return;
-    const selection = window.getSelection();
-    if (selection && selection.toString().toLowerCase() === searchQuery.toLowerCase()) {
-      document.execCommand("insertText", false, replaceQuery);
-      handleFindNext();
-    } else {
-      handleFindNext();
+    if (!editor || !searchQuery || matchCount === 0) return;
+    const tiptap = (editor as any)?._tiptapEditor;
+    if (!tiptap) return;
+    const state = tiptap.editorState || tiptap.state;
+    const view = tiptap.editorView || tiptap.view;
+    if (state && view) {
+      const searchState = searchPluginKey.getState(state);
+      if (searchState && searchState.matches.length > 0 && searchState.matches[activeIndex]) {
+        const curMatch = searchState.matches[activeIndex];
+        const tr = state.tr.replaceWith(
+          curMatch.from,
+          curMatch.to,
+          state.schema.text(replaceQuery)
+        );
+        view.dispatch(tr);
+        handleWysiwygChange();
+      }
     }
   };
 
   const handleReplaceAll = () => {
     if (!editor || !searchQuery) return;
-    let count = 0;
-    
-    const processContent = (content: any[]): { newContent: any[], modified: boolean } => {
-      let modified = false;
-      const newContent = content.map(item => {
-        if (item.type === 'text' && item.text.toLowerCase().includes(searchQuery.toLowerCase())) {
-          modified = true;
-          const regex = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-          const matches = item.text.match(regex);
-          if (matches) count += matches.length;
-          return { ...item, text: item.text.replace(regex, replaceQuery) };
-        }
-        if (item.type === 'link' && item.content) {
-          const childRes = processContent(item.content);
-          if (childRes.modified) modified = true;
-          return { ...item, content: childRes.newContent };
-        }
-        return item;
-      });
-      return { newContent, modified };
-    };
-
-    editor.forEachBlock((block: any) => {
-      if (block.content && Array.isArray(block.content)) {
-        const res = processContent(block.content);
-        if (res.modified) {
-          editor.updateBlock(block.id, { content: res.newContent });
-        }
+    const tiptap = (editor as any)?._tiptapEditor;
+    if (!tiptap) return;
+    const state = tiptap.editorState || tiptap.state;
+    const view = tiptap.editorView || tiptap.view;
+    if (state && view) {
+      const searchState = searchPluginKey.getState(state);
+      if (searchState && searchState.matches.length > 0) {
+        const matches = [...searchState.matches].reverse();
+        let tr = state.tr;
+        matches.forEach(m => {
+          tr = tr.replaceWith(m.from, m.to, state.schema.text(replaceQuery));
+        });
+        view.dispatch(tr);
+        vscode.postMessage({ type: 'notify', message: `총 ${matches.length}개의 항목을 바꿨습니다.` });
+        handleWysiwygChange();
       }
-      return true;
-    });
-    
-    // alert()는 VS Code 웹뷰 샌드박스에서 차단되므로 호스트 알림 사용
-    vscode.postMessage({ type: 'notify', message: `총 ${count}개의 항목이 바뀌었습니다.` });
+    }
   };
 
   useEffect(() => {
@@ -1135,11 +1188,20 @@ function App() {
     // 한국어 등 IME 합성(입력 중) 상태에서는 단축키 이벤트를 가로채지 않음 (글자 씹힘 및 겹침 방지)
     if (e.nativeEvent.isComposing) return;
 
-    // Cmd/Ctrl + Z / Y : 호스트 기반 Undo/Redo 통합
+    // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo 및 호스트 통합
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       e.stopPropagation();
       lastUndoTimeRef.current = Date.now();
+      const tiptap = (editor as any)?._tiptapEditor;
+      if (tiptap && typeof tiptap.commands?.undo === 'function' && typeof tiptap.commands?.redo === 'function') {
+        if (e.shiftKey) {
+          tiptap.commands.redo();
+        } else {
+          tiptap.commands.undo();
+        }
+        return;
+      }
       if (e.shiftKey) {
         vscode.postMessage({ type: 'redo' });
       } else {
@@ -1151,6 +1213,11 @@ function App() {
       e.preventDefault();
       e.stopPropagation();
       lastUndoTimeRef.current = Date.now();
+      const tiptap = (editor as any)?._tiptapEditor;
+      if (tiptap && typeof tiptap.commands?.redo === 'function') {
+        tiptap.commands.redo();
+        return;
+      }
       vscode.postMessage({ type: 'redo' });
       return;
     }
@@ -1413,38 +1480,71 @@ function App() {
           right: '20px',
           zIndex: 1000,
           background: dropdownBg,
-          padding: '8px',
+          padding: '8px 12px',
           border: `1px solid ${dropdownBorder}`,
           borderRadius: '6px',
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
           color: textColor
         }}>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <Search size={14} style={{ opacity: 0.7, margin: '0 4px' }} />
-            <input 
-              id="search-input"
-              placeholder="Find..." 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
-              style={{ padding: '4px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '150px', outline: 'none' }} 
-              onKeyDown={e => e.key === 'Enter' && handleFindNext()} 
-              autoFocus
-            />
-            <button onMouseDown={e => e.preventDefault()} onClick={handleFindPrev} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronUp size={14}/></button>
-            <button onMouseDown={e => e.preventDefault()} onClick={handleFindNext} style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronDown size={14}/></button>
-            <button onClick={() => setShowSearchReplace(false)} style={{ background: 'transparent', color: textColor, border: 'none', padding: '2px', cursor: 'pointer', marginLeft: '4px', opacity: 0.7 }}><X size={14}/></button>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <Search size={14} style={{ opacity: 0.7, margin: '0 2px' }} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input 
+                id="search-input"
+                placeholder="Find..." 
+                value={searchQuery} 
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setActiveIndex(0);
+                }} 
+                style={{ padding: '4px 60px 4px 6px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '170px', outline: 'none' }} 
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) handleFindPrev();
+                    else handleFindNext();
+                  } else if (e.key === 'Escape') {
+                    setShowSearchReplace(false);
+                  }
+                }} 
+                autoFocus
+              />
+              <span style={{ position: 'absolute', right: '6px', fontSize: '10px', opacity: 0.65, userSelect: 'none', pointerEvents: 'none' }}>
+                {searchQuery ? (matchCount > 0 ? `${activeIndex + 1}/${matchCount}` : '0') : ''}
+              </span>
+            </div>
+            <button 
+              onMouseDown={e => e.preventDefault()} 
+              onClick={() => setMatchCase(prev => !prev)}
+              title="Match Case (대소문자 구분)"
+              style={{ 
+                background: matchCase ? 'var(--vscode-button-background, #3b82f6)' : inputBg, 
+                color: matchCase ? '#fff' : textColor, 
+                border: `1px solid ${dropdownBorder}`, 
+                borderRadius: '4px', 
+                padding: '2px 6px', 
+                fontSize: '11px', 
+                fontWeight: 'bold', 
+                cursor: 'pointer' 
+              }}
+            >
+              Aa
+            </button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleFindPrev} title="Previous Match (Shift+Enter)" style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronUp size={14}/></button>
+            <button onMouseDown={e => e.preventDefault()} onClick={handleFindNext} title="Next Match (Enter)" style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronDown size={14}/></button>
+            <button onClick={() => setShowSearchReplace(false)} title="Close (Esc)" style={{ background: 'transparent', color: textColor, border: 'none', padding: '2px', cursor: 'pointer', marginLeft: '2px', opacity: 0.7 }}><X size={14}/></button>
           </div>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <div style={{ width: '22px' }} />
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <div style={{ width: '20px' }} />
             <input 
               id="replace-input"
               placeholder="Replace..." 
               value={replaceQuery} 
               onChange={e => setReplaceQuery(e.target.value)} 
-              style={{ padding: '4px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '150px', outline: 'none' }} 
+              style={{ padding: '4px 6px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '170px', outline: 'none' }} 
               onKeyDown={e => e.key === 'Enter' && handleReplace()}
             />
             <button onMouseDown={e => e.preventDefault()} onClick={handleReplace} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace</button>
