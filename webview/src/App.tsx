@@ -3,7 +3,6 @@ import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpe
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
 import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, preserveEmptyHeadings } from './markdownTransforms';
-import { formatCodeBlock } from './codeFormatter';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
@@ -174,8 +173,12 @@ function App() {
     const handleFocusOut = (e: FocusEvent) => {
       const isEditorBlurred = !isEditorElement(e.relatedTarget as Element);
       if (isEditorBlurred && pendingExternalUpdateRef.current !== null) {
-        setDocumentText(pendingExternalUpdateRef.current);
+        const incoming = pendingExternalUpdateRef.current;
         pendingExternalUpdateRef.current = null;
+        const normalizeMd = (str: string) => str.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim();
+        if (normalizeMd(incoming) !== normalizeMd(lastSentTextRef.current)) {
+          setDocumentText(incoming);
+        }
       }
     };
     document.addEventListener('focusout', handleFocusOut);
@@ -503,79 +506,7 @@ function App() {
     };
   }, [isRawMode]);
 
-  // 커서가 코드블록을 떠날 때 prettier로 자동 포맷.
-  // 지원 언어(js/ts/json/css/html/yaml)만 대상이고, 문법 오류나 미지원 언어는 원본 유지.
-  const activeCodeBlockIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (isRawMode || !editor) return;
-
-    let isHandlingSelection = false;
-    const handleSelectionChange = () => {
-      if (isHandlingSelection) return;
-      isHandlingSelection = true;
-      requestAnimationFrame(() => {
-        try {
-          const cursor = editor.getTextCursorPosition();
-          const currentBlockId = cursor?.block?.id || null;
-          const currentBlockType = cursor?.block?.type || null;
-
-          if (activeCodeBlockIdRef.current && activeCodeBlockIdRef.current !== currentBlockId) {
-            const prevBlockId = activeCodeBlockIdRef.current;
-            const prevBlock = editor.getBlock(prevBlockId);
-            if (prevBlock && prevBlock.type === 'codeBlock') {
-              const text = prevBlock.content?.map((c: any) => c.text || '').join('') || '';
-              const lang = prevBlock.props?.language || '';
-              formatCodeBlock(text, lang).then(formatted => {
-                if (formatted === null || formatted === text) return;
-                // 비동기 완료 시점에 블록이 여전히 존재하고 내용이 그대로일 때만 반영
-                const stillThere = editor.getBlock(prevBlockId);
-                if (!stillThere || stillThere.type !== 'codeBlock') return;
-                const currentText = stillThere.content?.map((c: any) => c.text || '').join('') || '';
-                if (currentText !== text) return;
-                editor.updateBlock(prevBlockId, { content: [{ type: 'text', text: formatted, styles: {} }] });
-              }).catch(() => { /* noop */ });
-            }
-          }
-
-          activeCodeBlockIdRef.current = currentBlockType === 'codeBlock' ? currentBlockId : null;
-        } catch { /* noop */ }
-        isHandlingSelection = false;
-      });
-    };
-
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
-  }, [isRawMode, editor]);
-
-  // 가벼운 정규식 기반 언어 자동 인식기 (4개 언어 한정 - 비용 거의 0)
-  const detectLanguage = (text: string): string | null => {
-    // 텍스트가 매우 길 경우 첫 500자만 검사하여 정규식 부하를 방지
-    const t = text.length > 500 ? text.slice(0, 500).trim() : text.trim();
-    if (!t) return null;
-    
-    // 1. JSON
-    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
-      try { JSON.parse(t); return 'json'; } catch {}
-    }
-    // 2. PowerShell
-    if (/\\b(Get|Set|Invoke|New|Remove|Start|Stop|Out)-[A-Z][a-zA-Z]+\\b/.test(t) || /\\$(null|true|false|_)\\b/.test(t)) {
-      return 'powershell';
-    }
-    // 3. Bash/Shell (shebang, 널리 쓰이는 CLI 커맨드 - az cli, npm, git 등 포함)
-    if (t.startsWith('#!/bin/') || /^\s*(sudo|systemctl|service|apt-get|dpkg|npm|npx|yarn|pnpm|git|node|python|pip|brew|apt|yum|kubectl|az|helm|docker|ls|grep|awk|sed|cat|echo|export|curl|cd|mkdir|rm|mv|cp)\b/m.test(t)) {
-      return 'shellscript';
-    }
-    // 4. YAML (JSON이 아니면서 key: value 패턴이 2줄 이상이거나 --- 시작)
-    if (t.startsWith('---')) return 'yaml';
-    const yamlLines = t.split('\\n').filter(l => /^[a-zA-Z0-9_-]+\\s*:\\s*.+/.test(l));
-    if (yamlLines.length >= 2 && !t.includes('{')) return 'yaml';
-    // 5. KQL (Azure Kusto Query Language)
-    if (/^\\s*(let|search|where|summarize|project|join|extend|parse|evaluate|print)\\b/im.test(t) && t.includes('|')) {
-      return 'kql';
-    }
-    
-    return null;
-  };
+  // 코드블록 포맷팅은 사용자의 명시적 조작(케밥 메뉴) 시에만 실행 (커서 이탈 시 자동 변이로 인한 튐 방지)
 
   const extractHeadings = (editorInstance: any) => {
     const newHeadings: {id: string, text: string, level: number}[] = [];
@@ -584,14 +515,6 @@ function App() {
         const text = b.content?.map((c: any) => c.text || c.content?.map((cc:any)=>cc.text).join('') || '').join('') || '';
         if (text.trim()) {
           newHeadings.push({ id: b.id, text, level: b.props.level });
-        }
-      }
-      // 언어가 'text'인 코드블록 자동 인식 적용
-      if (b.type === 'codeBlock' && (!b.props.language || b.props.language === 'text')) {
-        const codeText = b.content?.map((c: any) => c.text || '').join('') || '';
-        const detected = detectLanguage(codeText);
-        if (detected) {
-          editorInstance.updateBlock(b.id, { props: { ...b.props, language: detected } });
         }
       }
       return true;
@@ -606,13 +529,14 @@ function App() {
     });
   };
 
-  // Shiki 지연 로딩 완료 시 해당 언어를 사용하는 코드블록 강제 재렌더링
+  // Shiki 지연 로딩 완료 시 해당 언어를 사용하는 코드블록 재렌더링 (단, 현재 편집 중인 블록은 커서 보존을 위해 제외)
   useEffect(() => {
     const handleShikiLoaded = ((e: CustomEvent<string>) => {
       if (!editor) return;
       const lang = e.detail;
+      const currentCursorBlockId = editor.getTextCursorPosition()?.block?.id;
       editor.forEachBlock((b: any) => {
-        if (b.type === 'codeBlock' && b.props.language === lang) {
+        if (b.type === 'codeBlock' && b.props.language === lang && b.id !== currentCursorBlockId) {
            editor.updateBlock(b.id, { props: { ...b.props } });
         }
         return true;
@@ -825,6 +749,7 @@ function App() {
 
       const fullText = updatedFmString ? `---\n${updatedFmString}\n---\n${markdown}` : markdown;
       lastSentTextRef.current = fullText;
+      lastInitializedTextRef.current = fullText;
       vscode.postMessage({ type: 'change', text: fullText });
     } catch (err) {
       console.error('Failed to serialize document', err);
@@ -833,6 +758,8 @@ function App() {
 
   const saveToHost = (fmString: string, mdString: string) => {
     const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
+    lastSentTextRef.current = fullText;
+    lastInitializedTextRef.current = fullText;
     setDocumentText(fullText);
     postChange(fullText);
   };
@@ -875,26 +802,6 @@ function App() {
     hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
     debouncedWysiwygSerialize();
-
-    // Scroll cursor into view when editing (especially on line breaks)
-    setTimeout(() => {
-      try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor && cursor.block) {
-          const blockElement = document.querySelector(`[data-id="${cursor.block.id}"]`);
-          if (blockElement) {
-            const rect = blockElement.getBoundingClientRect();
-            // 뷰포트를 벗어난 경우에만 스크롤 이동
-            const isOutOfViewport = rect.top < 0 || rect.bottom > (window.innerHeight || document.documentElement.clientHeight);
-            if (isOutOfViewport) {
-              blockElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            }
-          }
-        }
-      } catch {
-        // Ignored
-      }
-    }, 10);
   };
 
   const handleFmChange = async (key: string, value: any) => {
@@ -984,9 +891,7 @@ function App() {
         const len = searchState.matches.length;
         setMatchCount(len);
         if (len > 0 && searchState.matches[activeIndex]) {
-          const curMatch = searchState.matches[activeIndex];
           try {
-            tiptap.commands.setTextSelection({ from: curMatch.from, to: curMatch.to });
             const activeEl = document.querySelector('.search-highlight-active');
             if (activeEl) {
               activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1254,18 +1159,6 @@ function App() {
                 preventDefault = true; // 무조건 기본 동작(포커스 이동) 차단
                 if (cursor && editor.canNestBlock()) {
                   editor.nestBlock();
-                  if (block.type === 'numberedListItem') {
-                    // 숫자 리스트에서 들여쓰기(Tab) 시 기본 들여쓰기 동작 후 불릿 리스트로 전환
-                    setTimeout(() => {
-                      try {
-                        editor.updateBlock(block.id, { type: 'bulletListItem' });
-                        const isBlockEmpty = !block.content || (Array.isArray(block.content) && block.content.every((c: any) => c.type === 'text' && !c.text));
-                        if (isBlockEmpty) {
-                          editor.setTextCursorPosition(block.id, 'end');
-                        }
-                      } catch {}
-                    }, 0);
-                  }
                 }
               }
             }
@@ -1280,33 +1173,8 @@ function App() {
             for (const block of blocksToProcess) {
               if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
                 preventDefault = true; // 무조건 기본 동작 차단 (커서 이탈 방지)
-                const findParent = (blocks: any[], id: string, parent: any = null): any => {
-                  for (const b of blocks) {
-                    if (b.id === id) return parent;
-                    if (b.children && b.children.length > 0) {
-                      const p = findParent(b.children, id, b);
-                      if (p) return p;
-                    }
-                  }
-                  return null;
-                };
-                const parentBlock = findParent(editor.document, block.id);
-                if (parentBlock) { // 최상위(1레벨)에서는 아무 동작 안 함
-                  if (cursor && editor.canUnnestBlock()) {
-                    editor.unnestBlock();
-                    if (parentBlock.type === 'numberedListItem' && block.type === 'bulletListItem') {
-                      // 숫자 리스트 하위의 불릿 리스트를 내어쓰기할 경우 다시 숫자 리스트로 전환
-                      setTimeout(() => {
-                        try {
-                          editor.updateBlock(block.id, { type: 'numberedListItem' });
-                          const isBlockEmpty = !block.content || (Array.isArray(block.content) && block.content.every((c: any) => c.type === 'text' && !c.text));
-                          if (isBlockEmpty) {
-                            editor.setTextCursorPosition(block.id, 'end');
-                          }
-                        } catch {}
-                      }, 0);
-                    }
-                  }
+                if (cursor && editor.canUnnestBlock()) {
+                  editor.unnestBlock();
                 }
               }
             }

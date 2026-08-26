@@ -105,8 +105,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             if (e.document.uri.toString() !== document.uri.toString()) {
                 return;
             }
-            const currentText = document.getText().replace(/\r\n/g, '\n');
-            const echoIdx = pendingWebviewTexts.findIndex(t => t.replace(/\r\n/g, '\n') === currentText);
+            const normalizeMd = (s: string) => s.replace(/\r\n/g, '\n').trim();
+            const currentText = normalizeMd(document.getText());
+            const echoIdx = pendingWebviewTexts.findIndex(t => normalizeMd(t) === currentText);
             if (echoIdx !== -1) {
                 // 웹뷰 편집이 문서에 반영된 echo — 해당 지점까지 소비하고 되쏘지 않음
                 pendingWebviewTexts.splice(0, echoIdx + 1);
