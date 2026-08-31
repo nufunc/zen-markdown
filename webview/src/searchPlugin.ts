@@ -5,8 +5,11 @@ import { Extension } from '@tiptap/core';
 export interface SearchState {
   query: string;
   matchCase: boolean;
+  wholeWord: boolean;
+  isRegex: boolean;
+  regexError: string | null;
   activeIndex: number;
-  matches: { from: number; to: number }[];
+  matches: { from: number; to: number; matchText: string }[];
 }
 
 export const searchPluginKey = new PluginKey<SearchState>('searchHighlightPlugin');
@@ -19,6 +22,9 @@ export function createSearchPlugin(): Plugin<SearchState> {
         return {
           query: '',
           matchCase: false,
+          wholeWord: false,
+          isRegex: false,
+          regexError: null,
           activeIndex: 0,
           matches: [],
         };
@@ -27,6 +33,8 @@ export function createSearchPlugin(): Plugin<SearchState> {
         const meta = tr.getMeta(searchPluginKey);
         let query = oldState.query;
         let matchCase = oldState.matchCase;
+        let wholeWord = oldState.wholeWord;
+        let isRegex = oldState.isRegex;
         let activeIndex = oldState.activeIndex;
 
         let metaChanged = false;
@@ -39,6 +47,14 @@ export function createSearchPlugin(): Plugin<SearchState> {
             matchCase = meta.matchCase;
             metaChanged = true;
           }
+          if (meta.wholeWord !== undefined) {
+            wholeWord = meta.wholeWord;
+            metaChanged = true;
+          }
+          if (meta.isRegex !== undefined) {
+            isRegex = meta.isRegex;
+            metaChanged = true;
+          }
           if (meta.activeIndex !== undefined) {
             activeIndex = meta.activeIndex;
             metaChanged = true;
@@ -46,20 +62,38 @@ export function createSearchPlugin(): Plugin<SearchState> {
         }
 
         if (!query) {
-          return { query: '', matchCase, activeIndex: 0, matches: [] };
+          return { query: '', matchCase, wholeWord, isRegex, regexError: null, activeIndex: 0, matches: [] };
         }
 
         const normalizedQuery = query.normalize('NFC');
 
         // 문서 내용이 변경되었거나 검색 메타데이터가 변경된 경우 매칭 재계산
         if (metaChanged || tr.docChanged) {
-          const matches: { from: number; to: number }[] = [];
+          const matches: { from: number; to: number; matchText: string }[] = [];
           const flags = matchCase ? 'g' : 'gi';
           let regex: RegExp;
+
           try {
-            regex = new RegExp(normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-          } catch {
-            return { query, matchCase, activeIndex: 0, matches: [] };
+            let pattern = normalizedQuery;
+            if (!isRegex) {
+              pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+            if (wholeWord) {
+              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
+              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
+              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
+            }
+            regex = new RegExp(pattern, flags);
+          } catch (err: any) {
+            return {
+              query,
+              matchCase,
+              wholeWord,
+              isRegex,
+              regexError: err?.message || 'Invalid regular expression',
+              activeIndex: 0,
+              matches: [],
+            };
           }
 
           newEditorState.doc.descendants((node, pos) => {
@@ -68,9 +102,14 @@ export function createSearchPlugin(): Plugin<SearchState> {
               regex.lastIndex = 0;
               let match: RegExpExecArray | null;
               while ((match = regex.exec(text)) !== null) {
+                // 0길이 일치 무한 루프 방지
+                if (match[0].length === 0) {
+                  regex.lastIndex++;
+                  continue;
+                }
                 const from = pos + match.index;
                 const to = from + match[0].length;
-                matches.push({ from, to });
+                matches.push({ from, to, matchText: match[0] });
               }
             }
           });
@@ -84,7 +123,7 @@ export function createSearchPlugin(): Plugin<SearchState> {
             activeIndex = matches.length - 1;
           }
 
-          return { query, matchCase, activeIndex, matches };
+          return { query, matchCase, wholeWord, isRegex, regexError: null, activeIndex, matches };
         }
 
         return oldState;

@@ -91,7 +91,8 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, Search, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search } from 'lucide-react';
+import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -108,6 +109,24 @@ const isEditorElement = (el: Element | null): boolean => {
   if (!el) return false;
   return !!el.closest('.bn-editor, .ProseMirror, .bn-container, .mantine-Menu-dropdown, .mantine-Popover-dropdown, .mantine-Select-dropdown, [role="menu"], [role="dialog"]');
 };
+
+const CaseSensitiveIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path fillRule="evenodd" clipRule="evenodd" d="M3.2 12h1.24l.5-1.5h2.52l.5 1.5h1.24L6.75 4h-1.1L3.2 12zm2.08-2.5L6.2 6.33l.92 3.17H5.28zM12.8 12h-1.17l-.14-.52c-.37.38-.85.57-1.44.57-.6 0-1.07-.17-1.42-.51-.34-.34-.51-.81-.51-1.39 0-.64.22-1.12.67-1.43.45-.32 1.09-.48 1.93-.48h.77V7.8c0-.3-.08-.53-.25-.68-.17-.15-.43-.22-.78-.22-.32 0-.58.07-.79.2-.21.14-.33.34-.36.62H8.35c.03-.54.25-.96.67-1.25.41-.29 1-.44 1.75-.44.7 0 1.22.15 1.57.45.34.3.52.74.52 1.33V12zm-1.16-2.92h-.69c-.53 0-.92.09-1.18.26-.26.17-.38.44-.38.8 0 .32.09.56.28.71.18.15.43.23.76.23.36 0 .65-.11.87-.33.22-.22.34-.52.34-.91v-.76z"/>
+  </svg>
+);
+
+const WholeWordIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path fillRule="evenodd" clipRule="evenodd" d="M1 3h1.2v10H1V3zm12.8 0h1.2v10h-1.2V3zM4.5 11.5c-.7 0-1.3-.3-1.7-.8-.4-.5-.6-1.1-.6-1.9 0-.8.2-1.4.6-1.9.4-.5 1-.8 1.7-.8.5 0 .9.2 1.3.5V4h1.1v7.5H5.8v-.6c-.4.4-.8.6-1.3.6zm.5-1c.4 0 .7-.1 1-.4.2-.3.3-.6.3-1.1 0-.5-.1-.8-.3-1.1-.2-.3-.5-.4-1-.4-.4 0-.7.1-1 .4-.2.3-.3.6-.3 1.1 0 .5.1.8.3 1.1.2.3.5.4 1 .4zm4.7.9H8.6V6.6h1.1v.7c.4-.5.9-.7 1.6-.7.7 0 1.3.3 1.7.8.4.5.6 1.1.6 1.9 0 .8-.2 1.4-.6 1.9-.4.5-1 .8-1.7.8-.7 0-1.2-.2-1.6-.7v.1zm1.4-1c.4 0 .7-.1 1-.4.2-.3.3-.6.3-1.1 0-.5-.1-.8-.3-1.1-.2-.3-.5-.4-1-.4-.4 0-.7.1-1 .4-.2.3-.3.6-.3 1.1 0 .5.1.8.3 1.1.2.3.5.4 1 .4z"/>
+  </svg>
+);
+
+const RegexIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path fillRule="evenodd" clipRule="evenodd" d="M3.2 12.5a1.4 1.4 0 1 1-2.8 0 1.4 1.4 0 0 1 2.8 0zm7.8-4.2l2.3-1.3-.6-1-2.3 1.3V4.7H9.2v2.6L6.9 6l-.6 1 2.3 1.3-2.3 1.3.6 1 2.3-1.3v2.6h1.2V9.3l2.3 1.3.6-1-2.3-1.3z"/>
+  </svg>
+);
 
 function formatDocPath(rawUri: string): string {
   if (!rawUri) return 'document.md';
@@ -133,6 +152,7 @@ function App() {
   configRef.current = config;
   // 코드블록 케밥(⋮) 메뉴 상태
   const [codeMenu, setCodeMenu] = useState<{ blockId: string, x: number, y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
   const [isRawMode, setIsRawMode] = useState(() => !!(vscode.getState()?.isRawMode));
   const [isDiffMode, setIsDiffMode] = useState(false);
   const [originalText, setOriginalText] = useState<string | null>(null);
@@ -142,11 +162,17 @@ function App() {
   const [fmData, setFmData] = useState<Record<string, any> | null>(null);
   const [fmCollapsed, setFmCollapsed] = useState(false);
   const [showSearchReplace, setShowSearchReplace] = useState(false);
+  const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [replaceQuery, setReplaceQuery] = useState("");
   const [matchCase, setMatchCase] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [isRegex, setIsRegex] = useState(false);
+  const [regexError, setRegexError] = useState<string | null>(null);
   const [matchCount, setMatchCount] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
@@ -362,6 +388,7 @@ function App() {
       if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
         setIsSettingsOpen(false);
       }
+      setContextMenu(null);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
@@ -608,6 +635,7 @@ function App() {
           } catch (err) {
             console.error("Failed to register searchPlugin", err);
           }
+          (window as any).__editor = newEditor;
           setEditor(newEditor);
           extractHeadings(newEditor);
           // Reset edit flag after initialization
@@ -869,11 +897,12 @@ function App() {
 
     if (!showSearchReplace || !searchQuery) {
       try {
-        const tr = state.tr.setMeta(searchPluginKey, { query: '', matchCase: false, activeIndex: 0 });
+        const tr = state.tr.setMeta(searchPluginKey, { query: '', matchCase: false, wholeWord: false, isRegex: false, activeIndex: 0 });
         view.dispatch(tr);
       } catch {}
       setMatchCount(0);
       setActiveIndex(0);
+      setRegexError(null);
       return;
     }
 
@@ -883,11 +912,14 @@ function App() {
       const tr = currentState.tr.setMeta(searchPluginKey, {
         query: searchQuery,
         matchCase,
+        wholeWord,
+        isRegex,
         activeIndex,
       });
       currentView.dispatch(tr);
       const searchState = searchPluginKey.getState(currentView.state || currentState);
       if (searchState) {
+        setRegexError(searchState.regexError);
         const len = searchState.matches.length;
         setMatchCount(len);
         if (len > 0 && searchState.matches[activeIndex]) {
@@ -900,11 +932,12 @@ function App() {
         }
       } else {
         setMatchCount(0);
+        setRegexError(null);
       }
     } catch (err) {
       console.error('Error updating search highlight:', err);
     }
-  }, [editor, searchQuery, matchCase, activeIndex, showSearchReplace]);
+  }, [editor, searchQuery, matchCase, wholeWord, isRegex, activeIndex, showSearchReplace]);
 
   const handleFindNext = () => {
     if (!searchQuery || matchCount === 0) return;
@@ -926,13 +959,30 @@ function App() {
       const searchState = searchPluginKey.getState(state);
       if (searchState && searchState.matches.length > 0 && searchState.matches[activeIndex]) {
         const curMatch = searchState.matches[activeIndex];
+        let replacement = replaceQuery;
+        if (isRegex) {
+          try {
+            const flags = matchCase ? '' : 'i';
+            let pattern = searchQuery;
+            if (wholeWord) {
+              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
+              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
+              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
+            }
+            const regex = new RegExp(pattern, flags);
+            replacement = curMatch.matchText.replace(regex, replaceQuery);
+          } catch {}
+        }
         const tr = state.tr.replaceWith(
           curMatch.from,
           curMatch.to,
-          state.schema.text(replaceQuery)
+          state.schema.text(replacement)
         );
         view.dispatch(tr);
         handleWysiwygChange();
+        if (activeIndex >= matchCount - 1) {
+          setActiveIndex(0);
+        }
       }
     }
   };
@@ -948,11 +998,31 @@ function App() {
       if (searchState && searchState.matches.length > 0) {
         const matches = [...searchState.matches].reverse();
         let tr = state.tr;
+        const flags = matchCase ? '' : 'i';
+        let regex: RegExp | null = null;
+        if (isRegex) {
+          try {
+            let pattern = searchQuery;
+            if (wholeWord) {
+              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
+              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
+              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
+            }
+            regex = new RegExp(pattern, flags);
+          } catch {}
+        }
+
         matches.forEach(m => {
-          tr = tr.replaceWith(m.from, m.to, state.schema.text(replaceQuery));
+          let replacement = replaceQuery;
+          if (regex && m.matchText) {
+            try {
+              replacement = m.matchText.replace(regex, replaceQuery);
+            } catch {}
+          }
+          tr = tr.replaceWith(m.from, m.to, state.schema.text(replacement));
         });
         view.dispatch(tr);
-        vscode.postMessage({ type: 'notify', message: `총 ${matches.length}개의 항목을 바꿨습니다.` });
+        vscode.postMessage({ type: 'notify', message: `Replaced ${matches.length} occurrences.` });
         handleWysiwygChange();
       }
     }
@@ -961,19 +1031,49 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 자체 Search/Replace 위젯을 Ctrl+F와 Ctrl+H 모두에 연동한다 (WYSIWYG 모드에서)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'f')) {
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'h')) {
         if (!isRawMode) {
           e.preventDefault();
           e.stopPropagation();
+
+          // 에디터에서 드래그/선택된 텍스트가 있으면 검색어로 자동 반영
+          let selectedText = '';
+          if (editor) {
+            const tiptap = (editor as any)?._tiptapEditor;
+            if (tiptap) {
+              const { from, to } = tiptap.state.selection;
+              if (from !== to) {
+                selectedText = tiptap.state.doc.textBetween(from, to, ' ');
+              }
+            }
+          }
+          if (selectedText) {
+            setSearchQuery(selectedText);
+            setActiveIndex(0);
+          }
+
           setShowSearchReplace(true);
+          if (e.key.toLowerCase() === 'h') {
+            setIsReplaceOpen(true);
+            setTimeout(() => {
+              replaceInputRef.current?.focus();
+              replaceInputRef.current?.select();
+            }, 50);
+          } else {
+            setTimeout(() => {
+              searchInputRef.current?.focus();
+              searchInputRef.current?.select();
+            }, 50);
+          }
         }
       } else if (e.key === 'Escape' && showSearchReplace) {
         setShowSearchReplace(false);
+        editor?.focus?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSearchReplace, isRawMode]);
+  }, [showSearchReplace, isRawMode, editor]);
 
   useEffect(() => {
     const handleWindowScroll = () => {
@@ -1087,43 +1187,77 @@ function App() {
     }
   };
 
+  const getCanUndo = () => {
+    if (!editor || isRawMode) return false;
+    const tiptap = (editor as any)?._tiptapEditor;
+    const state = tiptap?.editorState || tiptap?.state;
+    return state ? undoDepth(state) > 0 : false;
+  };
+
+  const getCanRedo = () => {
+    if (!editor || isRawMode) return false;
+    const tiptap = (editor as any)?._tiptapEditor;
+    const state = tiptap?.editorState || tiptap?.state;
+    return state ? redoDepth(state) > 0 : false;
+  };
+
+  const handleUndo = () => {
+    if (!editor || isRawMode) return;
+    lastUndoTimeRef.current = Date.now();
+    const tiptap = (editor as any)?._tiptapEditor;
+    if (tiptap) {
+      const view = tiptap.editorView || tiptap.view;
+      const state = tiptap.editorState || tiptap.state;
+      if (view && state) {
+        const didUndo = pmUndo(state, view.dispatch);
+        if (didUndo) {
+          handleWysiwygChange();
+          return;
+        }
+      }
+    }
+    vscode.postMessage({ type: 'undo' });
+  };
+
+  const handleRedo = () => {
+    if (!editor || isRawMode) return;
+    lastUndoTimeRef.current = Date.now();
+    const tiptap = (editor as any)?._tiptapEditor;
+    if (tiptap) {
+      const view = tiptap.editorView || tiptap.view;
+      const state = tiptap.editorState || tiptap.state;
+      if (view && state) {
+        const didRedo = pmRedo(state, view.dispatch);
+        if (didRedo) {
+          handleWysiwygChange();
+          return;
+        }
+      }
+    }
+    vscode.postMessage({ type: 'redo' });
+  };
+
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (!editor || isRawMode) return;
 
     // 한국어 등 IME 합성(입력 중) 상태에서는 단축키 이벤트를 가로채지 않음 (글자 씹힘 및 겹침 방지)
     if (e.nativeEvent.isComposing) return;
 
-    // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo 및 호스트 통합
+    // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       e.stopPropagation();
-      lastUndoTimeRef.current = Date.now();
-      const tiptap = (editor as any)?._tiptapEditor;
-      if (tiptap && typeof tiptap.commands?.undo === 'function' && typeof tiptap.commands?.redo === 'function') {
-        if (e.shiftKey) {
-          tiptap.commands.redo();
-        } else {
-          tiptap.commands.undo();
-        }
-        return;
-      }
       if (e.shiftKey) {
-        vscode.postMessage({ type: 'redo' });
+        handleRedo();
       } else {
-        vscode.postMessage({ type: 'undo' });
+        handleUndo();
       }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
       e.preventDefault();
       e.stopPropagation();
-      lastUndoTimeRef.current = Date.now();
-      const tiptap = (editor as any)?._tiptapEditor;
-      if (tiptap && typeof tiptap.commands?.redo === 'function') {
-        tiptap.commands.redo();
-        return;
-      }
-      vscode.postMessage({ type: 'redo' });
+      handleRedo();
       return;
     }
 
@@ -1334,41 +1468,38 @@ function App() {
     return <div>Loading document...</div>;
   }
 
-  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder, inputBg, accentColor } = themePalette;
+  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder, accentColor } = themePalette;
 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: bgColor, color: textColor }}>
       
-      {/* Search & Replace Widget */}
+      {/* VS Code Style Find & Replace Widget */}
       {showSearchReplace && !isRawMode && (
-        <div style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          zIndex: 1000,
-          background: dropdownBg,
-          padding: '8px 12px',
-          border: `1px solid ${dropdownBorder}`,
-          borderRadius: '6px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
-          color: textColor
-        }}>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <Search size={14} style={{ opacity: 0.7, margin: '0 2px' }} />
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <div className="vscode-find-widget" role="search" aria-label="Find and Replace">
+          {/* Find Row */}
+          <div className="find-widget-row">
+            <button 
+              type="button"
+              className="find-toggle-btn"
+              onClick={() => setIsReplaceOpen(prev => !prev)}
+              title={isReplaceOpen ? "Toggle Replace" : "Toggle Replace (Ctrl+H)"}
+              aria-expanded={isReplaceOpen}
+            >
+              {isReplaceOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+
+            <div className={`find-input-box-wrapper ${regexError ? 'has-error' : ''}`} title={regexError || undefined}>
               <input 
+                ref={searchInputRef}
                 id="search-input"
-                placeholder="Find..." 
+                className="find-native-input"
+                placeholder="Find" 
                 value={searchQuery} 
                 onChange={e => {
                   setSearchQuery(e.target.value);
                   setActiveIndex(0);
                 }} 
-                style={{ padding: '4px 60px 4px 6px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '170px', outline: 'none' }} 
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1376,48 +1507,156 @@ function App() {
                     else handleFindNext();
                   } else if (e.key === 'Escape') {
                     setShowSearchReplace(false);
+                    editor?.focus?.();
+                  } else if (e.altKey && e.key.toLowerCase() === 'c') {
+                    e.preventDefault();
+                    setMatchCase(prev => !prev);
+                  } else if (e.altKey && e.key.toLowerCase() === 'w') {
+                    e.preventDefault();
+                    setWholeWord(prev => !prev);
+                  } else if (e.altKey && e.key.toLowerCase() === 'r') {
+                    e.preventDefault();
+                    setIsRegex(prev => !prev);
                   }
                 }} 
                 autoFocus
               />
-              <span style={{ position: 'absolute', right: '6px', fontSize: '10px', opacity: 0.65, userSelect: 'none', pointerEvents: 'none' }}>
-                {searchQuery ? (matchCount > 0 ? `${activeIndex + 1}/${matchCount}` : '0') : ''}
-              </span>
+              <div className="find-inline-options">
+                <button 
+                  type="button"
+                  onMouseDown={e => e.preventDefault()} 
+                  onClick={() => setMatchCase(prev => !prev)}
+                  className={`find-option-btn ${matchCase ? 'active' : ''}`}
+                  title="Match Case (Alt+C)"
+                  aria-label="Match Case"
+                  aria-pressed={matchCase}
+                >
+                  <CaseSensitiveIcon />
+                </button>
+                <button 
+                  type="button"
+                  onMouseDown={e => e.preventDefault()} 
+                  onClick={() => setWholeWord(prev => !prev)}
+                  className={`find-option-btn ${wholeWord ? 'active' : ''}`}
+                  title="Match Whole Word (Alt+W)"
+                  aria-label="Match Whole Word"
+                  aria-pressed={wholeWord}
+                >
+                  <WholeWordIcon />
+                </button>
+                <button 
+                  type="button"
+                  onMouseDown={e => e.preventDefault()} 
+                  onClick={() => setIsRegex(prev => !prev)}
+                  className={`find-option-btn ${isRegex ? 'active' : ''}`}
+                  title="Use Regular Expression (Alt+R)"
+                  aria-label="Use Regular Expression"
+                  aria-pressed={isRegex}
+                >
+                  <RegexIcon />
+                </button>
+              </div>
             </div>
+
+            <div className={`find-count-label ${searchQuery && matchCount === 0 ? 'no-results' : ''}`}>
+              {searchQuery ? (matchCount > 0 ? `${activeIndex + 1} of ${matchCount}` : 'No results') : ''}
+            </div>
+
             <button 
+              type="button"
+              className="find-action-btn"
               onMouseDown={e => e.preventDefault()} 
-              onClick={() => setMatchCase(prev => !prev)}
-              title="Match Case (대소문자 구분)"
-              style={{ 
-                background: matchCase ? 'var(--vscode-button-background, #3b82f6)' : inputBg, 
-                color: matchCase ? '#fff' : textColor, 
-                border: `1px solid ${dropdownBorder}`, 
-                borderRadius: '4px', 
-                padding: '2px 6px', 
-                fontSize: '11px', 
-                fontWeight: 'bold', 
-                cursor: 'pointer' 
-              }}
+              onClick={handleFindPrev} 
+              disabled={!searchQuery || matchCount === 0}
+              title="Previous Match (Shift+Enter)"
             >
-              Aa
+              <ChevronUp size={14} />
             </button>
-            <button onMouseDown={e => e.preventDefault()} onClick={handleFindPrev} title="Previous Match (Shift+Enter)" style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronUp size={14}/></button>
-            <button onMouseDown={e => e.preventDefault()} onClick={handleFindNext} title="Next Match (Enter)" style={{ background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer' }}><ChevronDown size={14}/></button>
-            <button onClick={() => setShowSearchReplace(false)} title="Close (Esc)" style={{ background: 'transparent', color: textColor, border: 'none', padding: '2px', cursor: 'pointer', marginLeft: '2px', opacity: 0.7 }}><X size={14}/></button>
+            <button 
+              type="button"
+              className="find-action-btn"
+              onMouseDown={e => e.preventDefault()} 
+              onClick={handleFindNext} 
+              disabled={!searchQuery || matchCount === 0}
+              title="Next Match (Enter)"
+            >
+              <ChevronDown size={14} />
+            </button>
+            <button 
+              type="button"
+              className="find-action-btn"
+              onClick={() => {
+                setShowSearchReplace(false);
+                editor?.focus?.();
+              }} 
+              title="Close (Escape)"
+            >
+              <X size={14} />
+            </button>
           </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <div style={{ width: '20px' }} />
-            <input 
-              id="replace-input"
-              placeholder="Replace..." 
-              value={replaceQuery} 
-              onChange={e => setReplaceQuery(e.target.value)} 
-              style={{ padding: '4px 6px', fontSize: '12px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', width: '170px', outline: 'none' }} 
-              onKeyDown={e => e.key === 'Enter' && handleReplace()}
-            />
-            <button onMouseDown={e => e.preventDefault()} onClick={handleReplace} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace</button>
-            <button onMouseDown={e => e.preventDefault()} onClick={handleReplaceAll} style={{ fontSize: '11px', background: inputBg, color: textColor, border: `1px solid ${dropdownBorder}`, borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>Replace All</button>
-          </div>
+
+          {/* Replace Row */}
+          {isReplaceOpen && (
+            <div className="find-widget-row">
+              <div className="find-toggle-placeholder" />
+              <div className="find-input-box-wrapper">
+                <input 
+                  ref={replaceInputRef}
+                  id="replace-input"
+                  className="find-native-input"
+                  placeholder="Replace" 
+                  value={replaceQuery} 
+                  onChange={e => setReplaceQuery(e.target.value)} 
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (e.ctrlKey && e.altKey) {
+                        handleReplaceAll();
+                      } else {
+                        handleReplace();
+                      }
+                    } else if (e.key === 'Escape') {
+                      setShowSearchReplace(false);
+                      editor?.focus?.();
+                    } else if (e.altKey && e.key.toLowerCase() === 'c') {
+                      e.preventDefault();
+                      setMatchCase(prev => !prev);
+                    } else if (e.altKey && e.key.toLowerCase() === 'w') {
+                      e.preventDefault();
+                      setWholeWord(prev => !prev);
+                    } else if (e.altKey && e.key.toLowerCase() === 'r') {
+                      e.preventDefault();
+                      setIsRegex(prev => !prev);
+                    }
+                  }} 
+                />
+              </div>
+
+              <div className="find-count-placeholder" />
+
+              <button 
+                type="button"
+                className="find-action-btn"
+                onMouseDown={e => e.preventDefault()} 
+                onClick={handleReplace} 
+                disabled={!searchQuery || matchCount === 0}
+                title="Replace (Enter)"
+              >
+                <Replace size={14} />
+              </button>
+              <button 
+                type="button"
+                className="find-action-btn"
+                onMouseDown={e => e.preventDefault()} 
+                onClick={handleReplaceAll} 
+                disabled={!searchQuery || matchCount === 0}
+                title="Replace All (Ctrl+Alt+Enter)"
+              >
+                <ReplaceAll size={14} />
+              </button>
+              <div className="find-action-placeholder" />
+            </div>
+          )}
         </div>
       )}
 
@@ -2048,7 +2287,16 @@ function App() {
                     console.error("Failed to copy markdown", err);
                   }
                 }
-              }}><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
+              }}
+              onContextMenu={(e) => {
+                // 본문 영역 우클릭 시 VS Code 컨텍스트 메뉴 출력
+                e.preventDefault();
+                setContextMenu({
+                  x: Math.min(e.clientX, window.innerWidth - 200),
+                  y: Math.min(e.clientY, window.innerHeight - 240)
+                });
+              }}
+              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
                 <SuggestionMenuController
                   triggerCharacter={"/"}
                   getItems={async (query) => {
@@ -2109,6 +2357,112 @@ function App() {
             try { editor.focus(); } catch {}
           }}
         />
+      )}
+      {/* VS Code Style Context Menu */}
+      {contextMenu && (
+        <div 
+          className="vscode-context-menu" 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          role="menu"
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div 
+            className={`vscode-context-menu-item ${!getCanUndo() ? 'disabled' : ''}`}
+            onClick={() => {
+              if (getCanUndo()) {
+                handleUndo();
+                setContextMenu(null);
+              }
+            }}
+          >
+            <div className="menu-label">
+              <Undo2 size={13} />
+              <span>실행 취소</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+Z</span>
+          </div>
+
+          <div 
+            className={`vscode-context-menu-item ${!getCanRedo() ? 'disabled' : ''}`}
+            onClick={() => {
+              if (getCanRedo()) {
+                handleRedo();
+                setContextMenu(null);
+              }
+            }}
+          >
+            <div className="menu-label">
+              <Redo2 size={13} />
+              <span>다시 실행</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+Y</span>
+          </div>
+
+          <div className="vscode-context-menu-divider" />
+
+          <div 
+            className="vscode-context-menu-item"
+            onClick={() => {
+              document.execCommand('cut');
+              setContextMenu(null);
+            }}
+          >
+            <div className="menu-label">
+              <Scissors size={13} />
+              <span>잘라내기</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+X</span>
+          </div>
+
+          <div 
+            className="vscode-context-menu-item"
+            onClick={() => {
+              document.execCommand('copy');
+              setContextMenu(null);
+            }}
+          >
+            <div className="menu-label">
+              <Copy size={13} />
+              <span>복사</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+C</span>
+          </div>
+
+          <div 
+            className="vscode-context-menu-item"
+            onClick={async () => {
+              try {
+                const text = await navigator.clipboard.readText();
+                if (text && editor) {
+                  document.execCommand('insertText', false, text);
+                }
+              } catch {}
+              setContextMenu(null);
+            }}
+          >
+            <div className="menu-label">
+              <Clipboard size={13} />
+              <span>붙여넣기</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+V</span>
+          </div>
+
+          <div className="vscode-context-menu-divider" />
+
+          <div 
+            className="vscode-context-menu-item"
+            onClick={() => {
+              setShowSearchReplace(true);
+              setContextMenu(null);
+            }}
+          >
+            <div className="menu-label">
+              <Search size={13} />
+              <span>찾기 / 바꾸기</span>
+            </div>
+            <span className="menu-shortcut">Ctrl+F</span>
+          </div>
+        </div>
       )}
     </div>
   );

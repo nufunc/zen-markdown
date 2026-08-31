@@ -282,4 +282,240 @@ input:checked + .toggle-slider:before {
   background-color: transparent !important;
 }
 
+/* VS Code Find & Replace Widget Styles */
+.vscode-find-widget {
+  position: fixed;
+  top: 0;
+  right: 18px;
+  z-index: 1000;
+  background-color: var(--vscode-editorWidget-background, #252526);
+  color: var(--vscode-editorWidget-foreground, #cccccc);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-top: none;
+  box-shadow: 0 4px 10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  padding: 4px 6px;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  user-select: none;
+}
+
+.find-widget-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.find-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  opacity: 0.8;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+.find-toggle-btn:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.find-toggle-placeholder {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.find-input-box-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  width: 220px;
+  height: 24px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.find-input-box-wrapper:focus-within {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+.find-input-box-wrapper.has-error {
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important;
+  outline: 1px solid var(--vscode-inputValidation-errorBorder, #be1100) !important;
+  outline-offset: -1px;
+}
+
+.find-native-input {
+  background: transparent;
+  color: var(--vscode-input-foreground, #cccccc);
+  border: none;
+  outline: none;
+  font-size: 12px;
+  padding: 2px 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.find-native-input::placeholder {
+  color: var(--vscode-input-placeholderForeground, rgba(204, 204, 204, 0.45));
+}
+
+.find-inline-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 3px;
+  flex-shrink: 0;
+}
+
+.find-option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: all 0.15s ease;
+}
+.find-option-btn:hover {
+  opacity: 1;
+  background-color: var(--vscode-inputOption-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+.find-option-btn.active {
+  opacity: 1;
+  background-color: var(--vscode-inputOption-activeBackground, rgba(0, 122, 204, 0.4));
+  border-color: var(--vscode-inputOption-activeBorder, #007acc);
+  color: var(--vscode-inputOption-activeForeground, #ffffff);
+}
+
+.find-count-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  width: 65px;
+  min-width: 65px;
+  max-width: 65px;
+  text-align: center;
+  flex-shrink: 0;
+  padding: 0 2px;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.find-count-label.no-results {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.find-count-placeholder {
+  width: 65px;
+  min-width: 65px;
+  max-width: 65px;
+  flex-shrink: 0;
+}
+
+.find-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--vscode-icon-foreground, #c5c5c5);
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  opacity: 0.85;
+  transition: all 0.15s;
+}
+.find-action-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+.find-action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.find-action-placeholder {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* VS Code Context Menu Styles */
+.vscode-context-menu {
+  position: fixed;
+  z-index: 2000;
+  background-color: var(--vscode-menu-background, #252526);
+  color: var(--vscode-menu-foreground, #cccccc);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  box-shadow: 0 4px 12px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 190px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  user-select: none;
+}
+
+.vscode-context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  cursor: pointer;
+  color: inherit;
+  transition: background-color 0.1s;
+}
+
+.vscode-context-menu-item:hover:not(.disabled) {
+  background-color: var(--vscode-menu-selectionBackground, #04395e);
+  color: var(--vscode-menu-selectionForeground, #ffffff);
+}
+
+.vscode-context-menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.vscode-context-menu-item .menu-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vscode-context-menu-item .menu-shortcut {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-left: 16px;
+}
+
+.vscode-context-menu-divider {
+  height: 1px;
+  background-color: var(--vscode-menu-separatorBackground, #454545);
+  margin: 4px 0;
+}
+
+
 
