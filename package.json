@@ -4,7 +4,7 @@
   "displayName": "Zen Markdown",
   "icon": "icon.png",
   "description": "Minimalist & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {
@@ -127,7 +127,7 @@
         },
         "zenMarkdown.showProperties": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Show Document Properties (Frontmatter) by default."
         },
         "zenMarkdown.defaultCodeLanguage": {
@@ -150,6 +150,26 @@
           "enum": ["narrow", "standard", "full"],
           "default": "standard",
           "description": "Maximum width of the editor content. Narrow (700px), Standard (900px), Full (100% - default max of VS Code)."
+        },
+        "zenMarkdown.defaultMode": {
+          "type": "string",
+          "enum": ["wysiwyg", "raw"],
+          "enumDescriptions": [
+            "WYSIWYG Rich Block Editor",
+            "Raw Markdown Source Editor"
+          ],
+          "default": "wysiwyg",
+          "description": "Default editing mode when opening a markdown document."
+        },
+        "zenMarkdown.showWordCount": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show word and character count badge in the header bar."
+        },
+        "zenMarkdown.showFormattingToolbar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the rich formatting toolbar in WYSIWYG mode."
         }
       }
     },

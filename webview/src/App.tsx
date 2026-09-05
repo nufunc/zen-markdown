@@ -146,14 +146,47 @@ function formatDocPath(rawUri: string): string {
 
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
-  const [config, setConfig] = useState<{ theme: string, fontSize: number, autoFix: boolean, autoRefresh: boolean, showToc: boolean, showProperties: boolean, isReadOnly: boolean, defaultCodeLanguage: string, focusMode: boolean, spellCheck: boolean, contentWidth: string }>({ theme: "auto", fontSize: 16, autoFix: false, autoRefresh: true, showToc: false, showProperties: true, isReadOnly: false, defaultCodeLanguage: 'text', focusMode: false, spellCheck: false, contentWidth: 'standard' });
+  const [config, setConfig] = useState<{
+    theme: string,
+    fontSize: number,
+    autoFix: boolean,
+    autoRefresh: boolean,
+    showToc: boolean,
+    showProperties: boolean,
+    isReadOnly: boolean,
+    defaultCodeLanguage: string,
+    focusMode: boolean,
+    spellCheck: boolean,
+    contentWidth: string,
+    defaultMode: string,
+    showWordCount: boolean,
+    showFormattingToolbar: boolean
+  }>({
+    theme: "auto",
+    fontSize: 16,
+    autoFix: false,
+    autoRefresh: true,
+    showToc: false,
+    showProperties: true,
+    isReadOnly: false,
+    defaultCodeLanguage: 'text',
+    focusMode: false,
+    spellCheck: false,
+    contentWidth: 'standard',
+    defaultMode: 'wysiwyg',
+    showWordCount: true,
+    showFormattingToolbar: true
+  });
   // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
   const configRef = useRef(config);
   configRef.current = config;
   // 코드블록 케밥(⋮) 메뉴 상태
   const [codeMenu, setCodeMenu] = useState<{ blockId: string, x: number, y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
-  const [isRawMode, setIsRawMode] = useState(() => !!(vscode.getState()?.isRawMode));
+  const [isRawMode, setIsRawMode] = useState(() => {
+    const stateVal = vscode.getState()?.isRawMode;
+    return typeof stateVal === 'boolean' ? stateVal : false;
+  });
   const [isDiffMode, setIsDiffMode] = useState(false);
   const [originalText, setOriginalText] = useState<string | null>(null);
   const [editor, setEditor] = useState<any>(null);
@@ -330,10 +363,15 @@ function App() {
             defaultCodeLanguage: message.defaultCodeLanguage || 'text',
             focusMode: message.focusMode || false,
             spellCheck: message.spellCheck || false,
-            contentWidth: message.contentWidth || 'standard'
+            contentWidth: message.contentWidth || 'standard',
+            defaultMode: message.defaultMode || 'wysiwyg',
+            showWordCount: message.showWordCount ?? true,
+            showFormattingToolbar: message.showFormattingToolbar ?? true
           });
           if (message.isReadOnly) {
             setIsRawMode(true);
+          } else if (vscode.getState()?.isRawMode === undefined && message.defaultMode) {
+            setIsRawMode(message.defaultMode === 'raw');
           }
           break;
         case 'update':
@@ -1716,15 +1754,17 @@ function App() {
               </div>
 
               {/* Quick Stats Badge */}
-              <div className="quick-stats-badge" style={{ marginLeft: '6px', marginRight: '6px' }}>
-                <span className="quick-stat-item">
-                  {typeof documentText === 'string' && documentText.trim() ? documentText.trim().split(/\s+/).length : 0} words
-                </span>
-                <span>•</span>
-                <span className="quick-stat-item">
-                  {typeof documentText === 'string' ? documentText.length : 0} chars
-                </span>
-              </div>
+              {config.showWordCount && (
+                <div className="quick-stats-badge" style={{ marginLeft: '6px', marginRight: '6px' }}>
+                  <span className="quick-stat-item">
+                    {typeof documentText === 'string' && documentText.trim() ? documentText.trim().split(/\s+/).length : 0} words
+                  </span>
+                  <span>•</span>
+                  <span className="quick-stat-item">
+                    {typeof documentText === 'string' ? documentText.length : 0} chars
+                  </span>
+                </div>
+              )}
 
               {isRawMode ? (
                 <button
@@ -1910,6 +1950,22 @@ function App() {
                 </select>
               </div>
 
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <Edit3 size={14} opacity={0.7} />
+                  <span>Default Mode</span>
+                </div>
+                <select
+                  className="settings-select"
+                  value={config.defaultMode}
+                  onChange={(e) => updateConfig('defaultMode', e.target.value)}
+                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
+                >
+                  <option value="wysiwyg">WYSIWYG</option>
+                  <option value="raw">Raw Markdown</option>
+                </select>
+              </div>
+
               <div className="settings-group-title">Behavior</div>
 
               <div className="settings-item">
@@ -1956,6 +2012,28 @@ function App() {
                 </label>
               </div>
 
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <FileText size={14} opacity={0.7} />
+                  <span>Show Word Count</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.showWordCount} onChange={(e) => updateConfig('showWordCount', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <Pilcrow size={14} opacity={0.7} />
+                  <span>Formatting Toolbar</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.showFormattingToolbar} onChange={(e) => updateConfig('showFormattingToolbar', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
               <div className="settings-group-title">Document</div>
 
               <div className="settings-item">
@@ -1987,7 +2065,7 @@ function App() {
       </div>
       
       {/* 2층 Orca Rich Formatting Toolbar (WYSIWYG 모드일 때만 노출) */}
-      {!isRawMode && !config.isReadOnly && editor && (
+      {!isRawMode && !config.isReadOnly && editor && config.showFormattingToolbar && (
         <div style={{ padding: '3px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', overflow: 'visible', flexWrap: 'wrap', userSelect: 'none' }}>
           <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('paragraph')} className="tb-btn" data-tooltip="Paragraph (¶)">
             <Pilcrow size={13} />

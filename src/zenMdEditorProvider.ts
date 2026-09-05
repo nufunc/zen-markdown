@@ -5,7 +5,21 @@ import * as os from 'os';
 import { exec, execFile } from 'child_process';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
-const ALLOWED_CONFIG_KEYS = ['theme', 'fontSize', 'autoFix', 'autoRefresh', 'showToc', 'showProperties', 'defaultCodeLanguage'];
+const ALLOWED_CONFIG_KEYS = [
+    'theme',
+    'fontSize',
+    'autoFix',
+    'autoRefresh',
+    'showToc',
+    'showProperties',
+    'defaultCodeLanguage',
+    'focusMode',
+    'spellCheck',
+    'contentWidth',
+    'defaultMode',
+    'showWordCount',
+    'showFormattingToolbar'
+];
 // openLink에서 외부로 여는 것을 허용하는 URL 스킴
 const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
 
@@ -58,20 +72,19 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
 
         function sendConfig() {
             const config = vscode.workspace.getConfiguration('zenMarkdown');
-            let theme = config.get<string>('theme') || 'auto';
-            if (theme === 'auto') {
-                const kind = vscode.window.activeColorTheme.kind;
-                theme = (kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast) ? 'dark' : 'light';
-            }
+            const theme = config.get<string>('theme') || 'auto';
             const fontSize = config.get<number>('fontSize') || 16;
             const autoFix = config.get<boolean>('autoFix') || false;
             const autoRefresh = config.get<boolean>('autoRefresh') ?? true;
             const showToc = config.get<boolean>('showToc') ?? false;
-            const showProperties = config.get<boolean>('showProperties') ?? false;
+            const showProperties = config.get<boolean>('showProperties') ?? true;
             const defaultCodeLanguage = config.get<string>('defaultCodeLanguage') || 'text';
             const focusMode = config.get<boolean>('focusMode') ?? false;
             const spellCheck = config.get<boolean>('spellCheck') ?? false;
             const contentWidth = config.get<string>('contentWidth') || 'standard';
+            const defaultMode = config.get<string>('defaultMode') || 'wysiwyg';
+            const showWordCount = config.get<boolean>('showWordCount') ?? true;
+            const showFormattingToolbar = config.get<boolean>('showFormattingToolbar') ?? true;
             const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
             // 문서 폴더의 webview URI — 상대경로 이미지 미리보기용
             const docBaseUri = docDir
@@ -89,6 +102,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 focusMode,
                 spellCheck,
                 contentWidth,
+                defaultMode,
+                showWordCount,
+                showFormattingToolbar,
                 isReadOnly,
                 defaultCodeLanguage,
                 docBaseUri
@@ -268,8 +284,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                         return;
                     }
                     const config = vscode.workspace.getConfiguration('zenMarkdown');
-                    // 타겟을 지정하지 않으면 가장 우선순위가 높은(현재 적용중인) 설정 위치를 업데이트함
-                    config.update(e.key, e.value).then(undefined, (err: any) => {
+                    // 웹뷰 설정 모달에서의 저장은 사용자 전역 환경설정(Global)에 영구 저장
+                    config.update(e.key, e.value, vscode.ConfigurationTarget.Global).then(undefined, (err: any) => {
                         vscode.window.showWarningMessage(`Cannot save setting "${e.key}": ${err?.message || err}`);
                     });
                     return;

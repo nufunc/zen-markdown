@@ -36,12 +36,18 @@ You can customize the editor in VS Code Settings (`Ctrl+,`):
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `zenMarkdown.theme` | `auto` | Editor theme. `auto` syncs with the VS Code light/dark theme; or choose Nord, One Half Dark, Solarized Dark, Vintage. |
-| `zenMarkdown.fontSize` | `16` | Default font size. |
+| `zenMarkdown.theme` | `auto` | Editor theme. `auto` syncs with the VS Code light/dark theme; or choose Nord, One Half Dark, Solarized Dark, Vintage, Gruvbox, Tokyo Night, Orca. |
+| `zenMarkdown.fontSize` | `16` | Default font size (10~32). |
+| `zenMarkdown.contentWidth` | `standard` | Editor content width: `narrow` (700px), `standard` (900px), `full` (100%). |
+| `zenMarkdown.defaultMode` | `wysiwyg` | Default editing mode: `wysiwyg` (Block Editor) or `raw` (Markdown Source). |
 | `zenMarkdown.autoFix` | `false` | Automatically format the document with Prettier as you edit. |
 | `zenMarkdown.autoRefresh` | `true` | Refresh the editor automatically when the file changes externally. |
+| `zenMarkdown.focusMode` | `false` | Dim inactive blocks to focus on current block. |
+| `zenMarkdown.spellCheck` | `false` | Enable native spell checking. |
+| `zenMarkdown.showWordCount` | `true` | Show word and character count badge in the header bar. |
+| `zenMarkdown.showFormattingToolbar` | `true` | Show the rich formatting toolbar in WYSIWYG mode. |
 | `zenMarkdown.showToc` | `false` | Show the Table of Contents by default. |
-| `zenMarkdown.showProperties` | `false` | Show the Document Properties (frontmatter) panel by default. |
+| `zenMarkdown.showProperties` | `true` | Show the Document Properties (frontmatter) panel by default. |
 
 ## 🛠️ Building from Source
 
