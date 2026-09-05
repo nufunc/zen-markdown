@@ -2,12 +2,16 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, preserveEmptyHeadings, protectHtml, restoreHtml } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
+import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
+import { useSearchReplace } from './useSearchReplace';
+import { isEditorElement, isPlainInputTarget } from './domTargets';
+import { createEditorKeymap } from './editorKeymap';
+import { useDocumentSync, normalizeMd } from './useDocumentSync';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
 import { CodeBlockMenu } from './CodeBlockMenu';
-import { useDebouncedCallback } from './hooks/useDebounceCallback';
 import { createSearchPlugin, searchPluginKey, SearchHighlightExtension } from './searchPlugin';
 
 // 기본 코드 언어 설정(neatMdEditor.defaultCodeLanguage)을 반영하기 위해
@@ -105,10 +109,26 @@ import { EditorState } from '@codemirror/state';
 
 const { Original, Modified } = CodeMirrorMerge;
 
-const isEditorElement = (el: Element | null): boolean => {
-  if (!el) return false;
-  return !!el.closest('.bn-editor, .ProseMirror, .bn-container, .mantine-Menu-dropdown, .mantine-Popover-dropdown, .mantine-Select-dropdown, [role="menu"], [role="dialog"]');
+
+// ProseMirror undo 히스토리를 비운다. 문서 전체를 갈아치운 뒤에는 이전 스텝의
+// 위치가 무의미해지므로 남겨두면 Ctrl+Z가 엉뚱한 곳을 되돌린다.
+const clearUndoHistory = (editorInstance: any) => {
+  try {
+    const tiptap = editorInstance?._tiptapEditor;
+    const view = tiptap?.editorView || tiptap?.view;
+    const state = tiptap?.editorState || tiptap?.state;
+    if (!view || !state) return;
+    // EditorState를 같은 doc/plugins로 다시 만들면 history 플러그인 상태가 초기화된다.
+    // prosemirror-history는 히스토리를 비우는 명령을 노출하지 않아 이 방식을 쓴다.
+    view.updateState((state.constructor as any).create({
+      doc: state.doc,
+      schema: state.schema,
+      plugins: state.plugins,
+      selection: state.selection
+    }));
+  } catch { /* noop */ }
 };
+
 
 const CaseSensitiveIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -196,18 +216,20 @@ function App() {
   const [parsedFrontmatter, setParsedFrontmatter] = useState<string>("");
   const [fmData, setFmData] = useState<Record<string, any> | null>(null);
   const [fmCollapsed, setFmCollapsed] = useState(false);
-  const [showSearchReplace, setShowSearchReplace] = useState(false);
-  const [isReplaceOpen, setIsReplaceOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [replaceQuery, setReplaceQuery] = useState("");
-  const [matchCase, setMatchCase] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const [isRegex, setIsRegex] = useState(false);
-  const [regexError, setRegexError] = useState<string | null>(null);
-  const [matchCount, setMatchCount] = useState(0);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const {
+    showSearchReplace, setShowSearchReplace,
+    isReplaceOpen, setIsReplaceOpen,
+    searchQuery, setSearchQuery,
+    replaceQuery, setReplaceQuery,
+    matchCase, setMatchCase,
+    wholeWord, setWholeWord,
+    isRegex, setIsRegex,
+    regexError, matchCount,
+    activeIndex, setActiveIndex,
+    searchInputRef, replaceInputRef,
+    handleFindNext, handleFindPrev, handleReplace, handleReplaceAll,
+    syncMatchesFromPlugin,
+  } = useSearchReplace(editor, () => handleWysiwygChangeRef.current());
 
   const cmExtensions = useMemo(() => [
     markdown({ base: markdownLanguage, codeLanguages: codeLanguages }),
@@ -225,6 +247,9 @@ function App() {
         return false;
       }
     }),
+    // 읽기 전용 문서에서는 입력 자체를 막는다. postChange 가드만으로는 입력이 들어갔다가
+    // 되돌려져 사용자가 편집 가능하다고 오해한다.
+    ...(config.isReadOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
     ...(config.typewriterMode ? [
       EditorView.theme({
         '&': { height: '100%' },
@@ -232,7 +257,7 @@ function App() {
         '.cm-content': { paddingBottom: '50vh !important' }
       })
     ] : [])
-  ], [config.typewriterMode]);
+  ], [config.typewriterMode, config.isReadOnly]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
@@ -242,77 +267,30 @@ function App() {
   const lastEditTimeRef = useRef(0);
   const lastUndoTimeRef = useRef(0);
   const isInitializing = useRef(false);
-  // 호스트로 마지막에 보낸 전체 텍스트 — external_update가 자기 편집의 반사인지 판별용
-  const lastSentTextRef = useRef<string>("");
-  // 에디터에 마지막으로 반영한 documentText — setEditor로 인한 이펙트 재실행 시 이중 파싱 방지
-  const lastInitializedTextRef = useRef<string | null>(null);
   const docBaseUriRef = useRef<string>("");
+  // parseWikilinks가 실제로 변환한 문서명 — 저장 시 그것만 [[..]]로 되돌린다
+  // 동기화 계층이 부를 최신 직렬화 함수 (선언 순서 역전 회피)
+  const buildDocumentTextRef = useRef<() => Promise<string | null>>(async () => null);
+  const {
+    lastSentTextRef, lastInitializedTextRef,
+    postChange, debouncedSerialize, flush,
+    holdExternal, deferPending, isHolding,
+  } = useDocumentSync({
+    buildDocumentText: () => buildDocumentTextRef.current(),
+    applyExternalText: (text) => setDocumentText(text),
+    isReadOnly: () => configRef.current.isReadOnly,
+  });
+  const wikilinkNamesRef = useRef<Set<string>>(new Set());
+  // 프론트매터 YAML 파싱 실패 여부 — 실패한 프론트매터에는 쓰기를 하지 않는다
+  const fmParseFailedRef = useRef(false);
   const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasRestoredScroll = useRef(false);
   const cmViewRef = useRef<any>(null);
-  const pendingHeadingRef = useRef<string | null>(null);
-  const pendingExternalUpdateRef = useRef<string | null>(null);
+  // 모드 전환 시 기억할 헤딩. 같은 제목이 여러 번 나오는 문서를 위해 순번을 함께 담는다.
+  const pendingHeadingRef = useRef<{ text: string, ordinal: number } | null>(null);
 
-  useEffect(() => {
-    const handleFocusOut = (e: FocusEvent) => {
-      const isEditorBlurred = !isEditorElement(e.relatedTarget as Element);
-      if (isEditorBlurred && pendingExternalUpdateRef.current !== null) {
-        const incoming = pendingExternalUpdateRef.current;
-        pendingExternalUpdateRef.current = null;
-        const normalizeMd = (str: string) => str.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim();
-        if (normalizeMd(incoming) !== normalizeMd(lastSentTextRef.current)) {
-          setDocumentText(incoming);
-        }
-      }
-    };
-    document.addEventListener('focusout', handleFocusOut);
-    return () => document.removeEventListener('focusout', handleFocusOut);
-  }, []);
 
-  // 글로벌 Drag & Drop 이벤트 (이미지 드롭 시 Base64로 호스트에 저장 후 삽입)
-  useEffect(() => {
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-
-    const handleDrop = async (e: DragEvent) => {
-      if (isRawMode || !editor) return;
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
-
-      const file = files[0];
-      if (!file.type.startsWith('image/')) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      try {
-        const url = await uploadFile(file);
-        // 드롭된 위치 혹은 현재 커서 위치에 이미지 삽입
-        const cursor = editor.getTextCursorPosition();
-        if (cursor && cursor.block) {
-          editor.insertBlocks(
-            [{ type: 'paragraph', content: [{ type: 'text', text: `![${file.name || 'image'}](${url})`, styles: {} }] }],
-            cursor.block,
-            'after'
-          );
-          editor.focus();
-        }
-      } catch (err) {
-        console.error('Drag & drop image save failed', err);
-      }
-    };
-
-    window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('drop', handleDrop);
-    return () => {
-      window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('drop', handleDrop);
-    };
-  }, [isRawMode, editor]);
 
   // Focus Mode active block tracking
   useEffect(() => {
@@ -344,16 +322,8 @@ function App() {
 
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
-    const timer = setTimeout(() => {
-      setDocumentText(prev => {
-        if (prev === "loading") {
-          return `# 🚀 Zen Markdown Editor\n\nWelcome to **Zen Markdown Editor**! Enjoy rich WYSIWYG editing, focus mode, and modern themes.\n\n## 🌟 Key Features\n- **Segmented Control**: Switch seamlessly between WYSIWYG and Raw mode.\n- **Glassmorphism Settings**: Modern UI toggle switches with semi-transparent blur.\n- **Quick Stats**: Real-time word and character counter.\n\n\`\`\`python\ndef hello_world():\n    print("Hello from Zen Markdown Editor!")\n\`\`\`\n\n> 💡 **Tip**: Try pressing \`Ctrl+1\` ~ \`Ctrl+3\` to switch heading levels or click on **Settings** to customize your theme.`;
-        }
-        return prev;
-      });
-    }, 600);
-    return () => clearTimeout(timer);
   }, []);
+
 
   // Ctrl/Cmd+클릭으로 링크 열기 — 상대경로 .md는 Neat 에디터로, 그 외는 VS Code/외부로
   useEffect(() => {
@@ -411,7 +381,6 @@ function App() {
           const incoming = message.text || "";
           // 호스트가 이미 내용 비교로 echo를 걸러 보내므로 여기 오는 것은 대부분 진짜 외부 변경.
           // 단, 적용 실패 재동기화 등으로 자기 편집이 되돌아온 경우는 무시.
-          const normalizeMd = (str: string) => str.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim();
           const incomingNormalized = normalizeMd(incoming);
           const lastSentNormalized = normalizeMd(lastSentTextRef.current);
           if (incomingNormalized === lastSentNormalized) return;
@@ -421,16 +390,26 @@ function App() {
           const isRecentlyEdited = (Date.now() - lastEditTimeRef.current) < 2000;
           const isUndoing = (Date.now() - lastUndoTimeRef.current) < 1000;
           if (!isUndoing && (isEditorFocused || isRecentlyEdited) && documentText !== "loading") {
-            pendingExternalUpdateRef.current = incoming;
+            holdExternal(incoming);
             return;
           }
 
           // 진행 중인 로컬 debounce는 이전 문서 기준의 stale 상태이므로 취소하고 외부 내용 채택
-          debouncedWysiwygSerialize.cancel();
+          debouncedSerialize.cancel();
           postChange.cancel();
           setDocumentText(incoming);
           break;
         }
+        case 'flush':
+          // 저장 직전 호스트 요청 — 대기 중인 편집을 즉시 배출한 뒤 완료를 알린다
+          (async () => {
+            try {
+              await flush();
+            } finally {
+              vscode.postMessage({ type: 'flushed' });
+            }
+          })();
+          break;
         case 'originalContent':
           setOriginalText(message.content);
           break;
@@ -466,6 +445,10 @@ function App() {
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
       if (isRawMode || !editor) return;
+      // 검색창·프론트매터 입력칸의 붙여넣기를 가로채지 않는다
+      if (isPlainInputTarget(e.target)) return;
+      // 코드블록 안에서는 CSV가 표가 아니라 코드다
+      if ((e.target as HTMLElement)?.closest?.('[data-content-type="codeBlock"]')) return;
       const text = e.clipboardData?.getData('text/plain');
       if (!text) return;
 
@@ -651,14 +634,17 @@ function App() {
         const { frontmatter, content } = extractFrontmatter(documentText);
         setParsedFrontmatter(frontmatter);
         try {
+          fmParseFailedRef.current = false;
           if (frontmatter) setFmData(YAML.parse(frontmatter));
         } catch {
+          fmParseFailedRef.current = !!frontmatter;
           setFmData(null);
         }
-        const normalizedContent = content.replace(/\r\n/g, '\n');
-        const safeContent = preserveEmptyHeadings(parseWikilinks(preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
-          preserveBlankLines(protectHtml(toWebviewImageUrls(normalizedContent, docBaseUriRef.current)))
-        ))));
+        wikilinkNamesRef.current = new Set();
+        const safeContent = toEditorMarkdown(content, {
+          docBaseUri: docBaseUriRef.current,
+          wikilinkNames: wikilinkNamesRef.current
+        });
 
         isInitializing.current = true;
         if (!editor) {
@@ -683,6 +669,9 @@ function App() {
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
+          // 초기 로드는 되돌릴 대상이 아니다 — undo 히스토리를 비워 첫 Ctrl+Z가
+          // 문서를 빈 상태로 만드는 것을 막는다
+          clearUndoHistory(newEditor);
           try {
             const tiptap = (newEditor as any)._tiptapEditor;
             if (tiptap) {
@@ -712,21 +701,28 @@ function App() {
             const target = pendingHeadingRef.current;
             if (target) {
               pendingHeadingRef.current = null;
+              // n번째 일치에서 멈춘다. 일치가 부족하면 마지막 일치로 떨어져 무해하다.
+              let seen = 0;
+              let lastMatchId: string | null = null;
               newEditor.forEachBlock((b: any) => {
                 if (b.type === 'heading') {
                   const text = b.content?.map((c: any) => c.text || '').join('') || '';
-                  if (text.trim() === target) {
-                    document.querySelector(`[data-id="${b.id}"]`)?.scrollIntoView({ block: 'start' });
-                    return false;
+                  if (text.trim() === target.text) {
+                    lastMatchId = b.id;
+                    if (seen === target.ordinal) return false;
+                    seen++;
                   }
                 }
                 return true;
               });
-            } else if (!hasRestoredScroll.current && scrollRef.current) {
+              if (lastMatchId) {
+                document.querySelector(`[data-id="${lastMatchId}"]`)?.scrollIntoView({ block: 'start' });
+              }
+            } else if (scrollRef.current) {
+              // 헤딩이 없는 문서는 저장된 스크롤 위치로 돌아간다
               const saved = vscode.getState();
               if (saved?.scrollTop) scrollRef.current.scrollTop = saved.scrollTop;
             }
-            hasRestoredScroll.current = true;
           }, 150);
         } else {
           // External update or refresh: replace existing blocks.
@@ -749,6 +745,9 @@ function App() {
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           editor.replaceBlocks(editor.document, blocks);
+          // 외부 변경으로 문서 전체가 갈렸다. 이 교체가 undo 스택에 남으면 Ctrl+Z 한 번이
+          // 외부 변경을 통째로 되돌리고, 그 이전 스텝들은 위치가 어긋나 무의미하다.
+          clearUndoHistory(editor);
           extractHeadings(editor);
           
           if (tipTapSelection) {
@@ -810,45 +809,40 @@ function App() {
     return base ? `${base}/${result.relPath}` : result.relPath;
   };
 
-  // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
-  const postChange = useDebouncedCallback((text: string) => {
-    lastSentTextRef.current = text;
-    vscode.postMessage({ type: 'change', text });
-  }, 300);
-
-  const debouncedWysiwygSerialize = useDebouncedCallback(async () => {
-    if (!editor) return;
+  // 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다.
+  // 실제 전송과 디바운스·flush·경합 조정은 useDocumentSync가 맡는다.
+  const buildDocumentText = async (): Promise<string | null> => {
+    if (!editor) return null;
     extractHeadings(editor);
-    try {
-      const markdown = await generateMarkdownFromEditor(true);
-      
-      // Phase 2: Tag Sync
-      const extractedTags = extractTagsFromMarkdown(markdown);
-      let updatedFmString = parsedFrontmatter;
-      
-      if (extractedTags.length > 0) {
-        setFmData(prev => {
-          const currentTags = prev?.tags || [];
-          const newTags = Array.from(new Set([...currentTags, ...extractedTags]));
-          
-          if (newTags.length !== currentTags.length) {
-            const newData = { ...(prev || { title: '', date: '' }), tags: newTags };
-            updatedFmString = YAML.stringify(newData).trim();
-            setParsedFrontmatter(updatedFmString);
-            return newData;
-          }
-          return prev;
-        });
-      }
+    const markdown = await generateMarkdownFromEditor(true);
 
-      const fullText = updatedFmString ? `---\n${updatedFmString}\n---\n${markdown}` : markdown;
-      lastSentTextRef.current = fullText;
-      lastInitializedTextRef.current = fullText;
-      vscode.postMessage({ type: 'change', text: fullText });
-    } catch (err) {
-      console.error('Failed to serialize document', err);
+    // 본문의 #태그를 프론트매터 tags에 반영.
+    // YAML 파싱에 실패한 프론트매터는 건드리지 않는다 (전체 재직렬화가 주석과 미지의 키를 날림).
+    let updatedFmString = parsedFrontmatter;
+    const extractedTags = extractTagsFromMarkdown(markdown);
+    if (extractedTags.length > 0 && parsedFrontmatter && !fmParseFailedRef.current) {
+      const currentTags: string[] = Array.isArray(fmData?.tags) ? fmData.tags : [];
+      const newTags = Array.from(new Set([...currentTags, ...extractedTags]));
+      if (newTags.length !== currentTags.length) {
+        try {
+          // Document API로 tags 키만 갱신 — 주석·빈 줄·인용 스타일 보존
+          const doc = YAML.parseDocument(parsedFrontmatter);
+          doc.set('tags', newTags);
+          updatedFmString = doc.toString().trim();
+          setParsedFrontmatter(updatedFmString);
+          setFmData({ ...(fmData || {}), tags: newTags });
+        } catch {
+          updatedFmString = parsedFrontmatter;
+        }
+      }
     }
-  }, 600);
+
+    return updatedFmString ? `---
+${updatedFmString}
+---
+${markdown}` : markdown;
+  };
+  buildDocumentTextRef.current = buildDocumentText;
 
   const saveToHost = (fmString: string, mdString: string) => {
     const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
@@ -867,7 +861,7 @@ function App() {
 
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
-    markdown = preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(markdown));
+    markdown = preserveMarkdownLineBreaks(markdown);
     
     if (config.autoFix && !skipAutoFix) {
       try {
@@ -882,7 +876,8 @@ function App() {
       }
     }
     
-    return serializeWikilinks(restoreHtml(preserveEmptyHeadings(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current)))));
+    // 직렬화 체인. markdownPipeline.ts가 파싱 체인과 나란히 담는다.
+    return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
   };
 
   useEffect(() => {
@@ -936,15 +931,23 @@ function App() {
     });
   }, [editor]);
 
+  // 훅에서 최신 handleWysiwygChange를 부르기 위한 ref (선언 순서 역전 회피)
+  const handleWysiwygChangeRef = useRef<() => void>(() => {});
+
   const handleWysiwygChange = () => {
     if (!editor || isInitializing.current) return;
     hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
-    debouncedWysiwygSerialize();
+    // 편집으로 매치 위치가 바뀌었으니 검색 위젯의 개수를 다시 읽는다
+    syncMatchesFromPlugin();
+    // 아직 편집 중이면 보류한 외부 변경의 채택을 미룬다
+    deferPending();
+    debouncedSerialize();
     if (configRef.current.typewriterMode) {
       handleTypewriterScroll();
     }
   };
+  handleWysiwygChangeRef.current = handleWysiwygChange;
 
   const handleFmChange = async (key: string, value: any) => {
     if (!editor) return;
@@ -982,6 +985,9 @@ function App() {
   useEffect(() => {
     const handleBlur = async () => {
       if (hasEdited.current && config.autoFix && !isRawMode && editor) {
+        if (isHolding() || configRef.current.isReadOnly) return;
+        // 대기 중인 디바운스 직렬화가 나중에 도착해 autoFix 결과를 덮어쓰지 않게 취소
+        debouncedSerialize.cancel();
         try {
           // Blur 시점에 한 번만 autoFix 적용하여 저장
           const markdown = await generateMarkdownFromEditor(false);
@@ -1000,147 +1006,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.autoFix, isRawMode, editor, parsedFrontmatter]);
 
-  // 에디터 검색 하이라이트 & 카운트 실시간 동기화
-  useEffect(() => {
-    if (!editor) return;
-    const tiptap = (editor as any)._tiptapEditor;
-    if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
-    const view = tiptap.editorView || tiptap.view;
-    if (!state || !view) return;
-
-    if (!showSearchReplace || !searchQuery) {
-      try {
-        const tr = state.tr.setMeta(searchPluginKey, { query: '', matchCase: false, wholeWord: false, isRegex: false, activeIndex: 0 });
-        view.dispatch(tr);
-      } catch {}
-      setMatchCount(0);
-      setActiveIndex(0);
-      setRegexError(null);
-      return;
-    }
-
-    try {
-      const currentState = tiptap.editorState || tiptap.state;
-      const currentView = tiptap.editorView || tiptap.view;
-      const tr = currentState.tr.setMeta(searchPluginKey, {
-        query: searchQuery,
-        matchCase,
-        wholeWord,
-        isRegex,
-        activeIndex,
-      });
-      currentView.dispatch(tr);
-      const searchState = searchPluginKey.getState(currentView.state || currentState);
-      if (searchState) {
-        setRegexError(searchState.regexError);
-        const len = searchState.matches.length;
-        setMatchCount(len);
-        if (len > 0 && searchState.matches[activeIndex]) {
-          try {
-            const activeEl = document.querySelector('.search-highlight-active');
-            if (activeEl) {
-              activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            }
-          } catch {}
-        }
-      } else {
-        setMatchCount(0);
-        setRegexError(null);
-      }
-    } catch (err) {
-      console.error('Error updating search highlight:', err);
-    }
-  }, [editor, searchQuery, matchCase, wholeWord, isRegex, activeIndex, showSearchReplace]);
-
-  const handleFindNext = () => {
-    if (!searchQuery || matchCount === 0) return;
-    setActiveIndex(prev => (prev + 1) % matchCount);
-  };
-
-  const handleFindPrev = () => {
-    if (!searchQuery || matchCount === 0) return;
-    setActiveIndex(prev => (prev - 1 + matchCount) % matchCount);
-  };
-
-  const handleReplace = () => {
-    if (!editor || !searchQuery || matchCount === 0) return;
-    const tiptap = (editor as any)?._tiptapEditor;
-    if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
-    const view = tiptap.editorView || tiptap.view;
-    if (state && view) {
-      const searchState = searchPluginKey.getState(state);
-      if (searchState && searchState.matches.length > 0 && searchState.matches[activeIndex]) {
-        const curMatch = searchState.matches[activeIndex];
-        let replacement = replaceQuery;
-        if (isRegex) {
-          try {
-            const flags = matchCase ? '' : 'i';
-            let pattern = searchQuery;
-            if (wholeWord) {
-              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
-              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
-              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
-            }
-            const regex = new RegExp(pattern, flags);
-            replacement = curMatch.matchText.replace(regex, replaceQuery);
-          } catch {}
-        }
-        const tr = state.tr.replaceWith(
-          curMatch.from,
-          curMatch.to,
-          state.schema.text(replacement)
-        );
-        view.dispatch(tr);
-        handleWysiwygChange();
-        if (activeIndex >= matchCount - 1) {
-          setActiveIndex(0);
-        }
-      }
-    }
-  };
-
-  const handleReplaceAll = () => {
-    if (!editor || !searchQuery) return;
-    const tiptap = (editor as any)?._tiptapEditor;
-    if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
-    const view = tiptap.editorView || tiptap.view;
-    if (state && view) {
-      const searchState = searchPluginKey.getState(state);
-      if (searchState && searchState.matches.length > 0) {
-        const matches = [...searchState.matches].reverse();
-        let tr = state.tr;
-        const flags = matchCase ? '' : 'i';
-        let regex: RegExp | null = null;
-        if (isRegex) {
-          try {
-            let pattern = searchQuery;
-            if (wholeWord) {
-              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
-              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
-              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
-            }
-            regex = new RegExp(pattern, flags);
-          } catch {}
-        }
-
-        matches.forEach(m => {
-          let replacement = replaceQuery;
-          if (regex && m.matchText) {
-            try {
-              replacement = m.matchText.replace(regex, replaceQuery);
-            } catch {}
-          }
-          tr = tr.replaceWith(m.from, m.to, state.schema.text(replacement));
-        });
-        view.dispatch(tr);
-        vscode.postMessage({ type: 'notify', message: `Replaced ${matches.length} occurrences.` });
-        handleWysiwygChange();
-      }
-    }
-  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1203,12 +1068,20 @@ function App() {
     // 모드 전환 시 현재 위치의 헤딩을 기억해 반대 모드에서 같은 지점으로 스크롤 (best-effort)
     try {
       if (!isRawMode) {
-        let current: string | null = null;
+        // 스크롤 위치를 디바운스 대기 없이 즉시 저장한다 (헤딩이 없는 문서의 폴백)
+        if (scrollRef.current) {
+          if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+          vscode.updateState({ scrollTop: scrollRef.current.scrollTop });
+        }
+        let current: { text: string, ordinal: number } | null = null;
+        let seenSameText = 0;
         for (const h of headings) {
           const el = document.querySelector(`[data-id="${h.id}"]`);
           if (!el) continue;
-          if ((el as HTMLElement).getBoundingClientRect().top <= 120) current = h.text;
-          else break;
+          if ((el as HTMLElement).getBoundingClientRect().top <= 120) {
+            seenSameText = headings.slice(0, headings.indexOf(h)).filter(x => x.text === h.text).length;
+            current = { text: h.text, ordinal: seenSameText };
+          } else break;
         }
         pendingHeadingRef.current = current;
       } else {
@@ -1219,7 +1092,16 @@ function App() {
           const lines = documentText.split('\n');
           for (let i = Math.min(lineNo, lines.length) - 1; i >= 0; i--) {
             const m = lines[i].match(/^#{1,6}\s+(.+)/);
-            if (m) { pendingHeadingRef.current = m[1].trim(); break; }
+            if (!m) continue;
+            const text = m[1].trim();
+            // 이 헤딩이 같은 제목 가운데 몇 번째인지 위쪽에서 센다
+            let ordinal = 0;
+            for (let j = 0; j < i; j++) {
+              const p = lines[j].match(/^#{1,6}\s+(.+)/);
+              if (p && p[1].trim() === text) ordinal++;
+            }
+            pendingHeadingRef.current = { text, ordinal };
+            break;
           }
         }
       }
@@ -1351,198 +1233,7 @@ function App() {
     vscode.postMessage({ type: 'redo' });
   };
 
-  const handleKeyDownCapture = (e: React.KeyboardEvent) => {
-    if (!editor || isRawMode) return;
-
-    // 한국어 등 IME 합성(입력 중) 상태에서는 단축키 이벤트를 가로채지 않음 (글자 씹힘 및 겹침 방지)
-    if (e.nativeEvent.isComposing) return;
-
-    // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.shiftKey) {
-        handleRedo();
-      } else {
-        handleUndo();
-      }
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-      e.preventDefault();
-      e.stopPropagation();
-      handleRedo();
-      return;
-    }
-
-
-
-    if (e.key === 'Tab') {
-      try {
-        const selection = editor.getSelection();
-        const cursor = editor.getTextCursorPosition();
-        
-        if (cursor && cursor.block && cursor.block.type === 'codeBlock') {
-          // 코드 블록 내부에서는 커스텀 목록 탭 제어를 건너뛰어 코드 들여쓰기 보장
-          return;
-        }
-        
-        let blocksToProcess: any[] = [];
-        if (selection && selection.blocks && selection.blocks.length > 0) {
-          blocksToProcess = selection.blocks;
-        } else if (cursor && cursor.block) {
-          blocksToProcess = [cursor.block];
-        }
-
-        if (blocksToProcess.length > 0) {
-          if (!e.shiftKey) {
-            // Tab (Indent)
-            let preventDefault = false;
-            for (const block of blocksToProcess) {
-              if (block.type === 'paragraph' && (block.content?.length === 0 || (cursor && typeof cursor.prevCharacter === 'undefined'))) {
-                // 빈 문단에서 Tab 시 불릿 리스트로 전환
-                editor.updateBlock(block, { type: 'bulletListItem' });
-                preventDefault = true;
-              } else if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
-                preventDefault = true; // 무조건 기본 동작(포커스 이동) 차단
-                if (cursor && editor.canNestBlock()) {
-                  editor.nestBlock();
-                }
-              }
-            }
-            if (preventDefault) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-          } else {
-            // Shift-Tab (Outdent)
-            let preventDefault = false;
-            for (const block of blocksToProcess) {
-              if (block.type === 'bulletListItem' || block.type === 'numberedListItem') {
-                preventDefault = true; // 무조건 기본 동작 차단 (커서 이탈 방지)
-                if (cursor && editor.canUnnestBlock()) {
-                  editor.unnestBlock();
-                }
-              }
-            }
-            if (preventDefault) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-          }
-        }
-      } catch {
-        // Ignored if no cursor position can be resolved
-      }
-      return;
-    }
-
-    // UpNote Shortcuts
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '6') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('heading', { level: parseInt(e.key) });
-      return;
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '7') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('bulletListItem');
-      return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '8') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('numberedListItem');
-      return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '9') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('checkListItem');
-      return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'u') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('quote');
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + C : Code Block
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
-      e.preventDefault();
-      e.stopPropagation();
-      applyBlockTypeToSelection('codeBlock', { language: 'text' });
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + M : Divider (inserted as '---' paragraph)
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'm') {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor) {
-          editor.insertBlocks([{ type: 'paragraph', content: '---' }], cursor.block, 'after');
-        }
-      } catch {}
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + K : Inline Code
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      e.stopPropagation();
-      try { editor.toggleStyles({ code: true }); } catch {}
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + X (or S) : Strikethrough
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 's')) {
-      e.preventDefault();
-      e.stopPropagation();
-      try { editor.toggleStyles({ strike: true }); } catch {}
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + H : Highlight
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h') {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const active = editor.getActiveStyles();
-        if (active.backgroundColor === 'yellow') {
-          editor.removeStyles({ backgroundColor: 'yellow' });
-        } else {
-          editor.addStyles({ backgroundColor: 'yellow' });
-        }
-      } catch {}
-      return;
-    }
-
-    // Cmd/Ctrl + D : Duplicate Block
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const cursor = editor.getTextCursorPosition();
-        if (cursor && cursor.block) {
-          const block = editor.getBlock(cursor.block);
-          if (block) {
-            editor.insertBlocks([{ type: block.type, props: block.props, content: block.content }], block, "after");
-          }
-        }
-      } catch {}
-      return;
-    }
-  };
+  const handleKeyDownCapture = createEditorKeymap({ editor, isRawMode, handleUndo, handleRedo, applyBlockTypeToSelection });
 
   const updateConfig = (key: string, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -2211,7 +1902,9 @@ function App() {
                   const url = await uploadFile(file);
                   const cur = editor.getTextCursorPosition();
                   if (cur && cur.block) {
-                    editor.insertBlocks([{ type: 'paragraph', content: [{ type: 'text', text: `![${file.name || 'image'}](${url})`, styles: {} }] }], cur.block, 'after');
+                    // image 블록으로 넣는다. 마크다운 문자열을 문단에 넣으면
+                    // 리터럴 텍스트로 남아 미리보기가 되지 않는다.
+                    editor.insertBlocks([{ type: 'image', props: { url, name: file.name || 'image' } }], cur.block, 'after');
                   }
                   editor.focus();
                 } catch {}
@@ -2404,15 +2097,22 @@ function App() {
                   pendingHeadingRef.current = null;
                   const lines = (documentText as string).split('\n');
                   let pos = 0;
+                  let seen = 0;
+                  let lastMatchPos: number | null = null;
                   for (const line of lines) {
                     const m = line.match(/^#{1,6}\s+(.+)/);
-                    if (m && m[1].trim() === target) {
-                      setTimeout(() => {
-                        try { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start' }) }); } catch { /* noop */ }
-                      }, 50);
-                      break;
+                    if (m && m[1].trim() === target.text) {
+                      lastMatchPos = pos;
+                      if (seen === target.ordinal) break;
+                      seen++;
                     }
                     pos += line.length + 1;
+                  }
+                  if (lastMatchPos !== null) {
+                    const at = lastMatchPos;
+                    setTimeout(() => {
+                      try { view.dispatch({ effects: EditorView.scrollIntoView(at, { y: 'start' }) }); } catch { /* noop */ }
+                    }, 50);
                   }
                 }
               }}

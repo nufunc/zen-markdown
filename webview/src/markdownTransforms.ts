@@ -2,6 +2,11 @@
 // 컴포넌트 상태에 의존하지 않으므로 독립적으로 테스트 가능하다.
 
 export const NBSP = '\xA0';
+// 빈 줄 보존용 표식. 사용자가 직접 쓴 &nbsp; 문단과 구별하기 위해 폭 없는 공백을 덧붙인다.
+// 이것이 없으면 원문의 리터럴 &nbsp; 문단이 저장할 때 빈 줄로 지워진다.
+const BLANK_ZWSP = '\u200B';
+export const BLANK_MARKER = '&nbsp;' + BLANK_ZWSP;
+const BLANK_MARKER_OUT = NBSP + BLANK_ZWSP;
 
 export const isMermaidCode = (text: string): boolean => {
   const lines = text.split('\n')
@@ -43,7 +48,7 @@ export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
     // (BlockNote는 &nbsp;를 엔티티 디코드 없이 리터럴 텍스트로 파싱함)
     if (b.type === "paragraph" && Array.isArray(b.content) && b.content.length === 1
         && b.content[0].type === "text"
-        && (b.content[0].text === "&nbsp;" || b.content[0].text === NBSP)) {
+        && (b.content[0].text === BLANK_MARKER || b.content[0].text === BLANK_MARKER_OUT)) {
       return { ...b, content: [] };
     }
     if (b.type === "codeBlock") {
@@ -68,7 +73,7 @@ export const processBlocksToMarkdown = (blocks: any[]): any[] => {
     const isEmptyParagraph = newB.type === "paragraph"
       && (!newB.content || (Array.isArray(newB.content) && newB.content.every((c: any) => c.type === "text" && !c.text.trim())));
     if (isEmptyParagraph) {
-      return { ...newB, content: [{ type: "text", text: NBSP, styles: {} }] };
+      return { ...newB, content: [{ type: "text", text: BLANK_MARKER_OUT, styles: {} }] };
     }
     if (newB.type === "mermaid") {
       return {
@@ -84,29 +89,6 @@ export const processBlocksToMarkdown = (blocks: any[]): any[] => {
     return newB;
   });
 };
-
-// 확장된 공식 지원 언어 목록 (이외의 잘못된 언어 문자열은 text로 기본 처리)
-const KNOWN_LANGUAGES = [
-  "abap", "actionscript", "ada", "arduino", "bash", "basic", "c", "cpp", "csharp", "cs", "css",
-  "d", "dart", "delphi", "dockerfile", "docker", "elixir", "erlang", "fortran", "go", "golang",
-  "graphql", "groovy", "haskell", "html", "java", "javascript", "js", "jsx", "json", "julia",
-  "kotlin", "latex", "tex", "lisp", "lua", "makefile", "markdown", "md", "matlab", "objectivec",
-  "ocaml", "pascal", "perl", "php", "plaintext", "text", "txt", "powershell", "ps1", "ps",
-  "prolog", "python", "py", "r", "ruby", "rb", "rust", "rs", "scala", "scheme", "shell", "sh",
-  "sql", "swift", "tcl", "tsx", "typescript", "ts", "vbnet", "vhdl", "verilog", "xml", "yaml", "yml"
-];
-
-export function sanitizeMarkdownCodeBlocks(markdown: string): string {
-  return markdown.replace(/^```([^\s\n]+)?(.*)$/gm, (match, lang, rest) => {
-    if (!lang) return match; // 닫힘 태그(```) 또는 언어 없는 열림 태그는 원본 유지
-    const normalizedLang = lang.toLowerCase();
-    if (KNOWN_LANGUAGES.includes(normalizedLang)) {
-      return match;
-    }
-    // 잘못된(알 수 없는) 대상이 들어간 경우 기본 서식(text)으로 변경
-    return "```text" + rest;
-  });
-}
 
 // 행 단위 스캔으로 코드펜스(``` 및 ~~~, 미폐합 포함)를 정확히 건너뛰고
 // 바깥 텍스트에만 fn을 적용한다 (기존 정규식 분할은 ~~~/미폐합 펜스를 오판했음)
@@ -236,12 +218,6 @@ export function normalizeUnorderedListBullets(md: string): string {
   return lines.join('\n');
 }
 
-export function preserveEmptyHeadings(md: string): string {
-  // 줄이 오직 '#' 기호 1~6개로만 이루어져 있는 경우 (trailing space가 잘린 빈 헤더)
-  // BlockNote 파서가 이를 단락으로 오인하지 않도록 강제로 공백을 추가
-  return md.replace(/^#{1,6}$/gm, "$& ");
-}
-
 // 문단 내부의 단일 개행을 하드브레이크(후행 공백 2개)로 만들어 BlockNote 왕복에서
 // 줄바꿈이 유실되지 않게 함. 리스트/표/헤딩/인용 등 구조 행에는 붙이지 않고(diff 오염 방지),
 // 이미 하드브레이크인 행은 건너뛰어 멱등적으로 동작.
@@ -266,14 +242,15 @@ export function preserveMarkdownLineBreaks(markdown: string): string {
 // (마크다운 파서는 연속 빈 줄을 문단 구분 하나로 접어버림)
 export function preserveBlankLines(md: string): string {
   return mapOutsideCodeFences(md, part =>
-    part.replace(/\n{3,}/g, m => '\n\n' + '&nbsp;\n\n'.repeat(m.length - 2))
+    part.replace(/\n{3,}/g, m => '\n\n' + (BLANK_MARKER + '\n\n').repeat(m.length - 2))
   );
 }
 
-// 저장 시 &nbsp;/NBSP 전용 문단을 다시 빈 줄로 복원
+// 저장 시 빈 줄 표식 문단을 다시 빈 줄로 복원. 표식이 붙은 것만 지우므로
+// 사용자가 직접 쓴 &nbsp; 문단은 그대로 남는다.
 export function restoreBlankLines(md: string): string {
   return mapOutsideCodeFences(md, part =>
-    part.replace(/\n\n(?:&nbsp;| )[ \t]*(?=\n|$)/g, '\n')
+    part.replace(new RegExp('\n\n(?:&nbsp;|' + NBSP + ')' + BLANK_ZWSP + '[ \t]*(?=\n|$)', 'g'), '\n')
   );
 }
 
@@ -344,29 +321,26 @@ export function parseTableFromClipboardText(text: string): string | null {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
 
-  // 탭(\t) 구분자 확인 (TSV / Excel 기본)
-  const isTsv = lines[0].includes('\t');
-  // 콤마(,) 구분자 확인
-  const isCsv = !isTsv && lines[0].includes(',');
+  // 탭 구분(TSV)만 표로 자동 변환한다. Excel과 스프레드시트가 클립보드에 넣는 형식이고,
+  // 산문에는 탭이 거의 나오지 않아 오판이 없다.
+  // 쉼표 구분은 쓰지 않는다: "안녕하세요, 반갑습니다"처럼 쉼표가 든 평범한 두 줄이
+  // 열 개수까지 우연히 맞으면 표로 바뀌어 버린다.
+  if (!lines[0].includes('\t')) return null;
 
-  if (!isTsv && !isCsv) return null;
-
-  const delimiter = isTsv ? '\t' : ',';
+  const delimiter = '\t';
   const rows = lines.map(line => line.split(delimiter).map(cell => cell.trim()));
-  const colCount = Math.max(...rows.map(r => r.length));
+  const colCount = rows[0].length;
 
   if (colCount < 2) return null;
+  // 모든 줄의 열 개수가 같을 때만 표로 본다. 쉼표가 든 평범한 산문 두 줄이
+  // 표로 바뀌던 오동작을 막는다.
+  if (!rows.every(r => r.length === colCount)) return null;
 
-  // Header row
-  const header = `| ${rows[0].map(c => c || ' ').join(' | ')} |`;
-  // Separator row
+  // 셀 안의 | 는 표 구분자와 충돌하므로 이스케이프한다
+  const cell = (c: string) => (c || ' ').replace(/\|/g, '\\|');
+  const header = `| ${rows[0].map(cell).join(' | ')} |`;
   const separator = `| ${Array(colCount).fill('---').join(' | ')} |`;
-  // Data rows
-  const dataRows = rows.slice(1).map(row => {
-    const padded = [...row];
-    while (padded.length < colCount) padded.push(' ');
-    return `| ${padded.map(c => c || ' ').join(' | ')} |`;
-  }).join('\n');
+  const dataRows = rows.slice(1).map(row => `| ${row.map(cell).join(' | ')} |`).join('\n');
 
   return `${header}\n${separator}\n${dataRows}`;
 }
@@ -387,17 +361,25 @@ export function extractTagsFromMarkdown(md: string): string[] {
   return Array.from(tags);
 }
 
-// [[문서명]] -> [문서명](문서명.md) 로 변환하여 에디터 렌더링 지원
-export function parseWikilinks(md: string): string {
-  return mapOutsideCodeFences(md, part => 
-    part.replace(/\[\[([^\]]+)\]\]/g, (_, docName) => `[${docName}](${docName}.md)`)
+// [[문서명]] -> [문서명](문서명.md) 로 변환하여 에디터 렌더링 지원.
+// 변환한 문서명을 seen에 기록해 두면 저장 시 그것만 되돌린다 (사용자가 직접 쓴
+// [X](X.md) 형태의 일반 링크가 위키링크로 바뀌는 것을 막음).
+export function parseWikilinks(md: string, seen?: Set<string>): string {
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/\[\[([^\]]+)\]\]/g, (_, docName) => {
+      seen?.add(docName);
+      return `[${docName}](${docName}.md)`;
+    })
   );
 }
 
-// 저장 시 [문서명](문서명.md) 형태를 다시 [[문서명]]으로 원상 복구
-export function serializeWikilinks(md: string): string {
-  return mapOutsideCodeFences(md, part => 
-    part.replace(/\[([^\]]+)\]\(\1\.md\)/g, (_, docName) => `[[${docName}]]`)
+// 저장 시 parseWikilinks가 실제로 변환했던 문서명만 [[문서명]]으로 원상 복구
+export function serializeWikilinks(md: string, seen?: Set<string>): string {
+  if (!seen || seen.size === 0) return md;
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/\[([^\]]+)\]\(\1\.md\)/g, (m, docName) =>
+      seen.has(docName) ? `[[${docName}]]` : m
+    )
   );
 }
 

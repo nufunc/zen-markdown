@@ -4,7 +4,7 @@
   "displayName": "Zen Markdown",
   "icon": "icon.png",
   "description": "Minimalist & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {

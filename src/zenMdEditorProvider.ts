@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -119,6 +119,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
         // 외부 변경으로 오판되므로, 최근 목록을 유지하고 매칭 지점까지 소비한다.
         const pendingWebviewTexts: string[] = [];
         let externalUpdateTimer: NodeJS.Timeout | undefined;
+        // 저장 직전 flush 왕복에서, 웹뷰가 보낸 마지막 편집의 applyEdit 완료를 기다리기 위한 핸들
+        let lastEditPromise: Thenable<boolean> = Promise.resolve(true);
+        let resolveFlush: (() => void) | undefined;
 
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
             if (e.document.uri.toString() !== document.uri.toString()) {
@@ -149,6 +152,31 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             }
         });
 
+        // 저장 직전에 웹뷰의 대기 중인 편집을 배출시킨다. 이것이 없으면 타이핑 직후
+        // Ctrl+S가 디바운스 만료 전의 낡은 문서를 저장하고, 탭이 다시 dirty로 돌아간다.
+        const willSaveSubscription = vscode.workspace.onWillSaveTextDocument(e => {
+            if (e.document.uri.toString() !== document.uri.toString()) {
+                return;
+            }
+            e.waitUntil(new Promise<vscode.TextEdit[]>(resolve => {
+                let settled = false;
+                let timer: NodeJS.Timeout | undefined;
+                const finish = async () => {
+                    if (settled) return;
+                    settled = true;
+                    if (timer) clearTimeout(timer);
+                    resolveFlush = undefined;
+                    // 웹뷰가 보낸 편집의 applyEdit이 끝나야 저장이 최신 내용을 본다
+                    try { await lastEditPromise; } catch { /* noop */ }
+                    resolve([]);
+                };
+                resolveFlush = finish;
+                // 웹뷰가 응답하지 않아도 저장을 무한정 막지 않는다
+                timer = setTimeout(finish, 1000);
+                webviewPanel.webview.postMessage({ type: 'flush' });
+            }));
+        });
+
         const configSubscription = vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('zenMarkdown')) {
                 sendConfig();
@@ -164,6 +192,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 clearTimeout(externalUpdateTimer);
             }
             changeDocumentSubscription.dispose();
+            willSaveSubscription.dispose();
             configSubscription.dispose();
             themeSubscription.dispose();
         });
@@ -176,7 +205,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     if (pendingWebviewTexts.length > 50) {
                         pendingWebviewTexts.shift();
                     }
-                    this.updateTextDocument(document, text).then(ok => {
+                    lastEditPromise = this.updateTextDocument(document, text);
+                    lastEditPromise.then(ok => {
                         if (!ok) {
                             // 적용 실패(읽기 전용 등) — 웹뷰를 실제 문서 상태로 되돌려 어긋남 방지
                             webviewPanel.webview.postMessage({
@@ -187,6 +217,9 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     });
                     return;
                 }
+                case 'flushed':
+                    resolveFlush?.();
+                    return;
                 case 'notify':
                     vscode.window.showInformationMessage(e.message);
                     return;
@@ -351,23 +384,9 @@ window.onload = function() { window.print(); };
 </html>`;
                             await vscode.workspace.fs.writeFile(vscode.Uri.file(tmpHtmlPath), Buffer.from(fullHtml, 'utf8'));
                             
-                            const platform = process.platform;
-                            let openCmd = '';
-                            if (platform === 'win32') {
-                                openCmd = `start "" "${tmpHtmlPath}"`;
-                            } else if (platform === 'darwin') {
-                                openCmd = `open "${tmpHtmlPath}"`;
-                            } else {
-                                openCmd = `xdg-open "${tmpHtmlPath}"`;
-                            }
-
-                            exec(openCmd, (err) => {
-                                if (err) {
-                                    vscode.env.openExternal(vscode.Uri.file(tmpHtmlPath)).then(undefined, (openErr) => {
-                                        vscode.window.showWarningMessage(`PDF Export Error: ${openErr?.message || openErr}`);
-                                    });
-                                }
-                            });
+                            // 셸 문자열 조립 없이 VS Code가 기본 브라우저로 연다.
+                            // 파일명에 따옴표나 &가 들어가도 셸이 해석할 여지가 없다.
+                            await vscode.env.openExternal(vscode.Uri.file(tmpHtmlPath));
 
                             setTimeout(async () => {
                                 try { await vscode.workspace.fs.delete(vscode.Uri.file(tmpHtmlPath)); } catch {}

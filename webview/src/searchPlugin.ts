@@ -96,9 +96,31 @@ export function createSearchPlugin(): Plugin<SearchState> {
             };
           }
 
+          // 블록(textblock) 단위로 인라인 텍스트를 이어 붙인 뒤 검색한다.
+          // 텍스트 노드 하나씩 훑으면 굵게·링크 등 마크 경계에서 노드가 갈려
+          // "the documentation" 같은 구절이 검색되지 않는다.
           newEditorState.doc.descendants((node, pos) => {
-            if (node.isText && node.text) {
-              const text = node.text.normalize('NFC');
+            if (!node.isTextblock) return true;
+
+            let text = '';
+            const charPos: number[] = [];
+            node.forEach((child: any, offset: number) => {
+              const base = pos + 1 + offset;
+              if (child.isText && child.text) {
+                let t: string = child.text;
+                const normalized = t.normalize('NFC');
+                // 정규화로 길이가 달라지면 위치 대응이 깨지므로 원문 그대로 쓴다
+                if (normalized.length === t.length) t = normalized;
+                for (let k = 0; k < t.length; k++) charPos.push(base + k);
+                text += t;
+              } else {
+                // 이미지 등 인라인 원자 노드는 한 칸을 차지한다. 자리표시자로 경계를 만든다
+                text += '￼';
+                charPos.push(base);
+              }
+            });
+
+            if (text) {
               regex.lastIndex = 0;
               let match: RegExpExecArray | null;
               while ((match = regex.exec(text)) !== null) {
@@ -107,11 +129,16 @@ export function createSearchPlugin(): Plugin<SearchState> {
                   regex.lastIndex++;
                   continue;
                 }
-                const from = pos + match.index;
-                const to = from + match[0].length;
-                matches.push({ from, to, matchText: match[0] });
+                const from = charPos[match.index];
+                const lastIdx = match.index + match[0].length - 1;
+                const to = charPos[lastIdx] + 1;
+                if (from !== undefined && to !== undefined) {
+                  matches.push({ from, to, matchText: match[0] });
+                }
               }
             }
+            // textblock 내부는 이미 훑었다
+            return false;
           });
 
           // activeIndex 경계 조건 검사
