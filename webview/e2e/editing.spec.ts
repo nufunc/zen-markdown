@@ -145,4 +145,28 @@ test.describe('WYSIWYG Editing Features', () => {
     await page.keyboard.type('Header 1');
     await expect(table).toContainText('Header 1');
   });
+
+  test('should toggle typewriter mode in settings modal', async ({ page }) => {
+    // Open settings modal
+    const settingsBtn = page.locator('button[data-tooltip="Settings"]');
+    await settingsBtn.click();
+    const glassPanel = page.locator('.glass-panel');
+    await expect(glassPanel).toBeVisible();
+
+    // Verify Typewriter Mode toggle exists
+    const typewriterItem = glassPanel.locator('.settings-item', { hasText: 'Typewriter Mode' });
+    await expect(typewriterItem).toBeVisible();
+
+    const typewriterInput = typewriterItem.locator('.toggle-switch input');
+    await expect(typewriterInput).not.toBeChecked();
+
+    // Toggle on using slider
+    const typewriterSlider = typewriterItem.locator('.toggle-slider');
+    await typewriterSlider.click();
+    await expect(typewriterInput).toBeChecked();
+
+    // Close settings modal
+    await settingsBtn.click();
+  });
 });
+

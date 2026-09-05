@@ -400,3 +400,31 @@ export function serializeWikilinks(md: string): string {
     part.replace(/\[([^\]]+)\]\(\1\.md\)/g, (_, docName) => `[[${docName}]]`)
   );
 }
+
+const ZWSP = '\u200B';
+
+// HTML 주석(<!-- ... -->) 및 인라인/블록 HTML 태그(<kbd>, <span> 등)를 BlockNote가 파싱 중
+// 무단 삭제하거나 태그를 벗겨내지 못하도록 폭 없는 공백(ZWSP)으로 임시 보호한다.
+// 단, CommonMark autolink(<https://...>, <mailto:...>)는 BlockNote 링크 파서 유지를 위해 제외한다.
+export function protectHtml(md: string): string {
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?\/?>/g, (tag) => {
+      if (/^<[a-zA-Z][a-zA-Z0-9+.-]*:[^>]+>$/i.test(tag) || /^<[^\s@]+@[^\s@]+\.[^\s@]+>$/.test(tag)) {
+        return tag;
+      }
+      return '<' + ZWSP + tag.slice(1);
+    })
+  );
+}
+
+// 저장 직전 ZWSP 임시 보호 표식을 원상 복구하고, BlockNote가 주석 내부에 붙인 하드브레이크(\)를 정리한다.
+export function restoreHtml(md: string): string {
+  return mapOutsideCodeFences(md, part => {
+    let res = part.replaceAll('<' + ZWSP, '<');
+    res = res.replace(/<!--([\s\S]*?)-->/g, (_match, inner) => {
+      const cleaned = inner.replace(/\\\r?\n\s?/g, '\n');
+      return `<!--${cleaned}-->`;
+    });
+    return res;
+  });
+}

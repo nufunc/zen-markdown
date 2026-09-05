@@ -4,7 +4,7 @@
   "displayName": "Zen Markdown",
   "icon": "icon.png",
   "description": "Minimalist & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {
@@ -170,6 +170,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show the rich formatting toolbar in WYSIWYG mode."
+        },
+        "zenMarkdown.typewriterMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep active typing line/block vertically centered in the viewport (Typewriter Scrolling)."
         }
       }
     },

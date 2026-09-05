@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, preserveEmptyHeadings } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, sanitizeMarkdownCodeBlocks, preserveMarkdownLineBreaks, preserveBlankLines, restoreBlankLines, toWebviewImageUrls, fromWebviewImageUrls, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, parseWikilinks, serializeWikilinks, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, preserveEmptyHeadings, protectHtml, restoreHtml } from './markdownTransforms';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
@@ -160,7 +160,8 @@ function App() {
     contentWidth: string,
     defaultMode: string,
     showWordCount: boolean,
-    showFormattingToolbar: boolean
+    showFormattingToolbar: boolean,
+    typewriterMode: boolean
   }>({
     theme: "auto",
     fontSize: 16,
@@ -175,7 +176,8 @@ function App() {
     contentWidth: 'standard',
     defaultMode: 'wysiwyg',
     showWordCount: true,
-    showFormattingToolbar: true
+    showFormattingToolbar: true,
+    typewriterMode: false
   });
   // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
   const configRef = useRef(config);
@@ -206,6 +208,31 @@ function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  const cmExtensions = useMemo(() => [
+    markdown({ base: markdownLanguage, codeLanguages: codeLanguages }),
+    EditorView.lineWrapping,
+    EditorView.domEventHandlers({
+      keydown(_event, view) {
+        if (configRef.current.typewriterMode) {
+          setTimeout(() => {
+            try {
+              const head = view.state.selection.main.head;
+              view.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'center' }) });
+            } catch { /* noop */ }
+          }, 10);
+        }
+        return false;
+      }
+    }),
+    ...(config.typewriterMode ? [
+      EditorView.theme({
+        '&': { height: '100%' },
+        '.cm-scroller': { paddingBottom: '50vh !important' },
+        '.cm-content': { paddingBottom: '50vh !important' }
+      })
+    ] : [])
+  ], [config.typewriterMode]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
@@ -366,7 +393,8 @@ function App() {
             contentWidth: message.contentWidth || 'standard',
             defaultMode: message.defaultMode || 'wysiwyg',
             showWordCount: message.showWordCount ?? true,
-            showFormattingToolbar: message.showFormattingToolbar ?? true
+            showFormattingToolbar: message.showFormattingToolbar ?? true,
+            typewriterMode: message.typewriterMode ?? false
           });
           if (message.isReadOnly) {
             setIsRawMode(true);
@@ -629,7 +657,7 @@ function App() {
         }
         const normalizedContent = content.replace(/\r\n/g, '\n');
         const safeContent = preserveEmptyHeadings(parseWikilinks(preserveMarkdownLineBreaks(sanitizeMarkdownCodeBlocks(
-          preserveBlankLines(toWebviewImageUrls(normalizedContent, docBaseUriRef.current))
+          preserveBlankLines(protectHtml(toWebviewImageUrls(normalizedContent, docBaseUriRef.current)))
         ))));
 
         isInitializing.current = true;
@@ -845,13 +873,16 @@ function App() {
       try {
         const prettier = await import('prettier/standalone');
         const prettierPluginMarkdown = await import('prettier/plugins/markdown');
-        markdown = await prettier.format(markdown, { parser: "markdown", plugins: [prettierPluginMarkdown.default || prettierPluginMarkdown] });
+        const formatted = await prettier.format(markdown, { parser: "markdown", plugins: [prettierPluginMarkdown.default || prettierPluginMarkdown] });
+        if (formatted && typeof formatted === 'string' && formatted.trim().length > 0) {
+          markdown = formatted;
+        }
       } catch (e) {
-        console.error("Auto fix formatting failed", e);
+        console.warn("Auto fix formatting skipped due to parser warning/error:", e);
       }
     }
     
-    return serializeWikilinks(preserveEmptyHeadings(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current))));
+    return serializeWikilinks(restoreHtml(preserveEmptyHeadings(restoreBlankLines(fromWebviewImageUrls(markdown, docBaseUriRef.current)))));
   };
 
   useEffect(() => {
@@ -863,11 +894,56 @@ function App() {
     }
   }, [config.spellCheck, editor]);
 
+  // 타자기 스크롤링: 키보드 입력/이동 시 활성 커서 라인을 뷰포트 수직 중앙(~45%)에 정렬
+  const handleTypewriterScroll = useCallback(() => {
+    if (!configRef.current.typewriterMode || !scrollRef.current) return;
+    requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      if (!container) return;
+
+      let targetY: number | null = null;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect && rect.height > 0 && rect.top > 0) {
+          targetY = rect.top + rect.height / 2;
+        }
+      }
+
+      if (targetY === null && editor) {
+        try {
+          const cur = editor.getTextCursorPosition();
+          if (cur?.block?.id) {
+            const el = container.querySelector(`[data-id="${cur.block.id}"]`);
+            if (el) {
+              const elRect = el.getBoundingClientRect();
+              targetY = elRect.top + 16;
+            }
+          }
+        } catch { /* noop */ }
+      }
+
+      if (targetY !== null) {
+        const containerRect = container.getBoundingClientRect();
+        const relativeY = targetY - containerRect.top;
+        const desiredY = containerRect.height * 0.45;
+        const delta = relativeY - desiredY;
+        if (Math.abs(delta) > 8) {
+          container.scrollTop += delta;
+        }
+      }
+    });
+  }, [editor]);
+
   const handleWysiwygChange = () => {
     if (!editor || isInitializing.current) return;
     hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
     debouncedWysiwygSerialize();
+    if (configRef.current.typewriterMode) {
+      handleTypewriterScroll();
+    }
   };
 
   const handleFmChange = async (key: string, value: any) => {
@@ -2034,6 +2110,17 @@ function App() {
                 </label>
               </div>
 
+              <div className="settings-item">
+                <label className="settings-item-label">
+                  <Type size={14} opacity={0.7} />
+                  <span>Typewriter Mode</span>
+                </label>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={config.typewriterMode} onChange={(e) => updateConfig('typewriterMode', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
               <div className="settings-group-title">Document</div>
 
               <div className="settings-item">
@@ -2292,11 +2379,22 @@ function App() {
             <CodeMirror
               value={documentText as string}
               className="raw-markdown-editor"
-              extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
+              extensions={cmExtensions}
               onChange={(val) => {
                 lastEditTimeRef.current = Date.now();
                 setDocumentText(val);
                 postChange(val);
+                if (config.typewriterMode && cmViewRef.current) {
+                  setTimeout(() => {
+                    try {
+                      const view = cmViewRef.current;
+                      if (view) {
+                        const head = view.state.selection.main.head;
+                        view.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'center' }) });
+                      }
+                    } catch { /* noop */ }
+                  }, 10);
+                }
               }}
               onCreateEditor={(view: any) => {
                 cmViewRef.current = view;
@@ -2332,13 +2430,24 @@ function App() {
           <div
             ref={scrollRef}
             style={{ flex: 1, overflow: 'auto' }}
+            onKeyDown={(e) => {
+              if (config.typewriterMode && !['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+                setTimeout(handleTypewriterScroll, 10);
+              }
+            }}
             onScroll={(e) => {
               const top = e.currentTarget.scrollTop;
               if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
               scrollSaveTimer.current = setTimeout(() => vscode.updateState({ scrollTop: top }), 200);
             }}
           >
-            <div style={{ padding: '16px 32px', maxWidth: config.contentWidth === 'narrow' ? '700px' : config.contentWidth === 'standard' ? '900px' : 'none', margin: '0 auto', width: '100%' }}>
+            <div style={{
+              padding: '16px 32px',
+              paddingBottom: config.typewriterMode ? '50vh' : '40px',
+              maxWidth: config.contentWidth === 'narrow' ? '700px' : config.contentWidth === 'standard' ? '900px' : 'none',
+              margin: '0 auto',
+              width: '100%'
+            }}>
               {showProperties ? (
                 <FrontmatterPanel
                   parsedFrontmatter={parsedFrontmatter}
@@ -2359,6 +2468,7 @@ function App() {
                     let markdown = await editor.blocksToMarkdownLossy(selection.blocks as any);
                     markdown = normalizeOrderedListNumbers(markdown);
                     markdown = normalizeUnorderedListBullets(markdown);
+                    markdown = restoreHtml(markdown);
 
                     e.clipboardData.setData('text/plain', markdown);
                   } catch (err) {
