@@ -11,6 +11,11 @@ node_modules/**
 webview/**
 !webview/dist/**
 
+# 개발용 도구·문서·에이전트 규칙 (확장 실행에 필요 없음)
+tools/**
+docs/**
+.claude/**
+
 # 로컬 도구 산출물 & 에이전트 규칙
 *.log
 *.cjs

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { execFile } from 'child_process';
+import { DiagnosticsLog, docHash } from './diagnosticsLog';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -25,8 +26,8 @@ const ALLOWED_CONFIG_KEYS = [
 const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
 
 export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
-    public static register(context: vscode.ExtensionContext): vscode.Disposable {
-        const provider = new ZenMdEditorProvider(context);
+    public static register(context: vscode.ExtensionContext, log: DiagnosticsLog): vscode.Disposable {
+        const provider = new ZenMdEditorProvider(context, log);
         return vscode.window.registerCustomEditorProvider('zenMarkdown.mdEditor', provider, {
             webviewOptions: {
                 enableFindWidget: false,
@@ -37,7 +38,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     constructor(
-        private readonly context: vscode.ExtensionContext
+        private readonly context: vscode.ExtensionContext,
+        private readonly log: DiagnosticsLog
     ) { }
 
     public async resolveCustomTextEditor(
@@ -63,6 +65,10 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
         };
 
         webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
+
+        // 문서마다의 추적 식별자. 경로가 아니라 되돌릴 수 없는 해시다.
+        const doc = docHash(document.uri);
+        this.log.record({ ev: 'open', doc, bytes: document.getText().length, lines: document.lineCount });
 
         function updateWebview() {
             webviewPanel.webview.postMessage({
@@ -144,6 +150,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 externalUpdateTimer = setTimeout(() => {
                     externalUpdateTimer = undefined;
+                    this.log.record({ ev: 'external_update', doc });
                     webviewPanel.webview.postMessage({
                         type: 'external_update',
                         text: document.getText(),
@@ -172,7 +179,11 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 };
                 resolveFlush = finish;
                 // 웹뷰가 응답하지 않아도 저장을 무한정 막지 않는다
-                timer = setTimeout(finish, 1000);
+                timer = setTimeout(() => {
+                    // 응답이 없다는 것은 저장이 낡은 내용을 쓸 수 있다는 뜻이다
+                    this.log.record({ ev: 'flush_timeout', doc });
+                    void finish();
+                }, 1000);
                 webviewPanel.webview.postMessage({ type: 'flush' });
             }));
         });
@@ -208,6 +219,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     lastEditPromise = this.updateTextDocument(document, text);
                     lastEditPromise.then(ok => {
                         if (!ok) {
+                            this.log.record({ ev: 'edit_failed', doc });
                             // 적용 실패(읽기 전용 등) — 웹뷰를 실제 문서 상태로 되돌려 어긋남 방지
                             webviewPanel.webview.postMessage({
                                 type: 'external_update',
@@ -215,6 +227,14 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                             });
                         }
                     });
+                    return;
+                }
+                case 'diag': {
+                    // 웹뷰가 보낸 진단 이벤트. 내용은 실리지 않고 코드와 수치만 온다.
+                    const { type: _t, ev, ...rest } = e as Record<string, unknown>;
+                    if (typeof ev === 'string') {
+                        this.log.record({ ev, doc, ...rest });
+                    }
                     return;
                 }
                 case 'flushed':

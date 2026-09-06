@@ -93,6 +93,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
       }
     } catch (err) {
       console.error('Error updating search highlight:', err);
+      vscode.postMessage({ type: 'diag', ev: 'search_highlight_failed' });
     }
   }, [editor, searchQuery, matchCase, wholeWord, isRegex, activeIndex, showSearchReplace]);
 

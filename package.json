@@ -4,7 +4,7 @@
   "displayName": "Zen Markdown",
   "icon": "icon.png",
   "description": "Minimalist & Aesthetic WYSIWYG Markdown Editor with Mermaid",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "nufunc <nufunc@gmail.com>",
   "license": "MIT",
   "repository": {
@@ -57,6 +57,18 @@
         "title": "Open with Zen Markdown",
         "category": "Zen Markdown",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "zenMarkdown.showDiagnostics",
+        "title": "Show Diagnostics Report",
+        "category": "Zen Markdown",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "zenMarkdown.openDiagnosticsFolder",
+        "title": "Open Diagnostics Log Folder",
+        "category": "Zen Markdown",
+        "icon": "$(folder-opened)"
       }
     ],
     "menus": {
@@ -147,13 +159,20 @@
         },
         "zenMarkdown.contentWidth": {
           "type": "string",
-          "enum": ["narrow", "standard", "full"],
+          "enum": [
+            "narrow",
+            "standard",
+            "full"
+          ],
           "default": "standard",
           "description": "Maximum width of the editor content. Narrow (700px), Standard (900px), Full (100% - default max of VS Code)."
         },
         "zenMarkdown.defaultMode": {
           "type": "string",
-          "enum": ["wysiwyg", "raw"],
+          "enum": [
+            "wysiwyg",
+            "raw"
+          ],
           "enumDescriptions": [
             "WYSIWYG Rich Block Editor",
             "Raw Markdown Source Editor"
@@ -175,6 +194,11 @@
           "type": "boolean",
           "default": false,
           "description": "Keep active typing line/block vertically centered in the viewport (Typewriter Scrolling)."
+        },
+        "zenMarkdown.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Record local diagnostic events (errors and round-trip self-checks) to help find editor problems. Document content is never recorded and nothing is sent over the network. Use \"Zen Markdown: Show Diagnostics Report\" to view."
         }
       }
     },

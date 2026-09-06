@@ -61,6 +61,7 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
       vscode.postMessage({ type: 'change', text: fullText });
     } catch (err) {
       console.error('Failed to serialize document', err);
+      vscode.postMessage({ type: 'diag', ev: 'serialize_failed' });
     }
   };
 

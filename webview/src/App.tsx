@@ -8,6 +8,7 @@ import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
 import { useDocumentSync, normalizeMd } from './useDocumentSync';
+import { compareRoundtrip } from './roundtripCheck';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { FrontmatterPanel } from './FrontmatterPanel';
@@ -109,6 +110,11 @@ import { EditorState } from '@codemirror/state';
 
 const { Original, Modified } = CodeMirrorMerge;
 
+
+// 진단 이벤트를 호스트로 보낸다. 문서 내용은 절대 싣지 않는다.
+const diag = (ev: string, fields: Record<string, unknown> = {}) => {
+  try { vscode.postMessage({ type: 'diag', ev, ...fields }); } catch { /* noop */ }
+};
 
 // ProseMirror undo 히스토리를 비운다. 문서 전체를 갈아치운 뒤에는 이전 스텝의
 // 위치가 무의미해지므로 남겨두면 Ctrl+Z가 엉뚱한 곳을 되돌린다.
@@ -470,6 +476,7 @@ function App() {
           }
         } catch (err) {
           console.error('Failed to parse TSV/CSV table paste', err);
+          diag('table_paste_failed');
         }
       }
     };
@@ -689,9 +696,39 @@ function App() {
             }
           } catch (err) {
             console.error("Failed to register searchPlugin", err);
+            diag('search_plugin_register_failed');
           }
           (window as any).__editor = newEditor;
           setEditor(newEditor);
+
+          // 왕복 자가검증: 편집이 0인 지금 직렬화해 원문과 견준다.
+          // 여기서 나는 차이는 전부 왕복 변환 손실이므로 오탐이 없다.
+          // 편집 흐름을 막지 않도록 다음 틱으로 미룬다.
+          setTimeout(() => {
+            try {
+              const blocksForMd = processBlocksToMarkdown(newEditor.document);
+              Promise.resolve(newEditor.blocksToMarkdownLossy(blocksForMd as any)).then((md: string) => {
+                let out = normalizeOrderedListNumbers(md);
+                out = normalizeUnorderedListBullets(out);
+                out = preserveMarkdownLineBreaks(out);
+                out = fromEditorMarkdown(out, {
+                  docBaseUri: docBaseUriRef.current,
+                  wikilinkNames: wikilinkNamesRef.current
+                });
+                const drift = compareRoundtrip(content, out);
+                if (drift) {
+                  diag('roundtrip_drift', {
+                    removed: drift.removed,
+                    added: drift.added,
+                    kinds: drift.kinds,
+                    lines: content.split('\n').length
+                  });
+                }
+              }).catch(() => diag('roundtrip_check_failed'));
+            } catch {
+              diag('roundtrip_check_failed');
+            }
+          }, 0);
           extractHeadings(newEditor);
           // Reset edit flag after initialization
           hasEdited.current = false;
@@ -998,6 +1035,7 @@ ${markdown}` : markdown;
           }
         } catch {
           console.error("AutoFix on blur failed");
+          diag('autofix_failed');
         }
       }
     };
@@ -1119,6 +1157,7 @@ ${markdown}` : markdown;
         }
       } catch (err) {
         console.error("Failed to generate markdown during mode toggle", err);
+        diag('mode_toggle_serialize_failed');
       }
       setEditor(null);
     }
@@ -1180,6 +1219,7 @@ ${markdown}` : markdown;
       editor.focus();
     } catch (err) {
       console.error('Failed to apply block type', err);
+      diag('block_type_apply_failed');
     }
   };
 
@@ -2173,6 +2213,7 @@ ${markdown}` : markdown;
                     e.clipboardData.setData('text/plain', markdown);
                   } catch (err) {
                     console.error("Failed to copy markdown", err);
+                    diag('copy_markdown_failed');
                   }
                 }
               }}
