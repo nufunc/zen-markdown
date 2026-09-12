@@ -1,9 +1,43 @@
 import { test, expect } from '@playwright/test';
 
+const mockVsCodeApi = `
+  window.acquireVsCodeApi = () => {
+    if (!window.__vscode) {
+      window.__vscode = {
+        postMessage: (msg) => {
+          window.dispatchEvent(new CustomEvent('vscode-post-message', { detail: msg }));
+        },
+        getState: () => ({}),
+        setState: (state) => {}
+      };
+    }
+    return window.__vscode;
+  };
+`;
+
+const DEMO_DOC = `---
+title: Demo Document
+date: '2026-08-01'
+tags: []
+author: John Doe
+status: draft
+---
+
+# Heading 1
+This is a demo document with words and chars.
+`;
+
 test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(mockVsCodeApi);
     await page.goto('/');
-    await page.waitForTimeout(1000); // Wait for demo document fallback
+    await page.evaluate((text) => {
+      window.postMessage({ type: 'originalContent', content: '' }, '*');
+      window.postMessage({ type: 'config', showProperties: true, showWordCount: true }, '*');
+      window.postMessage({ type: 'update', text }, '*');
+    }, DEMO_DOC);
+
+    await page.waitForSelector('.bn-editor');
 
     // Ensure Properties panel is expanded if hidden
     const fmRow = page.locator('.fm-row').first();
@@ -244,4 +278,64 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     await propsTitle.click();
     await expect(propertyRows.first()).toBeVisible();
   });
+
+  /** PATTERN N: Settings Save Button Explicit Batch Persistence */
+  test('Pattern N: Settings Save Button Interaction and Feedback', async ({ page }) => {
+    const settingsTrigger = page.locator('button[data-tooltip="Settings"]');
+    await settingsTrigger.click();
+
+    const glassPanel = page.locator('.glass-panel');
+    await expect(glassPanel).toBeVisible();
+
+    const saveBtn = glassPanel.locator('.settings-save-btn');
+    await expect(saveBtn).toBeVisible();
+    await expect(saveBtn).toContainText('설정 저장');
+
+    // Click Save Settings button
+    await saveBtn.click();
+
+    // Verify feedback state
+    await expect(saveBtn).toContainText('설정이 저장되었습니다');
+    await expect(saveBtn).toHaveClass(/saved/);
+
+    // Verify panel closes automatically after feedback delay
+    await expect(glassPanel).not.toBeVisible({ timeout: 2000 });
+  });
+
+  /** PATTERN O: Single Bullet Left Line Removal & Multi Bullet Continuity */
+  test('Pattern O: Single Bullet Left Line Removal and Multi Bullet Guide Line', async ({ page }) => {
+    const editor = page.locator('.bn-editor');
+    await editor.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+
+    // Create a bullet item
+    await page.keyboard.type('- Parent item');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('Single child item');
+    await page.waitForTimeout(300);
+
+    // With only one nested child, the left line should be hidden
+    const singleChildBorder = await page.evaluate(() => {
+      const nestedOuter = document.querySelector('.bn-block-group .bn-block-group > .bn-block-outer:only-child');
+      if (!nestedOuter) return null;
+      return window.getComputedStyle(nestedOuter, '::before').borderLeft;
+    });
+    expect(singleChildBorder).toMatch(/0px|none/);
+
+    // Add a second nested child -> now two items, left line should appear
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Second child item');
+    await page.waitForTimeout(300);
+
+    const multiChildBorder = await page.evaluate(() => {
+      const nestedOuters = Array.from(document.querySelectorAll('.bn-block-group .bn-block-group > .bn-block-outer'));
+      if (nestedOuters.length < 2) return null;
+      return window.getComputedStyle(nestedOuters[0], '::before').borderLeft;
+    });
+    expect(multiChildBorder).toContain('1px solid');
+  });
 });
+
+

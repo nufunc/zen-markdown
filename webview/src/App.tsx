@@ -69,7 +69,7 @@ const insertMermaidItem = (editor: any) => ({
     );
   },
   aliases: ["mermaid", "flowchart", "diagram"],
-  group: "Advanced",
+  group: "Custom",
   icon: <span style={{ fontSize: '16px' }}>📈</span>,
   subtext: "Insert a Mermaid flowchart",
 });
@@ -89,14 +89,14 @@ const insertCalloutItem = (editor: any) => ({
     );
   },
   aliases: ["callout", "tip", "info", "warning"],
-  group: "Advanced",
+  group: "Custom",
   icon: <span style={{ fontSize: '16px' }}>💡</span>,
   subtext: "Insert a highlighted callout block",
 });
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -219,6 +219,8 @@ function App() {
   const [originalText, setOriginalText] = useState<string | null>(null);
   const [editor, setEditor] = useState<any>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [parsedFrontmatter, setParsedFrontmatter] = useState<string>("");
   const [fmData, setFmData] = useState<Record<string, any> | null>(null);
   const [fmCollapsed, setFmCollapsed] = useState(false);
@@ -295,6 +297,7 @@ function App() {
   const cmViewRef = useRef<any>(null);
   // 모드 전환 시 기억할 헤딩. 같은 제목이 여러 번 나오는 문서를 위해 순번을 함께 담는다.
   const pendingHeadingRef = useRef<{ text: string, ordinal: number } | null>(null);
+  const lastTypewriterBlockIdRef = useRef<string | null>(null);
 
 
 
@@ -377,6 +380,14 @@ function App() {
           } else if (vscode.getState()?.isRawMode === undefined && message.defaultMode) {
             setIsRawMode(message.defaultMode === 'raw');
           }
+          break;
+        case 'configSaved':
+          setSaveSuccess(true);
+          setTimeout(() => {
+            setIsSettingsOpen(false);
+            setSaveSuccess(false);
+            setIsSavingSettings(false);
+          }, 900);
           break;
         case 'update':
           if (documentText === "loading") {
@@ -926,45 +937,42 @@ ${markdown}` : markdown;
     }
   }, [config.spellCheck, editor]);
 
-  // 타자기 스크롤링: 키보드 입력/이동 시 활성 커서 라인을 뷰포트 수직 중앙(~45%)에 정렬
-  const handleTypewriterScroll = useCallback(() => {
-    if (!configRef.current.typewriterMode || !scrollRef.current) return;
+  // 타자기 스크롤링: 활성 커서 블록(라인)을 뷰포트 수직 중앙(~45%)에 안정적으로 정렬
+  // 동일 라인 내 일반 글자 타이핑 시에는 화면이 흔들리지 않도록 유지하고,
+  // 줄 바꿈(Enter)이나 라인 이동 시에만 부드럽게 정렬한다.
+  const handleTypewriterScroll = useCallback((force = false) => {
+    if (!configRef.current.typewriterMode || !scrollRef.current || !editor) return;
     requestAnimationFrame(() => {
       const container = scrollRef.current;
       if (!container) return;
 
-      let targetY: number | null = null;
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        if (rect && rect.height > 0 && rect.top > 0) {
-          targetY = rect.top + rect.height / 2;
+      try {
+        const cur = editor.getTextCursorPosition();
+        const blockId = cur?.block?.id;
+        if (!blockId) return;
+
+        // 라인이 바뀌지 않았고 강제 정렬이 아니면 동일 라인 타이핑 중 화면 흔들림 방지
+        if (!force && lastTypewriterBlockIdRef.current === blockId) {
+          return;
         }
-      }
+        lastTypewriterBlockIdRef.current = blockId;
 
-      if (targetY === null && editor) {
-        try {
-          const cur = editor.getTextCursorPosition();
-          if (cur?.block?.id) {
-            const el = container.querySelector(`[data-id="${cur.block.id}"]`);
-            if (el) {
-              const elRect = el.getBoundingClientRect();
-              targetY = elRect.top + 16;
-            }
-          }
-        } catch { /* noop */ }
-      }
+        const el = container.querySelector(`[data-id="${blockId}"]`);
+        if (!el) return;
 
-      if (targetY !== null) {
+        const elRect = el.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
+        // 블록의 시작 라인 기준 수직 위치
+        const targetY = elRect.top + Math.min(elRect.height / 2, 20);
         const relativeY = targetY - containerRect.top;
         const desiredY = containerRect.height * 0.45;
         const delta = relativeY - desiredY;
-        if (Math.abs(delta) > 8) {
-          container.scrollTop += delta;
+
+        // 18px 데드존을 두어 미세한 폰트 높이 편차로 인한 떨림 방지
+        if (Math.abs(delta) > 18) {
+          container.scrollBy({ top: delta, behavior: 'smooth' });
         }
-      }
+      } catch { /* noop */ }
     });
   }, [editor]);
 
@@ -1278,6 +1286,19 @@ ${markdown}` : markdown;
   const updateConfig = (key: string, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
     vscode.postMessage({ type: 'updateConfig', key, value });
+  };
+
+  const handleSaveSettings = () => {
+    setIsSavingSettings(true);
+    vscode.postMessage({ type: 'saveAllConfig', config: configRef.current });
+    setTimeout(() => {
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setIsSettingsOpen(false);
+        setSaveSuccess(false);
+        setIsSavingSettings(false);
+      }, 900);
+    }, 200);
   };
 
   const [bodyClass, setBodyClass] = useState(document.body.className);
@@ -1876,6 +1897,31 @@ ${markdown}` : markdown;
                 </label>
               </div>
 
+              <div style={{
+                marginTop: '16px',
+                paddingTop: '12px',
+                borderTop: `1px solid ${dropdownBorder}`
+              }}>
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={isSavingSettings}
+                  className={`settings-save-btn ${saveSuccess ? 'saved' : ''}`}
+                >
+                  {saveSuccess ? (
+                    <>
+                      <Check size={14} strokeWidth={2.5} />
+                      <span>설정이 저장되었습니다</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={14} />
+                      <span>설정 저장</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
             </div>
           )}
           </div>
@@ -2171,8 +2217,8 @@ ${markdown}` : markdown;
             ref={scrollRef}
             style={{ flex: 1, overflow: 'auto' }}
             onKeyDown={(e) => {
-              if (config.typewriterMode && !['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
-                setTimeout(handleTypewriterScroll, 10);
+              if (config.typewriterMode && ['Enter', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+                handleTypewriterScroll(true);
               }
             }}
             onScroll={(e) => {

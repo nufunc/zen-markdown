@@ -5,6 +5,7 @@ html, body, #root {
   height: 100%;
   box-sizing: border-box;
   overflow: hidden; /* Prevent double scrollbars */
+  position: fixed; /* Completely prevent window viewport shift */
 }
 
 /* VS Code injects default padding to webviews, we remove it to go edge-to-edge */
@@ -14,6 +15,12 @@ body.vscode-body {
 
 *, *::before, *::after {
   box-sizing: inherit;
+}
+
+/* When a nested bullet/list group has only a single child, hide the left indent guide line */
+.bn-block-group .bn-block-group > .bn-block-outer:only-child::before {
+  border-left: none !important;
+  display: none !important;
 }
 
 /* Notion-style nested list indent */
@@ -151,6 +158,33 @@ input:checked + .toggle-slider:before {
   min-width: 130px;
   cursor: pointer;
   outline: none;
+}
+.settings-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background-color: var(--accent-color, #3b82f6);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
+}
+.settings-save-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.settings-save-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.settings-save-btn.saved {
+  background-color: #10b981 !important;
 }
 
 /* Focus Mode */

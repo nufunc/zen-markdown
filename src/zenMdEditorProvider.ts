@@ -346,6 +346,21 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     });
                     return;
                 }
+                case 'saveAllConfig': {
+                    if (!e.config || typeof e.config !== 'object') {
+                        return;
+                    }
+                    const config = vscode.workspace.getConfiguration('zenMarkdown');
+                    const updates = Object.entries(e.config)
+                        .filter(([k]) => ALLOWED_CONFIG_KEYS.includes(k))
+                        .map(([k, v]) => config.update(k, v, vscode.ConfigurationTarget.Global));
+                    Promise.all(updates).then(() => {
+                        webviewPanel.webview.postMessage({ type: 'configSaved' });
+                    }, (err: any) => {
+                        vscode.window.showWarningMessage(`Cannot save settings: ${err?.message || err}`);
+                    });
+                    return;
+                }
                 case 'getOriginalContent': {
                     if (document.uri.scheme !== 'file') {
                         webviewPanel.webview.postMessage({

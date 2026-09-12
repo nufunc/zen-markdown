@@ -247,6 +247,18 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             transform: translateY(0.1em);
           }
 
+          /* Single Bullet/Item: Hide left indent guide line if it's the only child */
+          .bn-block-group .bn-block-group > .bn-block-outer:only-child::before {
+            border-left: none !important;
+            display: none !important;
+          }
+
+          /* Disable distracting block shift animations during typing/indenting */
+          .bn-editor .bn-block-content::before,
+          .bn-editor .bn-block-group .bn-block-group > .bn-block-outer::before {
+            transition: none !important;
+          }
+
           /* Disable BlockNote internal scroll to prevent double scrollbars */
           .bn-editor, .bn-container {
             overflow: visible !important;
