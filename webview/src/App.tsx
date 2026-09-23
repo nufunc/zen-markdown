@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
@@ -1913,21 +1913,37 @@ ${markdown}` : markdown;
               margin: '0 auto',
               width: '100%'
             }}>
-              {editor && <div onCopy={async (e) => {
-                const selection = editor.getSelection();
-                if (selection && selection.blocks && selection.blocks.length > 0) {
-                  e.preventDefault();
-                  try {
-                    let markdown = await editor.blocksToMarkdownLossy(selection.blocks as any);
-                    markdown = normalizeOrderedListNumbers(markdown);
-                    markdown = normalizeUnorderedListBullets(markdown);
-                    markdown = restoreHtml(markdown);
-
-                    e.clipboardData.setData('text/plain', markdown);
-                  } catch (err) {
-                    console.error("Failed to copy markdown", err);
-                    diag('copy_markdown_failed');
+              {editor && <div onCopy={(e) => {
+                // 선택이 없으면 브라우저 기본 복사에 맡긴다
+                if (window.getSelection()?.isCollapsed) return;
+                try {
+                  // 선택 직후 곧바로 복사하면 ProseMirror가 화면 선택을 아직 읽지 않았을 수 있다. 먼저 읽어 들인다.
+                  (editor as any)._tiptapEditor?.view?.domObserver?.flush?.();
+                  // getSelection()은 선택이 걸친 블록을 통째로 돌려주므로, 선택한 부분만 잘라 주는 API를 쓴다.
+                  // preventDefault와 setData가 같은 이벤트 처리 안에서 일어나도록 동기로 처리한다.
+                  const { blocks } = editor.getSelectionCutBlocks();
+                  if (blocks.length === 0) return;
+                  const only: any = blocks.length === 1 ? blocks[0] : null;
+                  let text: string;
+                  if (only?.type === 'codeBlock') {
+                    // 코드 블록 안의 선택은 코드 텍스트만 옮긴다
+                    text = (only.content ?? []).map((c: any) => c.text ?? '').join('');
+                  } else {
+                    // 한 블록 안의 일부는 블록 표식(# > -) 없이 인라인만 옮긴다. 붙여 넣은 곳의 구조를 바꾸지 않기 위해서다.
+                    const source = only && Array.isArray(only.content) && only.type !== 'table'
+                      ? [{ type: 'paragraph', content: only.content }]
+                      : blocks;
+                    let markdown = editor.blocksToMarkdownLossy(processBlocksToMarkdown(source as any[]) as any);
+                    markdown = normalizeUnorderedListBullets(normalizeOrderedListNumbers(markdown));
+                    // 저장 경로와 같은 표기로 맞춘다
+                    text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
+                    if (only) text = text.replace(/\n+$/, '');
                   }
+                  e.preventDefault();
+                  e.clipboardData.setData('text/plain', text);
+                } catch (err) {
+                  console.error("Failed to copy markdown", err);
+                  diag('copy_markdown_failed');
                 }
               }}
               onContextMenu={(e) => {
