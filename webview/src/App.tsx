@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
@@ -185,8 +185,7 @@ function App() {
     contentWidth: string,
     defaultMode: string,
     showWordCount: boolean,
-    showFormattingToolbar: boolean,
-    typewriterMode: boolean
+    showFormattingToolbar: boolean
   }>({
     theme: "auto",
     fontSize: 16,
@@ -200,8 +199,7 @@ function App() {
     contentWidth: 'standard',
     defaultMode: 'wysiwyg',
     showWordCount: true,
-    showFormattingToolbar: true,
-    typewriterMode: false
+    showFormattingToolbar: true
   });
   // 에디터 생성 시점(비동기)에 최신 설정을 읽기 위한 ref
   const configRef = useRef(config);
@@ -240,30 +238,10 @@ function App() {
   const cmExtensions = useMemo(() => [
     markdown({ base: markdownLanguage, codeLanguages: codeLanguages }),
     EditorView.lineWrapping,
-    EditorView.domEventHandlers({
-      keydown(_event, view) {
-        if (configRef.current.typewriterMode) {
-          setTimeout(() => {
-            try {
-              const head = view.state.selection.main.head;
-              view.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'center' }) });
-            } catch { /* noop */ }
-          }, 10);
-        }
-        return false;
-      }
-    }),
     // 읽기 전용 문서에서는 입력 자체를 막는다. postChange 가드만으로는 입력이 들어갔다가
     // 되돌려져 사용자가 편집 가능하다고 오해한다.
     ...(config.isReadOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
-    ...(config.typewriterMode ? [
-      EditorView.theme({
-        '&': { height: '100%' },
-        '.cm-scroller': { paddingBottom: '50vh !important' },
-        '.cm-content': { paddingBottom: '50vh !important' }
-      })
-    ] : [])
-  ], [config.typewriterMode, config.isReadOnly]);
+  ], [config.isReadOnly]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   const showProperties = config.showProperties;
@@ -296,7 +274,6 @@ function App() {
   const cmViewRef = useRef<any>(null);
   // 모드 전환 시 기억할 헤딩. 같은 제목이 여러 번 나오는 문서를 위해 순번을 함께 담는다.
   const pendingHeadingRef = useRef<{ text: string, ordinal: number } | null>(null);
-  const lastTypewriterBlockIdRef = useRef<string | null>(null);
 
 
 
@@ -370,8 +347,7 @@ function App() {
             contentWidth: message.contentWidth || 'standard',
             defaultMode: message.defaultMode || 'wysiwyg',
             showWordCount: message.showWordCount ?? true,
-            showFormattingToolbar: message.showFormattingToolbar ?? true,
-            typewriterMode: message.typewriterMode ?? false
+            showFormattingToolbar: message.showFormattingToolbar ?? true
           });
           if (message.isReadOnly) {
             setIsRawMode(true);
@@ -912,45 +888,6 @@ ${markdown}` : markdown;
     }
   }, [config.spellCheck, editor]);
 
-  // 타자기 스크롤링: 활성 커서 블록(라인)을 뷰포트 수직 중앙(~45%)에 안정적으로 정렬
-  // 동일 라인 내 일반 글자 타이핑 시에는 화면이 흔들리지 않도록 유지하고,
-  // 줄 바꿈(Enter)이나 라인 이동 시에만 부드럽게 정렬한다.
-  const handleTypewriterScroll = useCallback((force = false) => {
-    if (!configRef.current.typewriterMode || !scrollRef.current || !editor) return;
-    requestAnimationFrame(() => {
-      const container = scrollRef.current;
-      if (!container) return;
-
-      try {
-        const cur = editor.getTextCursorPosition();
-        const blockId = cur?.block?.id;
-        if (!blockId) return;
-
-        // 라인이 바뀌지 않았고 강제 정렬이 아니면 동일 라인 타이핑 중 화면 흔들림 방지
-        if (!force && lastTypewriterBlockIdRef.current === blockId) {
-          return;
-        }
-        lastTypewriterBlockIdRef.current = blockId;
-
-        const el = container.querySelector(`[data-id="${blockId}"]`);
-        if (!el) return;
-
-        const elRect = el.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        // 블록의 시작 라인 기준 수직 위치
-        const targetY = elRect.top + Math.min(elRect.height / 2, 20);
-        const relativeY = targetY - containerRect.top;
-        const desiredY = containerRect.height * 0.45;
-        const delta = relativeY - desiredY;
-
-        // 18px 데드존을 두어 미세한 폰트 높이 편차로 인한 떨림 방지
-        if (Math.abs(delta) > 18) {
-          container.scrollBy({ top: delta, behavior: 'smooth' });
-        }
-      } catch { /* noop */ }
-    });
-  }, [editor]);
-
   // 훅에서 최신 handleWysiwygChange를 부르기 위한 ref (선언 순서 역전 회피)
   const handleWysiwygChangeRef = useRef<() => void>(() => {});
 
@@ -963,9 +900,6 @@ ${markdown}` : markdown;
     // 아직 편집 중이면 보류한 외부 변경의 채택을 미룬다
     deferPending();
     debouncedSerialize();
-    if (configRef.current.typewriterMode) {
-      handleTypewriterScroll();
-    }
   };
   handleWysiwygChangeRef.current = handleWysiwygChange;
 
@@ -1769,17 +1703,6 @@ ${markdown}` : markdown;
                 </label>
               </div>
 
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <Type size={14} opacity={0.7} />
-                  <span>Typewriter Mode</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.typewriterMode} onChange={(e) => updateConfig('typewriterMode', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
               <div className="settings-group-title">Document</div>
 
               <div className="settings-item">
@@ -2077,17 +2000,6 @@ ${markdown}` : markdown;
                 lastEditTimeRef.current = Date.now();
                 setDocumentText(val);
                 postChange(val);
-                if (config.typewriterMode && cmViewRef.current) {
-                  setTimeout(() => {
-                    try {
-                      const view = cmViewRef.current;
-                      if (view) {
-                        const head = view.state.selection.main.head;
-                        view.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'center' }) });
-                      }
-                    } catch { /* noop */ }
-                  }, 10);
-                }
               }}
               onCreateEditor={(view: any) => {
                 cmViewRef.current = view;
@@ -2130,11 +2042,6 @@ ${markdown}` : markdown;
           <div
             ref={scrollRef}
             style={{ flex: 1, overflow: 'auto' }}
-            onKeyDown={(e) => {
-              if (config.typewriterMode && e.key === 'Enter') {
-                handleTypewriterScroll(true);
-              }
-            }}
             onScroll={(e) => {
               const top = e.currentTarget.scrollTop;
               if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
@@ -2143,7 +2050,7 @@ ${markdown}` : markdown;
           >
             <div style={{
               padding: '16px 32px',
-              paddingBottom: config.typewriterMode ? '50vh' : '40px',
+              paddingBottom: '40px',
               maxWidth: config.contentWidth === 'narrow' ? '700px' : config.contentWidth === 'standard' ? '900px' : 'none',
               margin: '0 auto',
               width: '100%'
@@ -2185,7 +2092,7 @@ ${markdown}` : markdown;
                   y: Math.min(e.clientY, window.innerHeight - 240)
                 });
               }}
-              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} onSelectionChange={() => handleTypewriterScroll()} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
+              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
                 <SuggestionMenuController
                   triggerCharacter={"/"}
                   getItems={async (query) => {

@@ -185,11 +185,6 @@
           "default": true,
           "description": "Show the rich formatting toolbar in WYSIWYG mode."
         },
-        "zenMarkdown.typewriterMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Keep active typing line/block vertically centered in the viewport (Typewriter Scrolling)."
-        },
         "zenMarkdown.diagnostics": {
           "type": "boolean",
           "default": true,

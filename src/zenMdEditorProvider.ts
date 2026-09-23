@@ -19,8 +19,7 @@ const ALLOWED_CONFIG_KEYS = [
     'contentWidth',
     'defaultMode',
     'showWordCount',
-    'showFormattingToolbar',
-    'typewriterMode'
+    'showFormattingToolbar'
 ];
 // openLink에서 외부로 여는 것을 허용하는 URL 스킴
 const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
@@ -91,7 +90,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const defaultMode = config.get<string>('defaultMode') || 'wysiwyg';
             const showWordCount = config.get<boolean>('showWordCount') ?? true;
             const showFormattingToolbar = config.get<boolean>('showFormattingToolbar') ?? true;
-            const typewriterMode = config.get<boolean>('typewriterMode') ?? false;
             const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
             // 문서 폴더의 webview URI — 상대경로 이미지 미리보기용
             const docBaseUri = docDir
@@ -111,7 +109,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 defaultMode,
                 showWordCount,
                 showFormattingToolbar,
-                typewriterMode,
                 isReadOnly,
                 defaultCodeLanguage,
                 docBaseUri
