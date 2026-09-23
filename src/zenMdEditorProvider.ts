@@ -352,11 +352,13 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     const config = vscode.workspace.getConfiguration('zenMarkdown');
                     const updates = Object.entries(e.config)
-                        .filter(([k]) => ALLOWED_CONFIG_KEYS.includes(k))
+                        // 이미 적용 중인 값(워크스페이스 설정·기본값 포함)은 Global로 복사하지 않는다
+                        .filter(([k, v]) => ALLOWED_CONFIG_KEYS.includes(k) && config.get(k) !== v)
                         .map(([k, v]) => config.update(k, v, vscode.ConfigurationTarget.Global));
                     Promise.all(updates).then(() => {
                         webviewPanel.webview.postMessage({ type: 'configSaved' });
                     }, (err: any) => {
+                        webviewPanel.webview.postMessage({ type: 'configSaveFailed' });
                         vscode.window.showWarningMessage(`Cannot save settings: ${err?.message || err}`);
                     });
                     return;

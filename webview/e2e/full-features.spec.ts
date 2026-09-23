@@ -291,10 +291,19 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     await expect(saveBtn).toBeVisible();
     await expect(saveBtn).toContainText('설정 저장');
 
-    // Click Save Settings button
+    // 저장이 실패하면 성공 표시 없이 버튼만 다시 누를 수 있어야 한다
     await saveBtn.click();
+    await expect(saveBtn).toBeDisabled();
+    await page.waitForTimeout(400);
+    await expect(saveBtn).not.toHaveClass(/saved/);
+    await page.evaluate(() => window.postMessage({ type: 'configSaveFailed' }, '*'));
+    await expect(saveBtn).toBeEnabled();
+    await expect(saveBtn).not.toHaveClass(/saved/);
+    await expect(glassPanel).toBeVisible();
 
-    // Verify feedback state
+    // 호스트가 저장을 확인(configSaved)한 뒤에만 성공을 표시한다
+    await saveBtn.click();
+    await page.evaluate(() => window.postMessage({ type: 'configSaved' }, '*'));
     await expect(saveBtn).toContainText('설정이 저장되었습니다');
     await expect(saveBtn).toHaveClass(/saved/);
 

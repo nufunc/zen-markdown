@@ -389,6 +389,9 @@ function App() {
             setIsSavingSettings(false);
           }, 900);
           break;
+        case 'configSaveFailed':
+          setIsSavingSettings(false);
+          break;
         case 'update':
           if (documentText === "loading") {
             setDocumentText(message.text || "");
@@ -1291,14 +1294,6 @@ ${markdown}` : markdown;
   const handleSaveSettings = () => {
     setIsSavingSettings(true);
     vscode.postMessage({ type: 'saveAllConfig', config: configRef.current });
-    setTimeout(() => {
-      setSaveSuccess(true);
-      setTimeout(() => {
-        setIsSettingsOpen(false);
-        setSaveSuccess(false);
-        setIsSavingSettings(false);
-      }, 900);
-    }, 200);
   };
 
   const [bodyClass, setBodyClass] = useState(document.body.className);
@@ -2217,7 +2212,7 @@ ${markdown}` : markdown;
             ref={scrollRef}
             style={{ flex: 1, overflow: 'auto' }}
             onKeyDown={(e) => {
-              if (config.typewriterMode && ['Enter', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+              if (config.typewriterMode && e.key === 'Enter') {
                 handleTypewriterScroll(true);
               }
             }}
@@ -2271,7 +2266,7 @@ ${markdown}` : markdown;
                   y: Math.min(e.clientY, window.innerHeight - 240)
                 });
               }}
-              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
+              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} onSelectionChange={() => handleTypewriterScroll()} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
                 <SuggestionMenuController
                   triggerCharacter={"/"}
                   getItems={async (query) => {
