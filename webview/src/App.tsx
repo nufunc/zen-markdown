@@ -628,23 +628,6 @@ function App() {
     });
   };
 
-  // Shiki 지연 로딩 완료 시 해당 언어를 사용하는 코드블록 재렌더링 (단, 현재 편집 중인 블록은 커서 보존을 위해 제외)
-  useEffect(() => {
-    const handleShikiLoaded = ((e: CustomEvent<string>) => {
-      if (!editor) return;
-      const lang = e.detail;
-      const currentCursorBlockId = editor.getTextCursorPosition()?.block?.id;
-      editor.forEachBlock((b: any) => {
-        if (b.type === 'codeBlock' && b.props.language === lang && b.id !== currentCursorBlockId) {
-           editor.updateBlock(b.id, { props: { ...b.props } });
-        }
-        return true;
-      });
-    }) as EventListener;
-    window.addEventListener('shiki-lang-loaded', handleShikiLoaded);
-    return () => window.removeEventListener('shiki-lang-loaded', handleShikiLoaded);
-  }, [editor]);
-
   useEffect(() => {
     async function initEditor() {
       if (documentText !== "loading" && !isRawMode) {

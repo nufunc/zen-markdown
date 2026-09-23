@@ -74,3 +74,16 @@ test('코드 블록 안에 입력하면 하이라이트가 갱신되고, 언어�
   await setLanguage('Python');
   await expect(code.locator('span[style]').first()).toBeVisible();
 });
+
+test('지연 로딩 언어와 별칭도 하이라이트된다', async ({ page }) => {
+  await page.addInitScript(mock);
+  await page.goto('/');
+  const doc = ['rust', 'rs', 'go', 'golang', 'dockerfile', 'toml']
+    .map(lang => '```' + lang + '\nfn main() { let x = "s"; }\n```').join('\n\n');
+  await page.evaluate((text) => window.postMessage({ type: 'update', text }, '*'), '# T\n\n' + doc + '\n');
+  const blocks = page.locator('.bn-editor pre code');
+  await expect(blocks).toHaveCount(6);
+  for (let i = 0; i < 6; i++) {
+    await expect(blocks.nth(i).locator('span[style]').first()).toBeVisible({ timeout: 15000 });
+  }
+});

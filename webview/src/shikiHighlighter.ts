@@ -71,55 +71,56 @@ const langLoaders: Record<string, () => Promise<any>> = {
   xml: () => import('@shikijs/langs-precompiled/xml'),
 };
 
-const pendingLangs = new Set<string>();
+// 별칭(rs, golang 등)을 supportedLanguages의 대표 id로 푼다
+const resolveLanguageId = (name: string): string => {
+  const n = name.toLowerCase();
+  for (const [id, v] of Object.entries(supportedLanguages)) {
+    if (id === n || v.aliases?.includes(n)) return id;
+  }
+  return n;
+};
+
+// 문법 모듈의 대표 문법에 supportedLanguages의 별칭을 더한다. shiki는 로드된 문법의 aliases만 별칭으로 알기 때문에,
+// 이것이 없으면 golang처럼 shiki 문법에 없는 별칭은 로드한 뒤에도 미로드로 보여 로드가 되풀이된다.
+const withAliases = async (mod: Promise<any>, id: string) => {
+  const extra = supportedLanguages[id]?.aliases ?? [];
+  const regs: any[] = (await mod).default;
+  return regs.map(r => r.name === id ? { ...r, aliases: [...new Set([...(r.aliases ?? []), ...extra])] } : r);
+};
 
 const createHighlighterInternal = async () => {
   const highlighter = await createHighlighterCore({
     themes: [cssVariablesTheme],
     langs: [
       // 핵심 언어만 초기 로드
-      import('@shikijs/langs-precompiled/shellscript'),
-      import('@shikijs/langs-precompiled/powershell'),
-      import('@shikijs/langs-precompiled/yaml'),
-      import('@shikijs/langs-precompiled/json'),
-      import('@shikijs/langs-precompiled/jsonc'),
-      import('@shikijs/langs-precompiled/javascript'),
-      import('@shikijs/langs-precompiled/typescript'),
-      import('@shikijs/langs-precompiled/tsx'),
-      import('@shikijs/langs-precompiled/python'),
-      import('@shikijs/langs-precompiled/html'),
-      import('@shikijs/langs-precompiled/css'),
-      import('@shikijs/langs-precompiled/markdown'),
+      withAliases(import('@shikijs/langs-precompiled/shellscript'), 'shellscript'),
+      withAliases(import('@shikijs/langs-precompiled/powershell'), 'powershell'),
+      withAliases(import('@shikijs/langs-precompiled/yaml'), 'yaml'),
+      withAliases(import('@shikijs/langs-precompiled/json'), 'json'),
+      withAliases(import('@shikijs/langs-precompiled/jsonc'), 'jsonc'),
+      withAliases(import('@shikijs/langs-precompiled/javascript'), 'javascript'),
+      withAliases(import('@shikijs/langs-precompiled/typescript'), 'typescript'),
+      withAliases(import('@shikijs/langs-precompiled/tsx'), 'tsx'),
+      withAliases(import('@shikijs/langs-precompiled/python'), 'python'),
+      withAliases(import('@shikijs/langs-precompiled/html'), 'html'),
+      withAliases(import('@shikijs/langs-precompiled/css'), 'css'),
+      withAliases(import('@shikijs/langs-precompiled/markdown'), 'markdown'),
     ],
     engine: createJavaScriptRawEngine(),
   });
 
-  const originalCodeToHtml = highlighter.codeToHtml.bind(highlighter);
-
-  // 동기 호출되는 codeToHtml을 가로채서 로드되지 않은 언어는 동적 로드 시도 후 텍스트로 폴백
-  highlighter.codeToHtml = (code: string, options: any) => {
-    const lang = options.lang;
-    const loaded = highlighter.getLoadedLanguages();
-    
-    if (lang && lang !== 'text' && !loaded.includes(lang)) {
-      if (!pendingLangs.has(lang) && langLoaders[lang]) {
-        pendingLangs.add(lang);
-        langLoaders[lang]().then(mod => {
-          highlighter.loadLanguage(mod).then(() => {
-            // 언어 로드 완료 이벤트를 발생시켜 에디터가 재렌더링할 수 있도록 유도
-            window.dispatchEvent(new CustomEvent('shiki-lang-loaded', { detail: lang }));
-          }).catch(console.error);
-        }).catch(console.error);
-      }
-      return originalCodeToHtml(code, { ...options, lang: 'text' });
-    }
-
-    try {
-      return originalCodeToHtml(code, options);
-    } catch {
-      return originalCodeToHtml(code, { ...options, lang: 'text' });
-    }
-  };
+  // BlockNote parser는 로드되지 않은 언어에 loadLanguage("rust")처럼 이름 문자열을 넘긴다.
+  // createHighlighterCore는 이름만으로 문법을 찾지 못하므로, 여기서 모듈을 받아 원래 loadLanguage에 넘긴다.
+  // 로드가 끝나면 하이라이트 플러그인이 전체를 다시 계산한다(prosemirror-highlight-refresh).
+  const originalLoadLanguage = highlighter.loadLanguage.bind(highlighter);
+  highlighter.loadLanguage = (async (...langs: any[]) => {
+    const resolved = await Promise.all(langs.map(async (lang) => {
+      if (typeof lang !== 'string') return lang;
+      const id = resolveLanguageId(lang);
+      return langLoaders[id] ? withAliases(langLoaders[id](), id) : lang;
+    }));
+    return originalLoadLanguage(...resolved);
+  }) as typeof highlighter.loadLanguage;
 
   return highlighter;
 };
