@@ -64,7 +64,12 @@ const markSameTextLinks = (content: any[]): any[] => content.map((c: any) => {
 });
 
 export function restoreLinkText(md: string): string {
-  return md.replaceAll(LINK_TEXT_MARK + '](', '](');
+  return mapOutsideCodeFences(md.replaceAll(LINK_TEXT_MARK + '](', ']('), part =>
+    // BlockNote는 공백이 든 주소를 꺾쇠 없이 내보내 링크가 깨진다([a](<my file.md>) → [a](my file.md)).
+    // 링크 제목은 직렬화에서 버려지므로, 괄호 안에 공백이 있으면 원래 꺾쇠로 감싼 주소다. 인라인 코드 구간은 건너뛴다.
+    part.replace(/(`+)[^`\n][\s\S]*?\1|\]\(([^()<>\n]*\s[^()<>\n]*)\)/g,
+      (m, ticks: string | undefined, dest: string | undefined) => ticks ? m : `](<${dest}>)`)
+  );
 }
 
 export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
@@ -280,7 +285,10 @@ export function preserveBlankLines(md: string): string {
 // 저장 시 빈 줄 표식 문단을 다시 빈 줄로 복원. 표식이 붙은 것만 지우므로
 // 사용자가 직접 쓴 &nbsp; 문단은 그대로 남는다.
 export function restoreBlankLines(md: string): string {
-  return mapOutsideCodeFences(md, part =>
+  // 문서가 빈 문단으로 시작하면 표식 앞에 \n\n이 없고, 직렬화기가 맨 앞 NBSP까지 잘라 폭 없는 공백만 남긴다.
+  // 그대로 두면 보이지 않는 문자가 파일에 남는다.
+  const head = md.replace(new RegExp('^(?:&nbsp;|' + NBSP + ')?' + BLANK_ZWSP + '[ \t]*(?=\n|$)'), '');
+  return mapOutsideCodeFences(head, part =>
     part.replace(new RegExp('\n\n(?:&nbsp;|' + NBSP + ')' + BLANK_ZWSP + '[ \t]*(?=\n|$)', 'g'), '\n')
   );
 }
@@ -377,8 +385,13 @@ const ZWSP = '\u200B';
 // 단, CommonMark autolink(<https://...>, <mailto:...>)는 BlockNote 링크 파서 유지를 위해 제외한다.
 export function protectHtml(md: string): string {
   return mapOutsideCodeFences(md, part =>
-    part.replace(/<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?\/?>/g, (tag) => {
+    part.replace(/<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?\/?>/g, (tag, offset: number, whole: string) => {
       if (/^<[a-zA-Z][a-zA-Z0-9+.-]*:[^>]+>$/i.test(tag) || /^<[^\s@]+@[^\s@]+\.[^\s@]+>$/.test(tag)) {
+        return tag;
+      }
+      // 인라인 링크 목적지를 감싼 꺾쇠([a](<my file.md>))는 HTML 태그가 아니다.
+      // 참조 정의([a]: <my file.md>)는 BlockNote가 보존하지 못하므로 지금처럼 글자로 보호해 원문을 지킨다.
+      if (whole.slice(Math.max(0, offset - 2), offset) === '](') {
         return tag;
       }
       return '<' + ZWSP + tag.slice(1);
