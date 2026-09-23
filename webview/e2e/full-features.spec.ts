@@ -175,13 +175,13 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     const glassPanel = page.locator('.glass-panel');
     await expect(glassPanel).toBeVisible();
 
-    // Toggle Focus Mode slider
-    const focusModeItem = glassPanel.locator('.settings-item', { hasText: 'Focus Mode' });
-    const focusModeSlider = focusModeItem.locator('.toggle-slider');
-    await focusModeSlider.click();
+    // Toggle Spell Check slider
+    const spellItem = glassPanel.locator('.settings-item', { hasText: 'Spell Check' });
+    const spellSlider = spellItem.locator('.toggle-slider');
+    await spellSlider.click();
 
-    const focusModeInput = focusModeItem.locator('.toggle-switch input');
-    await expect(focusModeInput).toBeChecked();
+    const spellInput = spellItem.locator('.toggle-switch input');
+    await expect(spellInput).toBeChecked();
 
     // Select Content Width
     const widthItem = glassPanel.locator('.settings-item', { hasText: 'Content Width' });

@@ -142,11 +142,6 @@
           "default": "text",
           "description": "Default language for newly created code blocks."
         },
-        "zenMarkdown.focusMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Dim inactive blocks to help you focus on the current block."
-        },
         "zenMarkdown.spellCheck": {
           "type": "boolean",
           "default": false,

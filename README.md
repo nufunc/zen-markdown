@@ -41,7 +41,6 @@ You can customize the editor in VS Code Settings (`Ctrl+,`):
 | `zenMarkdown.contentWidth` | `standard` | Editor content width: `narrow` (700px), `standard` (900px), `full` (100%). |
 | `zenMarkdown.defaultMode` | `wysiwyg` | Default editing mode: `wysiwyg` (Block Editor) or `raw` (Markdown Source). |
 | `zenMarkdown.autoRefresh` | `true` | Refresh the editor automatically when the file changes externally. |
-| `zenMarkdown.focusMode` | `false` | Dim inactive blocks to focus on current block. |
 | `zenMarkdown.spellCheck` | `false` | Enable native spell checking. |
 | `zenMarkdown.showWordCount` | `true` | Show word and character count badge in the header bar. |
 | `zenMarkdown.showFormattingToolbar` | `true` | Show the rich formatting toolbar in WYSIWYG mode. |

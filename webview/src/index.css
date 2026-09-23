@@ -71,16 +71,6 @@ body.vscode-body {
 
 /* Blockquote styles live in App.tsx (theme-aware injected <style>) */
 
-/* Focus Mode */
-.focus-mode-active .bn-block-outer:not(:focus-within) {
-  opacity: 0.35;
-  transition: opacity 0.3s ease;
-}
-.focus-mode-active .bn-block-outer:focus-within {
-  opacity: 1;
-  transition: opacity 0.3s ease;
-}
-
 /* Modern Toggle Switch */
 .toggle-switch {
   position: relative;
@@ -185,16 +175,6 @@ input:checked + .toggle-slider:before {
 }
 .settings-save-btn.saved {
   background-color: #10b981 !important;
-}
-
-/* Focus Mode */
-.focus-mode-active .bn-block-outer:not(.focus-active-block) {
-  opacity: 0.35;
-  transition: opacity 0.3s ease;
-}
-.focus-mode-active .bn-block-outer.focus-active-block {
-  opacity: 1;
-  transition: opacity 0.3s ease;
 }
 
 /* Modern Segmented Control for View Modes */

@@ -96,7 +96,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -180,7 +180,6 @@ function App() {
     showProperties: boolean,
     isReadOnly: boolean,
     defaultCodeLanguage: string,
-    focusMode: boolean,
     spellCheck: boolean,
     contentWidth: string,
     defaultMode: string,
@@ -194,7 +193,6 @@ function App() {
     showProperties: true,
     isReadOnly: false,
     defaultCodeLanguage: 'text',
-    focusMode: false,
     spellCheck: false,
     contentWidth: 'standard',
     defaultMode: 'wysiwyg',
@@ -275,36 +273,6 @@ function App() {
   // 모드 전환 시 기억할 헤딩. 같은 제목이 여러 번 나오는 문서를 위해 순번을 함께 담는다.
   const pendingHeadingRef = useRef<{ text: string, ordinal: number } | null>(null);
 
-
-
-  // Focus Mode active block tracking
-  useEffect(() => {
-    const handleSelectionChange = () => {
-      if (!configRef.current.focusMode || !editor) return;
-      
-      try {
-        const cur = editor.getTextCursorPosition();
-        const blockId = cur?.block?.id;
-        
-        document.querySelectorAll('.bn-block-outer.focus-active-block').forEach(el => {
-          el.classList.remove('focus-active-block');
-        });
-        
-        if (blockId) {
-          const el = document.querySelector(`.bn-block-outer[data-id="${blockId}"]`);
-          if (el) {
-            el.classList.add('focus-active-block');
-          }
-        }
-      } catch {
-        // Ignore selection errors
-      }
-    };
-    
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
-  }, [editor]);
-
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
   }, []);
@@ -342,7 +310,6 @@ function App() {
             showProperties: message.showProperties,
             isReadOnly: message.isReadOnly,
             defaultCodeLanguage: message.defaultCodeLanguage || 'text',
-            focusMode: message.focusMode || false,
             spellCheck: message.spellCheck || false,
             contentWidth: message.contentWidth || 'standard',
             defaultMode: message.defaultMode || 'wysiwyg',
@@ -1661,17 +1628,6 @@ ${markdown}` : markdown;
 
               <div className="settings-item">
                 <label className="settings-item-label">
-                  <Eye size={14} opacity={0.7} />
-                  <span>Focus Mode</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.focusMode} onChange={(e) => updateConfig('focusMode', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
                   <Wand2 size={14} opacity={0.7} />
                   <span>Spell Check</span>
                 </label>
@@ -2067,7 +2023,7 @@ ${markdown}` : markdown;
                   onChange={handleFmChange}
                 />
               ) : null}
-              {editor && <div className={config.focusMode ? "focus-mode-active" : ""} onCopy={async (e) => {
+              {editor && <div onCopy={async (e) => {
                 const selection = editor.getSelection();
                 if (selection && selection.blocks && selection.blocks.length > 0) {
                   e.preventDefault();
