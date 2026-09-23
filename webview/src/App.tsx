@@ -283,6 +283,7 @@ function App() {
     lastSentTextRef, lastInitializedTextRef,
     postChange, debouncedSerialize, flush,
     holdExternal, deferPending, isHolding,
+    hasUnsentEdits, sendNow, conflict, resolveConflict,
   } = useDocumentSync({
     buildDocumentText: () => buildDocumentTextRef.current(),
     applyExternalText: (text) => setDocumentText(text),
@@ -409,7 +410,8 @@ function App() {
           const isEditorFocused = isEditorElement(document.activeElement);
           const isRecentlyEdited = (Date.now() - lastEditTimeRef.current) < 2000;
           const isUndoing = (Date.now() - lastUndoTimeRef.current) < 1000;
-          if (!isUndoing && (isEditorFocused || isRecentlyEdited) && documentText !== "loading") {
+          if (isHolding() || hasUnsentEdits() ||
+              (!isUndoing && (isEditorFocused || isRecentlyEdited) && documentText !== "loading")) {
             holdExternal(incoming);
             return;
           }
@@ -863,6 +865,7 @@ function App() {
   // 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다.
   // 실제 전송과 디바운스·flush·경합 조정은 useDocumentSync가 맡는다.
   const buildDocumentText = async (): Promise<string | null> => {
+    if (isRawMode) return documentText === "loading" ? null : documentText;
     if (!editor) return null;
     extractHeadings(editor);
     const markdown = await generateMarkdownFromEditor(true);
@@ -1040,10 +1043,7 @@ ${markdown}` : markdown;
           // Blur 시점에 한 번만 autoFix 적용하여 저장
           const markdown = await generateMarkdownFromEditor(false);
           const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
-          if (lastSentTextRef.current !== fullText) {
-            lastSentTextRef.current = fullText;
-            vscode.postMessage({ type: 'change', text: fullText });
-          }
+          sendNow(fullText);
         } catch {
           console.error("AutoFix on blur failed");
           diag('autofix_failed');
@@ -1114,6 +1114,8 @@ ${markdown}` : markdown;
   }, []);
 
   const toggleMode = async () => {
+    // 보류한 외부 변경이 있으면 전환하지 않는다. 전환 직렬화가 외부 변경을 덮어쓰기 때문이다.
+    if (isHolding()) return;
     // 모드 전환 시 현재 위치의 헤딩을 기억해 반대 모드에서 같은 지점으로 스크롤 (best-effort)
     try {
       if (!isRawMode) {
@@ -1163,8 +1165,7 @@ ${markdown}` : markdown;
           const markdown = await generateMarkdownFromEditor();
           const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
           setDocumentText(fullText);
-          lastSentTextRef.current = fullText;
-          vscode.postMessage({ type: 'change', text: fullText });
+          sendNow(fullText);
         }
       } catch (err) {
         console.error("Failed to generate markdown during mode toggle", err);
@@ -2110,6 +2111,13 @@ ${markdown}` : markdown;
 
         {/* 메인 에디터 영역 (오른쪽 패널) */}
         <div style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {conflict && (
+          <div className="external-conflict-bar" role="alert">
+            <span>This file changed outside the editor while you had unsaved edits.</span>
+            <button onMouseDown={e => e.preventDefault()} onClick={() => { void resolveConflict('mine'); }}>Keep my edits</button>
+            <button onMouseDown={e => e.preventDefault()} onClick={() => { void resolveConflict('external'); }}>Use external version</button>
+          </div>
+        )}
         {isRawMode ? (
           isDiffMode ? (
             originalText === null ? (

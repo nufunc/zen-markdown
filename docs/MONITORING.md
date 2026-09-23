@@ -64,6 +64,7 @@ node tools/Get-ZenDiagnostics.mjs --dir <경로>    # 로그 위치 지정
 |---|:---:|---|
 | `open` | | 문서를 열었다. 바이트 수와 줄 수를 함께 남긴다 |
 | `external_update` | | 외부에서 파일이 바뀌어 웹뷰에 알렸다 |
+| `external_conflict` | O | 전송하지 않은 로컬 편집이 있을 때 외부 변경이 와서 사용자에게 물었다. `choice`는 `mine`이나 `external`이다 |
 | `roundtrip_drift` | O | 문서를 연 직후 검증에서 왕복 손실을 찾았다. **가장 강한 신호다** |
 | `roundtrip_check_failed` | O | 왕복 검증 자체가 실패했다 |
 | `edit_failed` | O | 문서에 편집을 적용하지 못했다 |

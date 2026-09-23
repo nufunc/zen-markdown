@@ -25,6 +25,7 @@ export const PROBLEM_EVENTS = new Set([
     'search_plugin_register_failed',
     'search_highlight_failed',
     'copy_markdown_failed',
+    'external_conflict',
 ]);
 
 export function parseLogLines(text: string): LogRecord[] {

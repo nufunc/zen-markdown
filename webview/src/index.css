@@ -553,3 +553,28 @@ input:checked + .toggle-slider:before {
 
 
 
+
+/* 외부 변경과 전송하지 않은 로컬 편집이 부딪쳤을 때의 선택 막대 */
+.external-conflict-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-color);
+  background-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #d29922) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #d29922) 35%, transparent);
+}
+.external-conflict-bar span { flex: 1; }
+.external-conflict-bar button {
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--text-color);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-color) 25%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.external-conflict-bar button:hover {
+  background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+}

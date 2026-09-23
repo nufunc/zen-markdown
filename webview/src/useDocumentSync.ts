@@ -9,7 +9,8 @@
 //     낡은 전체 텍스트가 외부 변경을 덮어쓰기 때문이다.
 //  2. 읽기 전용 문서에는 어떤 경로로도 쓰지 않는다.
 //  3. 대기 중인 편집은 저장·탭 전환·언마운트 시점에 반드시 배출한다(flush).
-import { useRef, useEffect } from 'react';
+//  4. 전송하지 않은 로컬 편집이 있으면 외부 변경을 자동으로 채택하지 않고 사용자에게 묻는다.
+import { useRef, useEffect, useState } from 'react';
 import { useDebouncedCallback } from './hooks/useDebounceCallback';
 import { vscode } from './vscode';
 
@@ -42,13 +43,25 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
   const pendingExternalRef = useRef<string | null>(null);
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** 마지막 입력 이후 아직 호스트로 보내지 못한 편집이 있는가.
+   *  디바운스 대기 여부로는 판정할 수 없다. 보류 중에는 디바운스가 만료돼도 canSend()에 막혀
+   *  전송 없이 끝나므로, 편집 시 켜고 실제로 보냈을 때만 끄는 플래그로 둔다. */
+  const unsentRef = useRef(false);
+  /** 전송하지 않은 로컬 편집과 보류한 외부 변경이 부딪쳐 사용자의 선택을 기다리는 중인가 */
+  const [conflict, setConflict] = useState(false);
+
   const canSend = () => pendingExternalRef.current === null && !depsRef.current.isReadOnly();
 
-  // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
-  const postChange = useDebouncedCallback((text: string) => {
-    if (!canSend()) return;
+  const send = (text: string) => {
     lastSentTextRef.current = text;
+    unsentRef.current = false;
     vscode.postMessage({ type: 'change', text });
+  };
+
+  // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
+  const postChangeDebounced = useDebouncedCallback((text: string) => {
+    if (!canSend()) return;
+    send(text);
   }, 300);
 
   const serializeAndSend = async () => {
@@ -56,16 +69,35 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     try {
       const fullText = await depsRef.current.buildDocumentText();
       if (fullText === null) return;
-      lastSentTextRef.current = fullText;
       lastInitializedTextRef.current = fullText;
-      vscode.postMessage({ type: 'change', text: fullText });
+      send(fullText);
     } catch (err) {
       console.error('Failed to serialize document', err);
       vscode.postMessage({ type: 'diag', ev: 'serialize_failed' });
     }
   };
 
-  const debouncedSerialize = useDebouncedCallback(serializeAndSend, 600);
+  const serializeDebounced = useDebouncedCallback(serializeAndSend, 600);
+
+  // 호출 시점에 편집을 표시하는 래퍼. cancel·flush·isPending은 원래 디바운스 것을 그대로 쓴다.
+  const postChange = Object.assign((text: string) => {
+    unsentRef.current = true;
+    postChangeDebounced(text);
+  }, postChangeDebounced);
+  const debouncedSerialize = Object.assign(() => {
+    unsentRef.current = true;
+    serializeDebounced();
+  }, serializeDebounced);
+
+  const hasUnsentEdits = () => unsentRef.current;
+
+  /** canSend()를 거쳐 즉시 보낸다. 호스트에 이미 있는 텍스트면 보내지 않고 편집 표시만 끈다. */
+  const sendNow = (text: string) => {
+    if (!canSend()) return false;
+    if (text === lastSentTextRef.current) unsentRef.current = false;
+    else send(text);
+    return true;
+  };
 
   /** 대기 중인 편집을 즉시 배출한다. 저장 직전과 탭 전환에서 부른다. */
   const flush = async () => {
@@ -85,19 +117,50 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     }
   };
 
-  /** 보류한 외부 변경을 채택한다. 마지막 전송 이후의 로컬 편집은 버려진다.
-   *  웹뷰가 문서 전체를 치환하는 구조라 두 편집을 병합할 수 없으므로 사용자에게 알린다. */
+  /** 보류한 외부 변경을 에디터에 반영한다. 대기 중인 로컬 직렬화는 외부 변경 이전 문서 기준이라 버린다. */
+  const adoptExternal = (incoming: string) => {
+    pendingExternalRef.current = null;
+    serializeDebounced.cancel();
+    postChangeDebounced.cancel();
+    unsentRef.current = false;
+    depsRef.current.applyExternalText(incoming);
+  };
+
+  /** focusout과 타이머가 부르는 자동 채택. 전송하지 않은 로컬 편집이 있으면 채택하지 않고 충돌로 넘긴다.
+   *  웹뷰가 문서 전체를 치환하는 구조라 두 편집을 병합할 수 없다. */
   const consumeExternal = () => {
     clearPendingTimer();
     const incoming = pendingExternalRef.current;
     if (incoming === null) return;
-    pendingExternalRef.current = null;
-    if (normalizeMd(incoming) === normalizeMd(lastSentTextRef.current)) return;
-    // 대기 중인 로컬 직렬화는 외부 변경 이전 문서 기준이라 stale이다
-    debouncedSerialize.cancel();
-    postChange.cancel();
-    depsRef.current.applyExternalText(incoming);
+    if (normalizeMd(incoming) === normalizeMd(lastSentTextRef.current)) {
+      pendingExternalRef.current = null;
+      setConflict(false);
+      return;
+    }
+    if (unsentRef.current) {
+      // 보류 상태를 유지하므로 canSend()가 계속 전송을 막는다
+      setConflict(true);
+      return;
+    }
+    adoptExternal(incoming);
     vscode.postMessage({ type: 'notify', message: 'This file changed outside the editor. The editor reloaded it.' });
+  };
+
+  /** 충돌 막대에서 고른 보기를 적용한다 */
+  const resolveConflict = async (choice: 'external' | 'mine') => {
+    clearPendingTimer();
+    const incoming = pendingExternalRef.current;
+    setConflict(false);
+    vscode.postMessage({ type: 'diag', ev: 'external_conflict', choice });
+    if (incoming === null) return;
+    if (choice === 'external') {
+      adoptExternal(incoming);
+      return;
+    }
+    pendingExternalRef.current = null;
+    serializeDebounced.cancel();
+    postChangeDebounced.cancel();
+    await serializeAndSend();
   };
   const consumeExternalRef = useRef(consumeExternal);
   consumeExternalRef.current = consumeExternal;
@@ -162,5 +225,9 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     consumeExternal: () => consumeExternalRef.current(),
     deferPending,
     isHolding,
+    hasUnsentEdits,
+    sendNow,
+    conflict,
+    resolveConflict,
   };
 }
