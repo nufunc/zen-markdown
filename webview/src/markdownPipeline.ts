@@ -10,6 +10,7 @@ import {
   restoreBlankLines,
   protectHtml,
   restoreHtml,
+  restoreLinkText,
   parseWikilinks,
   serializeWikilinks,
   toWebviewImageUrls,
@@ -41,11 +42,11 @@ export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string
 /** 에디터가 내놓은 마크다운 -> 디스크에 쓸 마크다운 (위 체인의 역순) */
 export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): string {
   return serializeWikilinks(
-    restoreHtml(
+    restoreLinkText(restoreHtml(
       restoreBlankLines(
         fromWebviewImageUrls(markdown, ctx.docBaseUri)
       )
-    ),
+    )),
     ctx.wikilinkNames
   );
 }

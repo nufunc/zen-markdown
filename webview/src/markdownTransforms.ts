@@ -42,8 +42,36 @@ export const isMermaidCode = (text: string): boolean => {
   return mermaidPatterns.some(pattern => pattern.test(firstRealLine));
 };
 
+// 파서는 줄바꿈(<br>) 뒤에 공백 하나를 끼워 넣는다. 그대로 두면 저장할 때 백슬래시 줄바꿈 뒤에 공백이 붙고
+// 인용 안에서는 왕복할 때마다 공백이 는다. 연속 줄의 앞 공백은 마크다운에서 뜻이 없으므로 걷어낸다.
+const stripBreakSpace = (content: any[]): any[] => content.map((c: any) => {
+  if (c.type === 'text' && typeof c.text === 'string' && !c.styles?.code) {
+    return { ...c, text: c.text.replace(/\n /g, '\n') };
+  }
+  if (c.type === 'link' && Array.isArray(c.content)) return { ...c, content: stripBreakSpace(c.content) };
+  return c;
+});
+
+// 텍스트와 주소가 같은 링크를 BlockNote는 주소만 내보내 링크가 사라진다([a.md](a.md) → a.md).
+// 직렬화 동안만 텍스트 끝에 표식을 붙여 [..](..) 형태를 강제하고, restoreLinkText가 지운다.
+const LINK_TEXT_MARK = '\u200B';
+const markSameTextLinks = (content: any[]): any[] => content.map((c: any) => {
+  if (c.type !== 'link' || !Array.isArray(c.content) || c.content.length === 0) return c;
+  const text = c.content.map((t: any) => t.text ?? '').join('');
+  if (text !== c.href) return c;
+  const last = c.content[c.content.length - 1];
+  return { ...c, content: [...c.content.slice(0, -1), { ...last, text: last.text + LINK_TEXT_MARK }] };
+});
+
+export function restoreLinkText(md: string): string {
+  return md.replaceAll(LINK_TEXT_MARK + '](', '](');
+}
+
 export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
   return blocks.map((b: any) => {
+    if (b.type !== "codeBlock" && Array.isArray(b.content)) {
+      b = { ...b, content: stripBreakSpace(b.content) };
+    }
     // preserveBlankLines가 만든 nbsp 전용 문단 → 진짜 빈 문단으로 표시
     // (BlockNote는 &nbsp;를 엔티티 디코드 없이 리터럴 텍스트로 파싱함)
     if (b.type === "paragraph" && Array.isArray(b.content) && b.content.length === 1
@@ -82,6 +110,9 @@ export const processBlocksToMarkdown = (blocks: any[]): any[] => {
         props: { language: "mermaid" },
         content: [{ type: "text", text: newB.props.code, styles: {} }]
       } as any;
+    }
+    if (Array.isArray(newB.content)) {
+      newB.content = markSameTextLinks(newB.content);
     }
     if (newB.children && newB.children.length > 0) {
       newB.children = processBlocksToMarkdown(newB.children);
@@ -402,7 +433,9 @@ export function protectHtml(md: string): string {
 // 저장 직전 ZWSP 임시 보호 표식을 원상 복구하고, BlockNote가 주석 내부에 붙인 하드브레이크(\)를 정리한다.
 export function restoreHtml(md: string): string {
   return mapOutsideCodeFences(md, part => {
-    let res = part.replaceAll('<' + ZWSP, '<');
+    // 보호한 HTML 태그만 있는 줄은 원래 하드브레이크가 아니다. 파싱 전 줄 보존이 붙인 \를 걷어낸다.
+    let res = part.replace(/^([ \t]*<\u200B[^\n]*>)\\$/gm, '$1');
+    res = res.replaceAll('<' + ZWSP, '<');
     res = res.replace(/<!--([\s\S]*?)-->/g, (_match, inner) => {
       const cleaned = inner.replace(/\\\r?\n\s?/g, '\n');
       return `<!--${cleaned}-->`;
