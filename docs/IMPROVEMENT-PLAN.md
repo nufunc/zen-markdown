@@ -645,6 +645,166 @@ shiki는 로드된 문법의 `aliases`만 별칭으로 안다. 이것이 없으�
 | 로드를 마친 뒤 3초 동안 스크립트 실행 시간 | 0초. 목록에 없는 `foo`가 섞여도 로드와 갱신이 되풀이되지 않는다 |
 | `perf-codeblocks.spec.ts` | 기존 두 테스트와 새 테스트(지연 로딩 언어와 별칭 여섯 블록) 모두 통과 |
 
+## 개편 방향
+
+2026-09-24에 사용자가 프로젝트 목표를 다시 밝혔다. UpNote를 컨셉으로 한 마크다운 에디터를 VS Code 확장으로 옮기는 것이다.
+그래서 이후 개선안은 기능을 더하는 것보다 과한 기능을 걷어내고 단순한 편집 경험을 다듬는 쪽을 먼저 본다.
+판단 기준은 둘이다. UpNote식 단순 편집에 필요한가, 그리고 VS Code가 이미 하는 일인가.
+
+### 개편 1. 과한 기능 제거
+
+사용자가 고른 제거 대상이다(2026-09-24).
+
+| 제거 대상 | 걸린 곳 | 남길 것 |
+|---|---|---|
+| 미디어 링크 검사 버튼 | `App.tsx`, `markdownTransforms.ts`의 `detectBrokenImageLinks` | 없음 |
+| 새로고침 버튼 | `App.tsx`, 호스트의 `refresh` 메시지 | 외부 변경 자동 반영과 충돌 막대는 그대로 둔다 |
+| Prettier 자동 정리(`autoFix`) | `App.tsx` 12곳, 호스트 설정 전달, `package.json` 설정, 웹뷰 `prettier` 의존성, README | 없음 |
+| 타자기 스크롤(`typewriterMode`) | `App.tsx` 20곳, `e2e/editing.spec.ts`, 호스트, `package.json` | 없음 |
+| 포커스 모드(`focusMode`) | `App.tsx`, `index.css`, `e2e/full-features.spec.ts`, 호스트, `package.json`, README | 없음 |
+| 속성 패널(`FrontmatterPanel`, `showProperties`) | `FrontmatterPanel.tsx` 390줄, `App.tsx` 20곳, `e2e/full-features.spec.ts`의 속성 패턴, 호스트, `package.json`, README | frontmatter는 원문 그대로 보존한다. WYSIWYG에서는 보이지 않고 Raw 모드에서 고친다 |
+
+**남기는 것**: Raw 모드와 Git diff, 웹뷰 설정 모달, 테마 10종, PDF 내보내기, Mermaid, 목차, callout과 날짜 삽입.
+
+**설계**
+
+- 설정 키를 지울 때는 호스트의 `ALLOWED_CONFIG_KEYS`, `sendConfig`, 웹뷰 설정 모달의 해당 항목을 함께 지운다. 한쪽만 지우면 모달이 없는 키를 저장한다.
+- `autoFix`를 지우면 `generateMarkdownFromEditor`의 `skipAutoFix` 인수와 blur 저장 경로가 쓸모없어진다. blur 경로가 `sendNow`를 쓰는 P0 전송 규칙과 얽혀 있으므로, 지운 뒤 P0 E2E가 모두 통과하는지 본다.
+- 속성 패널을 지우면 `handleFmChange`, `fmData`, `fmCollapsed`와 YAML 편집 경로가 빠진다. `extractFrontmatter`로 떼었다가 저장할 때 다시 붙이는 경로는 남긴다.
+- 삭제할 E2E는 기능과 함께 지운다. 남는 기능의 E2E가 지운 기능에 기대고 있으면 그 테스트를 고친다.
+- 사용자 설정에 이미 저장된 `zenMarkdown.autoFix` 같은 값은 VS Code가 "알 수 없는 설정"으로 흐리게 보인다. 따로 옮기지 않는다.
+
+**완료 기준**
+
+- `grep -rn "autoFix\|typewriter\|focusMode\|FrontmatterPanel\|showProperties\|detectBrokenImageLinks" src webview/src package.json README.md`가 0건이다.
+- 웹뷰 `package.json`에 `prettier`가 없고, `npm run build`가 통과한다. 엔트리 크기를 제거 전 1,843KB와 나란히 적는다.
+- frontmatter가 있는 문서를 WYSIWYG로 열고 본문을 한 글자 고쳐 저장하면 frontmatter가 바이트 단위로 같다. 이것을 E2E로 둔다.
+- 남은 E2E, 단위 테스트, 루트 compile과 test가 모두 통과한다.
+- 기능 하나가 커밋 하나다. 여섯 커밋이 된다.
+
+**결과**
+
+2026-09-24에 code 세션이 여섯 커밋으로 지웠다. 커밋마다 루트 compile과 test, 웹뷰 build와 lint와 test, E2E 전체를 돌렸다.
+
+| 순서 | 커밋 | 제거 대상 | 엔트리 크기 |
+|---|---|---|---|
+| | | 제거 전 | 1,843,024B |
+| 1 | `47ac700` | 미디어 링크 검사 버튼 | 1,841,895B |
+| 2 | `650af54` | 새로고침 버튼 | 1,841,441B |
+| 3 | `c7358c5` | Prettier 자동 정리 | 1,840,092B |
+| 4 | `3a00302` | 타자기 스크롤 | 1,838,464B |
+| 5 | `21e3dd5` | 포커스 모드 | 1,837,315B |
+| 6 | `eea6237` | 속성 패널 | 1,722,159B |
+
+prettier는 원래 동적 import로 나뉜 청크였으므로 엔트리에는 거의 영향이 없다. 6번에서 크게 준 것은 웹뷰의 `yaml` 의존성이 함께 빠졌기 때문이다.
+
+설계에 더한 것 셋:
+
+- **본문 태그를 frontmatter에 반영하던 경로도 지웠다.** `buildDocumentText`는 본문의 `#태그`를 frontmatter의 `tags`에 더하면서 YAML을 다시 직렬화했다.
+  이 경로는 "frontmatter는 원문 그대로 보존한다"와 충돌하므로 `extractTagsFromMarkdown`과 함께 지웠다. 이제 저장할 때 연 때 떼어 둔 frontmatter 원문을 그대로 붙인다.
+- **`saveToHost`가 함께 빠졌다.** 속성 패널의 `handleFmChange`만 쓰던 함수라, P1-1에 남아 있던 `lastSentTextRef` 선대입 문제도 해소됐다.
+- **`autofix_failed` 진단 이벤트는 남겼다.** 더 기록하지 않지만, 예전 로그를 분류할 수 있게 `PROBLEM_EVENTS`와 MONITORING 표에 두고 표에 그 사실을 적었다.
+
+E2E: 속성 패널 여섯 패턴과 타자기 설정 테스트를 지웠다. 포커스 모드 토글을 쓰던 설정 모달 테스트는 Spell Check 토글로 바꿨다.
+`e2e/frontmatter.spec.ts`를 더했다. 주석, 따옴표 스타일, 빈 줄, 키 순서, 본문 `#태그`를 섞은 문서에서 세 가지를 확인한다.
+WYSIWYG에 frontmatter가 보이지 않는다. 본문을 한 글자 고쳐 저장해도 frontmatter가 바이트 단위로 같다.
+Raw 모드에서 고친 frontmatter도 WYSIWYG로 돌아와 본문을 고친 뒤 그대로다. E2E는 34건이 통과한다.
+
+완료 기준의 grep은 0건이고, 웹뷰 `package.json`에 `prettier`와 `yaml`이 없다.
+
+### WYSIWYG만 남기기 위한 조건
+
+최종 목표는 WYSIWYG 모드만 남기는 것이다. 사용자는 WYSIWYG가 충분히 믿을 만하다고 판단될 때까지 Raw 모드를 둔다고 정했다.
+Raw 모드가 필요한 이유로 사용자가 든 것은 둘이다. 서식과 보기가 일치하지 않는 경우, 그리고 원문을 복사할 때다.
+아래가 채워지면 Raw 모드 제거를 다시 묻는다. 정기 검토는 이 목록을 먼저 채우는 쪽으로 대상을 고른다.
+
+| 조건 | 지금 상태 | 근거 |
+|---|---|---|
+| 편집하지 않은 부분은 저장해도 원문 그대로다 | 채워지지 않았다. 400개 표본 가운데 329개가 달라진다 | 추가 검토 1. 2단계인 원문 조각 보존이 남았다 |
+| 인용 안의 여러 문단이 보존된다 | 채워지지 않았다 | 추가 검토 1의 1단계 결과에서 2단계로 넘어갔다 |
+| 문단 일부를 복사해도 마크다운 서식이 남는다 | 채워지지 않았다 | 아래 실측 |
+| 서식과 보기가 일치하지 않는 경우가 목록으로 정리돼 있다 | 목록은 생겼다. 해결하지 않았다 | 추가 검토 6. CommonMark와 GFM 명세 예제 673개로 만들었다 |
+
+**복사 실측 (2026-09-24, Playwright Chromium, 클립보드 읽기 권한)**: `# Title\n\nHello **bold** and [link](a.md).\n\n- item one\n- item two`를 열었다.
+
+| 선택 | 클립보드 |
+|---|---|
+| 첫 문단 한 줄 (Home, Shift+End) | `Hello bold and link.` 굵게 표시와 링크가 빠진다 |
+| 전체 (Ctrl+A) | `# Title\n\nHello **bold** and [link](a.md).\n\n- item one\n- item two\n` 마크다운이 남는다 |
+
+앱의 `onCopy`는 `editor.getSelection()`이 블록을 돌려줄 때만 마크다운을 쓰고, 한 블록 안의 부분 선택은 BlockNote 기본 복사에 맡긴다.
+합성 `copy` 이벤트로 보면 BlockNote가 먼저 동기로 `* item` 형태를 쓰고, 앱이 `await` 뒤에 `- item` 형태로 덮어쓴다.
+실제 클립보드에는 앱 쪽 결과가 남았지만, 비동기로 덮어쓰는 방식이라 브라우저나 타이밍에 따라 달라질 수 있다.
+측정 스크립트는 `C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\zz-copy`에 있다.
+
+### 추가 검토 6. 명세 예제로 찾은 서식과 보기 불일치
+
+2026-09-24에 "WYSIWYG만 남기기 위한 조건"의 넷째 행을 채우려고 더했다.
+사용자가 겪은 사례 대신, 다른 마크다운 에디터들이 호환성 기준으로 쓰는 CommonMark와 GFM 명세의 예제를 사례 모음으로 썼다.
+
+#### 문제
+
+WYSIWYG가 보여 주는 것은 BlockNote 모델이고, 저장되는 마크다운도 그 모델에서 나온다.
+그래서 원문과 저장 결과를 같은 기준 렌더러로 HTML로 만들어 견주면, HTML이 다른 예제가 곧 에디터가 원문의 뜻을 다르게 보여 주고 저장하는 사례다.
+이 판정은 "보기"를 직접 재지 않고 저장 결과로 대신한다. 직렬화에서만 생기는 결함도 같은 쪽으로 잡힌다는 한계가 있다.
+
+#### 근거
+
+2026-09-24에 BlockNote 0.54.2(기본 스키마)와 앱의 변환 체인으로 측정했다.
+
+- 예제: CommonMark 명세 0.31.2(npm `commonmark-spec`)의 652개와 `github/cmark-gfm`의 `test/spec.txt`에서 뽑은 GFM 확장 21개(표 8, 취소선 2, 자동 링크 11)
+- 기준 렌더러: CommonMark 예제는 `commonmark` 0.31.2, GFM 예제는 `markdown-it`(`html`, `linkify` 켬)
+- 앱은 줄바꿈을 일부러 강제 줄바꿈으로 바꾸므로 `<br />`과 줄바꿈은 같게 보고 견줬다
+
+| 결과 | 예제 수 |
+|---|---|
+| 원문과 같음 | 248 |
+| 표기만 바뀜 (HTML 같음) | 123 |
+| 뜻이 바뀜 (HTML 다름) | 302 |
+| 변환 실패 | 0 |
+
+명세 예제에는 실제 문서에서 거의 쓰지 않는 경계 사례가 많다. 그래서 302건을 모두 고칠 대상으로 보지 않는다.
+실제 문서에서 흔히 쓰는 문법만 골라 아래 표로 정리했다. 번호는 CommonMark 명세의 예제 번호다.
+
+| 사례 | 입력 | 저장 결과 | 뜻이 어떻게 바뀌는가 |
+|---|---|---|---|
+| 꺾쇠로 감싼 링크 주소 | `[a](<my file.md>)` | 주소 앞에 폭 없는 공백(U+200B)이 끼어든다 | 링크가 깨진다. **앱의 `protectHtml`이 `<my file.md>`를 HTML 태그로 보고 보호 표식을 넣는 것이 원인이다.** `toEditorMarkdown`만 따로 돌려 확인했다. 이름에 공백이 있는 파일을 링크하는 표준 표기다 |
+| 백슬래시 이스케이프 (14) | `\*not emphasized*`, `\[not a link](/foo)`, `1\. not a list` | `*not emphasized*`, `[not a link](/foo)`, `1. not a list` | 글자 그대로 보여야 할 것이 강조, 링크, 목록이 된다 |
+| 목록 항목의 둘째 문단 (108) | `  - foo\n\n    bar` | `- foo\n\nbar` | `bar`가 목록 밖으로 빠진다 |
+| 들여쓴 코드 블록 (107) | 네 칸 들여쓴 두 줄 | 들여쓰기가 빠진 문단 | 코드가 문단이 된다 |
+| 표 정렬 (GFM) | `:-: \| ---:` 구분 행 | `---------- \| ----------` | 가운데와 오른쪽 정렬이 사라진다 |
+| 링크와 이미지 제목 (482, 572) | `[link](/uri "title")` | `[link](/uri)` | 제목 속성이 사라진다 |
+| 인용 안의 헤딩 (228) | `> # Foo\n> bar` | `> Foobar\\` | 헤딩이 사라지고 다음 줄과 한 단어로 붙는다 |
+| 숫자와 점으로 시작하는 둘째 줄 (304) | `...is\n14.  The number...` | `...is\n\n14. The number...` | 문단의 둘째 줄이 번호 목록이 된다. 날짜처럼 `2026.`으로 시작하는 줄에서 날 수 있다 |
+| 텍스트가 빈 링크 (484) | `[](./target.md)` | 폭 없는 공백 하나 | 링크가 사라진다 |
+
+**다른 에디터 사례**: 같은 엔진을 쓰는 BlockNote 저장소에서 `markdown`으로 이슈를 찾았다(2026-09-24).
+지금 열려 있는 것 가운데 이 표와 이어지는 것은 #3114 "Markdown round trip turns URL links into plain text (no autolink parsing since 0.51)"와
+#3035 "Add a configurable Markdown link serialization policy"다. 둘 다 링크 표기 문제다.
+
+측정 스크립트와 예제 파일, 뜻이 바뀐 302건의 입출력은
+`C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\spec`에 있다.
+`zz-spec.mts`는 webview 폴더에 복사해서 `npx tsx`로 돌리고, 결과는 같은 폴더의 `samples.json`에 쓴다.
+
+#### 설계
+
+1. **측정을 회귀 테스트로 둔다.** 명세 예제 파일을 `webview/test-fixtures/`에 넣고 `test-spec.mts`로 돌린다.
+   "뜻이 바뀜" 건수가 기준선 302보다 늘면 실패하게 한다. 고칠 때마다 기준선을 낮춘다.
+   위 표의 아홉 사례는 따로 이름을 붙여 하나씩 통과 여부를 본다.
+   두 명세는 CC BY-SA 4.0이다. 저장소에 넣으려면 출처와 라이선스를 적은 파일을 같은 폴더에 둔다.
+   저장소에 넣지 않고 테스트할 때 `commonmark-spec`을 devDependency로 받는 방법도 있다. 리뷰할 때 고른다.
+2. **앱 결함부터 고친다.** 꺾쇠 링크 주소는 `protectHtml`이 링크 목적지 안의 `<...>`를 건너뛰게 하면 된다.
+3. **나머지는 원인이 어느 층인지 먼저 가른다.** 앱의 전처리와 후처리, BlockNote 파서, BlockNote 직렬화기 가운데 어디서 생기는지 본다.
+   BlockNote 모델에 담을 자리가 없는 정보(표 정렬, 링크 제목)는 추가 검토 1의 2단계인 원문 조각 보존으로만 지킬 수 있다.
+   그런 사례는 이 항목에서 고치지 않고 2단계의 완료 기준으로 넘긴다.
+
+#### 완료 기준
+
+- `npm test`에 명세 회귀 테스트가 들어가고, "뜻이 바뀜"이 302 이하에서 통과한다.
+- 꺾쇠 링크 주소 사례가 원문과 같게 저장된다.
+- 표의 나머지 여덟 사례마다 "고침", "2단계로 넘김", "BlockNote 한계" 가운데 하나와 근거를 이 절에 적는다.
+- 고친 뒤의 건수를 기준선 302와 나란히 적는다.
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -657,7 +817,7 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 2 | P0 충돌 막대 (모드 전환과 blur 자동 포맷의 전송 경로 포함) | `fix:` |
 | 3 | 추가 검토 1의 1단계: 뜻이 바뀌는 손실 | `fix:` |
 | 4 | P0 차이 보기 오버레이 | `feat:` |
-| 5 | P1-1 `saveToHost` 정리 | `refactor:` |
+| 5 | P1-1 `saveToHost` 정리 (개편 1의 6번에서 함수가 빠져 해소됨) | |
 | 6 | P2 문서와 이스케이프 | `docs:`, `fix:` |
 | 7 | P1-3 호스트 테스트 | `test:` |
 | 8 | P1-2 App.tsx 분리 네 단계 | `refactor:` 네 개 |
@@ -667,6 +827,8 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 12 | 추가 검토 3: BlockNote 0.54.2로 올리기 (11번 다음에 처리함) | `perf:` |
 | 13 | 추가 검토 4: 진단 필드를 호스트에서 거르기 (12번 다음에 처리함) | `fix:` |
 | 14 | 추가 검토 5: 지연 로딩 언어 하이라이트 (13번 다음에 처리함) | `fix:` |
+| 15 | 개편 1: 과한 기능 여섯 제거 (완료) | 기능마다 `refactor:` 하나 |
+| 16 | 추가 검토 6: 명세 회귀 테스트와 꺾쇠 링크 수정, 나머지 여덟 사례 분류 | `test:`, `fix:` |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
