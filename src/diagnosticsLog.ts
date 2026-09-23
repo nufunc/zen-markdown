@@ -55,7 +55,8 @@ export class DiagnosticsLog {
             }
             if (this.todayBytes > MAX_BYTES_PER_DAY) return;
 
-            const line = JSON.stringify({ ts: now.toISOString(), ...event }) + '\n';
+            // ts는 기록 시각이다. 이벤트가 같은 이름의 필드를 가져와도 덮어쓰지 못하게 뒤에 둔다.
+            const line = JSON.stringify({ ...event, ts: now.toISOString() }) + '\n';
             this.todayBytes += line.length;
             this.queue.push(line);
             // 이벤트마다 디스크를 때리지 않도록 모아서 쓴다

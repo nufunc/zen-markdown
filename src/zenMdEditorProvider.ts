@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { execFile } from 'child_process';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
+import { sanitizeDiag } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -230,10 +231,10 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     return;
                 }
                 case 'diag': {
-                    // 웹뷰가 보낸 진단 이벤트. 내용은 실리지 않고 코드와 수치만 온다.
-                    const { type: _t, ev, ...rest } = e as Record<string, unknown>;
-                    if (typeof ev === 'string') {
-                        this.log.record({ ev, doc, ...rest });
+                    // 웹뷰가 보낸 진단 이벤트. 신뢰 경계이므로 코드와 수치, 허용한 값만 남기고 doc은 호스트 값을 쓴다.
+                    const clean = sanitizeDiag(e as Record<string, unknown>);
+                    if (clean) {
+                        this.log.record({ ...clean.fields, ev: clean.ev, doc });
                     }
                     return;
                 }

@@ -25,3 +25,4 @@ release_notes.txt
 *.vsix
 .agents/**
 
+out/**/*.test.js

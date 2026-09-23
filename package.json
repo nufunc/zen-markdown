@@ -212,7 +212,8 @@
     "vscode:prepublish": "npm run build:webview && npm run compile",
     "compile": "node -e \"fs.rmSync('out',{recursive:true,force:true})\" && tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "build:webview": "cd webview && npm run build"
+    "build:webview": "cd webview && npm run build",
+    "test": "npm run compile && node --test out/hostLogic.test.js"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
