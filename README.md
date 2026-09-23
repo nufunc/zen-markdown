@@ -45,7 +45,6 @@ You can customize the editor in VS Code Settings (`Ctrl+,`):
 | `zenMarkdown.showWordCount` | `true` | Show word and character count badge in the header bar. |
 | `zenMarkdown.showFormattingToolbar` | `true` | Show the rich formatting toolbar in WYSIWYG mode. |
 | `zenMarkdown.showToc` | `false` | Show the Table of Contents by default. |
-| `zenMarkdown.showProperties` | `true` | Show the Document Properties (frontmatter) panel by default. |
 
 ## 🛠️ Building from Source
 

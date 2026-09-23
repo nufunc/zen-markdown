@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
@@ -11,7 +11,6 @@ import { useDocumentSync, normalizeMd } from './useDocumentSync';
 import { compareRoundtrip } from './roundtripCheck';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
-import { FrontmatterPanel } from './FrontmatterPanel';
 import { CodeBlockMenu } from './CodeBlockMenu';
 import { createSearchPlugin, searchPluginKey, SearchHighlightExtension } from './searchPlugin';
 
@@ -96,9 +95,8 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
-import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
 import CodeMirror from '@uiw/react-codemirror';
@@ -177,7 +175,6 @@ function App() {
     fontSize: number,
     autoRefresh: boolean,
     showToc: boolean,
-    showProperties: boolean,
     isReadOnly: boolean,
     defaultCodeLanguage: string,
     spellCheck: boolean,
@@ -190,7 +187,6 @@ function App() {
     fontSize: 16,
     autoRefresh: true,
     showToc: false,
-    showProperties: true,
     isReadOnly: false,
     defaultCodeLanguage: 'text',
     spellCheck: false,
@@ -216,8 +212,6 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [parsedFrontmatter, setParsedFrontmatter] = useState<string>("");
-  const [fmData, setFmData] = useState<Record<string, any> | null>(null);
-  const [fmCollapsed, setFmCollapsed] = useState(false);
   const {
     showSearchReplace, setShowSearchReplace,
     isReplaceOpen, setIsReplaceOpen,
@@ -242,7 +236,6 @@ function App() {
   ], [config.isReadOnly]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
-  const showProperties = config.showProperties;
   
   const settingsRef = useRef<HTMLDivElement>(null);
   const hasEdited = useRef(false);
@@ -264,8 +257,6 @@ function App() {
     isReadOnly: () => configRef.current.isReadOnly,
   });
   const wikilinkNamesRef = useRef<Set<string>>(new Set());
-  // 프론트매터 YAML 파싱 실패 여부 — 실패한 프론트매터에는 쓰기를 하지 않는다
-  const fmParseFailedRef = useRef(false);
   const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -307,7 +298,6 @@ function App() {
             fontSize: message.fontSize,
             autoRefresh: message.autoRefresh,
             showToc: message.showToc,
-            showProperties: message.showProperties,
             isReadOnly: message.isReadOnly,
             defaultCodeLanguage: message.defaultCodeLanguage || 'text',
             spellCheck: message.spellCheck || false,
@@ -579,13 +569,6 @@ function App() {
         lastInitializedTextRef.current = documentText;
         const { frontmatter, content } = extractFrontmatter(documentText);
         setParsedFrontmatter(frontmatter);
-        try {
-          fmParseFailedRef.current = false;
-          if (frontmatter) setFmData(YAML.parse(frontmatter));
-        } catch {
-          fmParseFailedRef.current = !!frontmatter;
-          setFmData(null);
-        }
         wikilinkNamesRef.current = new Set();
         const safeContent = toEditorMarkdown(content, {
           docBaseUri: docBaseUriRef.current,
@@ -795,41 +778,13 @@ function App() {
     extractHeadings(editor);
     const markdown = await generateMarkdownFromEditor();
 
-    // 본문의 #태그를 프론트매터 tags에 반영.
-    // YAML 파싱에 실패한 프론트매터는 건드리지 않는다 (전체 재직렬화가 주석과 미지의 키를 날림).
-    let updatedFmString = parsedFrontmatter;
-    const extractedTags = extractTagsFromMarkdown(markdown);
-    if (extractedTags.length > 0 && parsedFrontmatter && !fmParseFailedRef.current) {
-      const currentTags: string[] = Array.isArray(fmData?.tags) ? fmData.tags : [];
-      const newTags = Array.from(new Set([...currentTags, ...extractedTags]));
-      if (newTags.length !== currentTags.length) {
-        try {
-          // Document API로 tags 키만 갱신 — 주석·빈 줄·인용 스타일 보존
-          const doc = YAML.parseDocument(parsedFrontmatter);
-          doc.set('tags', newTags);
-          updatedFmString = doc.toString().trim();
-          setParsedFrontmatter(updatedFmString);
-          setFmData({ ...(fmData || {}), tags: newTags });
-        } catch {
-          updatedFmString = parsedFrontmatter;
-        }
-      }
-    }
-
-    return updatedFmString ? `---
-${updatedFmString}
+    // frontmatter는 연 때 떼어 둔 원문 그대로 다시 붙인다. 편집은 Raw 모드에서 한다.
+    return parsedFrontmatter ? `---
+${parsedFrontmatter}
 ---
 ${markdown}` : markdown;
   };
   buildDocumentTextRef.current = buildDocumentText;
-
-  const saveToHost = (fmString: string, mdString: string) => {
-    const fullText = fmString ? `---\n${fmString}\n---\n${mdString}` : mdString;
-    lastSentTextRef.current = fullText;
-    lastInitializedTextRef.current = fullText;
-    setDocumentText(fullText);
-    postChange(fullText);
-  };
 
   const generateMarkdownFromEditor = async () => {
     if (!editor) return "";
@@ -870,38 +825,6 @@ ${markdown}` : markdown;
   };
   handleWysiwygChangeRef.current = handleWysiwygChange;
 
-  const handleFmChange = async (key: string, value: any) => {
-    if (!editor) return;
-    const currentData = fmData || {};
-    const newData = { ...currentData };
-    if (value === undefined) {
-      delete newData[key];
-    } else {
-      newData[key] = value;
-    }
-    setFmData(newData);
-    // Document API로 해당 키만 수정/삭제해 주석·빈 줄·인용 스타일을 보존
-    // (전체 재직렬화는 frontmatter의 주석을 모두 날림)
-    let newFmString: string;
-    try {
-      if (parsedFrontmatter) {
-        const doc = YAML.parseDocument(parsedFrontmatter);
-        if (value === undefined) {
-          doc.delete(key);
-        } else {
-          doc.set(key, value);
-        }
-        newFmString = doc.toString().trim();
-      } else {
-        newFmString = YAML.stringify(newData).trim();
-      }
-    } catch {
-      newFmString = YAML.stringify(newData).trim();
-    }
-    setParsedFrontmatter(newFmString);
-    const md = await generateMarkdownFromEditor();
-    saveToHost(newFmString, md);
-  };
 
 
   useEffect(() => {
@@ -1178,7 +1101,7 @@ ${markdown}` : markdown;
     return <div>Loading document...</div>;
   }
 
-  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder, accentColor } = themePalette;
+  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder } = themePalette;
 
 
   return (
@@ -1497,16 +1420,6 @@ ${markdown}` : markdown;
             <Printer size={13} style={{ marginRight: '3px' }} />
             <span>PDF</span>
           </button>
-          {parsedFrontmatter && (
-            <button 
-              onClick={() => updateConfig('showProperties', !showProperties)} 
-              className={`tb-btn action-icon-btn ${showProperties ? 'tb-btn-active' : ''}`}
-              data-tooltip="Toggle Properties"
-              data-tooltip-pos="right"
-            >
-              <Info size={14} />
-            </button>
-          )}
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -1668,17 +1581,6 @@ ${markdown}` : markdown;
                 </label>
                 <label className="toggle-switch">
                   <input type="checkbox" checked={config.showToc} onChange={(e) => updateConfig('showToc', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <FileText size={14} opacity={0.7} />
-                  <span>Show Document Properties</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.showProperties} onChange={(e) => updateConfig('showProperties', e.target.checked)} />
                   <span className="toggle-slider"></span>
                 </label>
               </div>
@@ -2011,18 +1913,6 @@ ${markdown}` : markdown;
               margin: '0 auto',
               width: '100%'
             }}>
-              {showProperties ? (
-                <FrontmatterPanel
-                  parsedFrontmatter={parsedFrontmatter}
-                  fmData={fmData || {}}
-                  collapsed={fmCollapsed}
-                  onToggleCollapsed={() => setFmCollapsed(!fmCollapsed)}
-                  isDark={isDark}
-                  textColor={textColor}
-                  accentColor={accentColor}
-                  onChange={handleFmChange}
-                />
-              ) : null}
               {editor && <div onCopy={async (e) => {
                 const selection = editor.getSelection();
                 if (selection && selection.blocks && selection.blocks.length > 0) {

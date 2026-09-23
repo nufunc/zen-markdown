@@ -348,20 +348,6 @@ export function parseTableFromClipboardText(text: string): string | null {
 
 // --- Phase 2: Obsidian Integration Helpers ---
 
-// 본문 내 #태그를 추출하여 중복 없는 배열로 반환
-export function extractTagsFromMarkdown(md: string): string[] {
-  const tags = new Set<string>();
-  mapOutsideCodeFences(md, part => {
-    // 공백 문자나 문장 시작 뒤에 오는 #태그 추출
-    const matches = part.matchAll(/(?:^|\s)#([A-Za-z0-9가-힣_-]+)/g);
-    for (const match of matches) {
-      tags.add(match[1]);
-    }
-    return part;
-  });
-  return Array.from(tags);
-}
-
 // [[문서명]] -> [문서명](문서명.md) 로 변환하여 에디터 렌더링 지원.
 // 변환한 문서명을 seen에 기록해 두면 저장 시 그것만 되돌린다 (사용자가 직접 쓴
 // [X](X.md) 형태의 일반 링크가 위키링크로 바뀌는 것을 막음).

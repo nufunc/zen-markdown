@@ -505,53 +505,6 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             color: var(--text-color);
           }
 
-          /* Frontmatter Properties — Notion식 hover-reveal 편집 */
-          .fm-value {
-            border-radius: 4px;
-            transition: background-color 0.12s ease, box-shadow 0.12s ease;
-          }
-          .fm-row:hover .fm-value:not(:focus-within) {
-            background-color: color-mix(in srgb, var(--text-color) 5%, transparent);
-          }
-          .fm-value:focus-within {
-            box-shadow: inset 0 0 0 1px ${accentColor};
-          }
-          .fm-input {
-            background: transparent;
-            border: none;
-            outline: none;
-            color: inherit;
-            font-family: inherit;
-            font-size: 12px;
-            padding: 4px 8px;
-            width: 100%;
-            box-sizing: border-box;
-            border-radius: 4px;
-          }
-          .fm-chip-x {
-            opacity: 0;
-            transition: opacity 0.12s ease;
-          }
-          .fm-chip:hover .fm-chip-x { opacity: 0.65; }
-          .fm-chip-x:hover { opacity: 1 !important; }
-          /* 날짜 입력: 전체 폭 대신 내용 폭으로 줄여 캘린더 버튼이 날짜 바로 옆에 오게 하고,
-             간격을 띄운 뒤 호버 시 둥근 하이라이트로 반응 */
-          .fm-input[type="date"] {
-            width: auto;
-          }
-          .fm-input[type="date"]::-webkit-calendar-picker-indicator {
-            margin-left: 14px;
-            padding: 3px;
-            border-radius: 4px;
-            cursor: pointer;
-            opacity: 0.45;
-            transition: opacity 0.12s ease, background-color 0.12s ease;
-          }
-          .fm-input[type="date"]::-webkit-calendar-picker-indicator:hover {
-            opacity: 0.9;
-            background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
-          }
-
           /* Rich Formatting Toolbar Buttons (Orca Style) */
           .tb-btn {
             display: inline-flex;

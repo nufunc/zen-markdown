@@ -33,20 +33,11 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     await page.goto('/');
     await page.evaluate((text) => {
       window.postMessage({ type: 'originalContent', content: '' }, '*');
-      window.postMessage({ type: 'config', showProperties: true, showWordCount: true }, '*');
+      window.postMessage({ type: 'config', showWordCount: true }, '*');
       window.postMessage({ type: 'update', text }, '*');
     }, DEMO_DOC);
 
     await page.waitForSelector('.bn-editor');
-
-    // Ensure Properties panel is expanded if hidden
-    const fmRow = page.locator('.fm-row').first();
-    if (!(await fmRow.isVisible())) {
-      const propBtn = page.locator('button[data-tooltip="Toggle Properties"]');
-      if (await propBtn.isVisible()) {
-        await propBtn.click();
-      }
-    }
   });
 
   /** PATTERN A: View Mode Switching & Editor State Synchronization */
@@ -77,94 +68,6 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
 
     const initialWordsText = await wordsBadge.textContent();
     expect(initialWordsText).toMatch(/\d+\s*words/);
-  });
-
-  /** PATTERN C: Fixed Property Key Ordering Strict Invariance */
-  test('Pattern C: Strict Fixed Key Ordering (title -> date -> tags -> author -> status)', async ({ page }) => {
-    const propertyRows = page.locator('.fm-row');
-    const expectedOrder = ['title', 'date', 'tags', 'author', 'status'];
-
-    const count = await propertyRows.count();
-    expect(count).toBeGreaterThanOrEqual(5);
-
-    for (let i = 0; i < expectedOrder.length; i++) {
-      const rowKeyText = await propertyRows.nth(i).locator('span').first().textContent();
-      expect(rowKeyText?.trim()).toBe(expectedOrder[i]);
-    }
-  });
-
-  /** PATTERN D: Keyboard-First Tag Editing (Enter, Comma, Backspace, & Chip Removal) */
-  test('Pattern D: Keyboard Tag Creation, Comma Splitting, & Backspace Deletion', async ({ page }) => {
-    const tagRow = page.locator('.fm-row', { hasText: 'tags' });
-    const tagInput = tagRow.locator('input[type="text"]');
-    await tagInput.focus();
-
-    // Add tag 'release-v0.5' via Enter
-    await tagInput.fill('release-v0.5');
-    await page.keyboard.press('Enter');
-
-    // Add tag 'react-editor' via Comma keypress
-    await tagInput.fill('react-editor');
-    await page.keyboard.press(',');
-
-    const tagChips = tagRow.locator('.fm-chip');
-    await expect(tagChips).toHaveCount(2);
-    await expect(tagChips.nth(0)).toContainText('release-v0.5');
-    await expect(tagChips.nth(1)).toContainText('react-editor');
-
-    // Remove latest tag using Backspace on empty input
-    await tagInput.focus();
-    await page.keyboard.press('Backspace');
-    await expect(tagChips).toHaveCount(1);
-    await expect(tagChips.nth(0)).toContainText('release-v0.5');
-
-    // Remove remaining tag using Chip X button
-    const chipDeleteBtn = tagChips.first().locator('.fm-chip-x');
-    await chipDeleteBtn.click();
-    await expect(tagChips).toHaveCount(0);
-  });
-
-  /** PATTERN E: Custom Property Combo (Add -> Input Text -> Delete) */
-  test('Pattern E: Custom Property Addition and Full Removal', async ({ page }) => {
-    const addPropBtn = page.locator('button', { hasText: 'Add Property' });
-    await addPropBtn.click();
-
-    const inlineInput = page.locator('input[placeholder*="Property name"]');
-    await expect(inlineInput).toBeVisible();
-    await inlineInput.fill('version_tag');
-    await page.keyboard.press('Enter');
-
-    const customRow = page.locator('.fm-row', { hasText: 'version_tag' });
-    await expect(customRow).toBeVisible();
-
-    const customInput = customRow.locator('input[type="text"]');
-    await customInput.fill('v0.5.0-release');
-    await expect(customInput).toHaveValue('v0.5.0-release');
-
-    // Delete custom property using row X button
-    await customRow.hover();
-    const deleteBtn = customRow.locator('.fm-prop-del-btn');
-    await deleteBtn.click();
-
-    await expect(customRow).not.toBeVisible();
-  });
-
-  /** PATTERN F: Fixed Property X Reset vs Preservation */
-  test('Pattern F: Fixed Property Value Reset without Removing Fixed Row', async ({ page }) => {
-    const authorRow = page.locator('.fm-row', { hasText: 'author' });
-    const authorInput = authorRow.locator('input[type="text"]');
-
-    await authorInput.fill('Antigravity Deepmind');
-    await expect(authorInput).toHaveValue('Antigravity Deepmind');
-
-    // Click X button on fixed author property
-    await authorRow.hover();
-    const deleteBtn = authorRow.locator('.fm-prop-del-btn');
-    await deleteBtn.click();
-
-    // Author row must remain visible at 4th position, value cleared
-    await expect(authorRow).toBeVisible();
-    await expect(authorInput).toHaveValue('');
   });
 
   /** PATTERN G: Glassmorphism Settings Modal Interaction */
@@ -203,22 +106,6 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
 
     const headingBlock = editorElement.locator('h1', { hasText: 'Enhanced Pattern Heading' });
     await expect(headingBlock).toBeVisible();
-  });
-
-  /** PATTERN I: Frontmatter to RAW Mode Bilateral Synchronization */
-  test('Pattern I: Frontmatter Edits Live Synchronization to RAW Markdown Text', async ({ page }) => {
-    const titleRow = page.locator('.fm-row', { hasText: 'title' });
-    const titleInput = titleRow.locator('input[type="text"]');
-    await titleInput.fill('Synchronized Frontmatter Test');
-
-    // Switch to Raw mode and check YAML header string
-    const segmentedRaw = page.locator('.segmented-btn', { hasText: 'Raw' });
-    await segmentedRaw.click();
-
-    const codeMirrorContent = page.locator('.cm-content');
-    await expect(codeMirrorContent).toBeVisible();
-    const rawText = await codeMirrorContent.textContent();
-    expect(rawText).toContain('title: Synchronized Frontmatter Test');
   });
 
   /** PATTERN J: Theme Switching & High-Contrast Theme Verification */
@@ -263,20 +150,6 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     // Trigger Ctrl+Y
     await page.keyboard.press('Control+y');
     await page.waitForTimeout(200);
-  });
-
-  /** PATTERN M: Collapse & Expand Frontmatter Properties Header */
-  test('Pattern M: Properties Header Collapse and Expand Toggle', async ({ page }) => {
-    const propsTitle = page.locator('span', { hasText: 'Properties' }).first();
-    await propsTitle.click();
-
-    // After collapsing, property rows should be hidden
-    const propertyRows = page.locator('.fm-row');
-    await expect(propertyRows.first()).not.toBeVisible();
-
-    // Expand properties again
-    await propsTitle.click();
-    await expect(propertyRows.first()).toBeVisible();
   });
 
   /** PATTERN N: Settings Save Button Explicit Batch Persistence */

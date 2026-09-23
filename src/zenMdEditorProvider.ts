@@ -12,7 +12,6 @@ const ALLOWED_CONFIG_KEYS = [
     'fontSize',
     'autoRefresh',
     'showToc',
-    'showProperties',
     'defaultCodeLanguage',
     'spellCheck',
     'contentWidth',
@@ -81,7 +80,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const fontSize = config.get<number>('fontSize') || 16;
             const autoRefresh = config.get<boolean>('autoRefresh') ?? true;
             const showToc = config.get<boolean>('showToc') ?? false;
-            const showProperties = config.get<boolean>('showProperties') ?? true;
             const defaultCodeLanguage = config.get<string>('defaultCodeLanguage') || 'text';
             const spellCheck = config.get<boolean>('spellCheck') ?? false;
             const contentWidth = config.get<string>('contentWidth') || 'standard';
@@ -100,7 +98,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 fontSize,
                 autoRefresh,
                 showToc,
-                showProperties,
                 spellCheck,
                 contentWidth,
                 defaultMode,

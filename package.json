@@ -132,11 +132,6 @@
           "default": false,
           "description": "Show Table of Contents by default."
         },
-        "zenMarkdown.showProperties": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show Document Properties (Frontmatter) by default."
-        },
         "zenMarkdown.defaultCodeLanguage": {
           "type": "string",
           "default": "text",
