@@ -309,12 +309,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                         }
                     })();
                     return;
-                case 'refresh':
-                    webviewPanel.webview.postMessage({
-                        type: 'external_update',
-                        text: document.getText(),
-                    });
-                    return;
                 case 'undo':
                     vscode.commands.executeCommand('undo');
                     return;

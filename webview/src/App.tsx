@@ -96,7 +96,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -1644,14 +1644,6 @@ ${markdown}` : markdown;
               <Info size={14} />
             </button>
           )}
-          <button 
-            onClick={() => vscode.postMessage({ type: 'refresh' })}
-            className="tb-btn action-icon-btn"
-            data-tooltip="Refresh Editor"
-            data-tooltip-pos="right"
-          >
-            <RefreshCw size={14} />
-          </button>
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
