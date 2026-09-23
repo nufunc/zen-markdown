@@ -377,6 +377,177 @@ Raw 모드에서만 쓰는 CodeMirror 언어 패키지들이다. 잰 결과를 �
 
 배포 번들(`dist/assets/index-*.js`)에는 수정본의 문자열만 있고 원본의 문자열은 없다.
 
+BlockNote를 올릴 때마다 `perf-codeblocks.spec.ts`의 두 테스트(입력 성능, 하이라이트 갱신)를 돌려 alias 계약이 유지되는지 확인한다.
+alias를 바꾼 뒤에는 `node_modules/.vite`를 지우고 잰다. Vite가 미리 번들한 의존성을 다시 만들지 않아 바뀌기 전 플러그인으로 재는 일이 있었다.
+
+## 추가 검토 3. 큰 문서를 여는 시간이 블록 수의 제곱으로 는다
+
+2026-09-23 세 번째 정기 검토에서 더했다.
+
+### 문제
+
+큰 문서는 여는 데 몇 초씩 걸리고, 블록 수가 두 배가 되면 여는 시간은 두 배보다 더 늘어난다.
+원인은 `@blocknote/core` 0.51.4의 공통 node view 생성 코드다. 에디터 화면을 처음 그릴 때 블록마다 node view를 만든다.
+그때마다 블록 ID로 `editor.getBlock(id)`를 부르고, `getBlock`은 문서 전체를 `descendants`로 처음부터 훑어 그 ID를 찾는다.
+블록이 N개면 이 탐색이 N번 돌아 전체 비용이 N²에 비례한다.
+
+### 근거
+
+모두 2026-09-23에 Playwright(Chromium)로 dev 서버에 대고 쟀다. 문서는 합성했다.
+
+**블록 수별 여는 시간 (헤딩과 문단만)**
+
+| 블록 수 | 줄 수 | 여는 시간 | 앞 행 대비 |
+|---|---|---|---|
+| 500 | 1,001 | 311ms | |
+| 1,000 | 2,001 | 486ms | 1.6배 |
+| 2,000 | 4,001 | 1,059ms | 2.2배 |
+| 4,000 | 8,001 | 2,674ms | 2.5배 |
+
+블록 수가 두 배가 될 때 배율이 1.6배에서 2.5배로 커진다. 블록 수에 비례하는 비용 위에 제곱으로 느는 비용이 얹혀 있다.
+
+**CPU 프로파일 (헤딩, 문단, 목록, 표 1,000 단위, 12,001줄, 여는 시간 8.1초)**: 모든 프레임의 포함 시간을 모았다.
+`createView`(prosemirror-view) 아래의 호출 사슬에서 node view 생성 → `transact` → `getBlock` → `descendants` → `nodesBetween`이 4.5초였다.
+앱 소스(`src/`)가 차지한 몫은 `initEditor` 0.7초와 열자마자 도는 왕복 자가검증 0.3초였다.
+
+**최신판 확인**: npm에서 0.52.1, 0.53.0, 0.54.2, 0.55.0을 받아 같은 자리를 봤다. 네 버전 모두 `getBlock(id)`를 부르지 않는다.
+대신 `getPos()`로 얻은 위치의 노드를 바로 블록으로 바꾼다(`t.resolve(n).node()`). 0.52.0(2026-07-20)부터 고쳐진 것으로 보인다.
+0.52.0 자체는 받아 보지 않았다.
+
+### 설계
+
+`@blocknote/core`, `@blocknote/react`, `@blocknote/mantine`을 같은 버전으로 함께 올린다.
+0.55.0은 2026-09-22에 나와 하루밖에 지나지 않았으므로 0.54.2를 권한다. 리뷰할 때 정한다.
+
+1.0 이전이라 부 버전 사이에도 호환되지 않는 변경이 있을 수 있다. 아래가 영향을 받을 수 있는 자리다.
+
+- **왕복 변환**: `tryParseMarkdownToBlocks`와 `blocksToMarkdownLossy`의 출력이 바뀌면 `markdownTransforms.ts`의 전처리와 후처리가 어긋난다.
+  `npm test`와 추가 검토 1의 400개 표본 측정으로 확인한다.
+- **하이라이트 alias**: 0.54.2와 0.55.0 모두 `prosemirror-highlight ^0.15.3`에 의존하므로 `incrementalHighlightPlugin.ts`가 맞춰 둔 계약이 그대로다.
+  그래도 하이라이트 갱신 E2E와 `perf-codeblocks.spec.ts`를 돌려 확인한다.
+- **내부 API**: `App.tsx`가 `_tiptapEditor`, `clearUndoHistory`, 검색 플러그인 등록처럼 공개되지 않은 경로를 쓴다. 이름이 바뀌었는지 본다.
+- **커스텀 블록**: mermaid와 callout 블록의 `createReactBlockSpec` 계약을 본다.
+
+올려도 해결되지 않거나 올리는 비용이 크면, 0.51.4의 node view 생성 코드만 alias로 바꾸는 방법이 남는다. 추가 검토 2와 같은 방식이다.
+다만 BlockNote 본체 코드를 대체하는 것이라 유지 비용이 크므로 두 번째 안으로 둔다.
+
+### 완료 기준
+
+- 헤딩과 문단 4,000블록 문서를 여는 시간이 1,000블록의 5배 아래다. 기준선은 5.5배(2,674ms / 486ms)다.
+  배율로 판정하므로 기계 속도와 무관하다. 이 측정을 `e2e/`에 성능 테스트로 둔다.
+- 12,001줄 혼합 문서의 여는 시간을 수정 전 8.1초와 나란히 이 문서에 남긴다.
+- `npm test`, E2E 전체, 400개 표본 왕복 측정이 올리기 전과 같거나 낫다. 나빠진 항목이 있으면 커밋하기 전에 보고한다.
+- 측정 스크립트는 `C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\zz-open`에 있다.
+  `scale.spec.ts`는 블록 수별 여는 시간이고 `open.spec.ts`는 CPU 프로파일이다. webview 폴더에 복사한 뒤 `npx playwright test -c zz-open/pw.config.ts`로 돌린다.
+
+### 결과
+
+2026-09-24에 code 세션이 `@blocknote/core`, `@blocknote/react`, `@blocknote/mantine`을 0.54.2로 올렸다.
+
+**여는 시간**
+
+| 지표 | 0.51.4 | 0.54.2 |
+|---|---|---|
+| 헤딩과 문단 4,000블록 | 2,563~2,647ms | 1,329~1,337ms |
+| 4,000블록 ÷ 1,000블록 | 4.5~4.9배 | 2.7~3.3배 |
+| 2,000블록 → 4,000블록 | 2.5배 | 1.9배 |
+| 12,001줄 혼합 문서 | 8.1초 | 3.4~4.5초 |
+
+4,000블록 대 1,000블록 배율은 이 환경에서 0.51.4도 4.5~4.9배라, 원래 완료 기준인 5배로는 퇴행을 가르지 못한다.
+`e2e/perf-open.spec.ts`는 8,000블록 대 1,000블록 배율로 판정하고 기준을 9배로 두었다. 0.54.2에서 5.3~6.8배다.
+0.51.4는 두 배마다 2.5배로 느는 추세를 외삽하면 12배를 넘는다. 이 값은 직접 재지 않았다.
+
+**올리면서 고친 것 셋**
+
+- **별칭 언어 코드 블록에서 에디터 전체가 그려지지 않았다.** 0.54.2의 코드 블록은 `supportedLanguages`를 받으면 기본 언어 셀렉트를 만든다.
+  이때 블록 언어가 목록의 키가 아니면 예외를 던진다. ` ```js `처럼 별칭이나 목록에 없는 언어가 하나만 있어도 문서가 열리지 않는다.
+  셀렉트는 원래 CSS로 숨겨 왔고 언어 변경은 케밥 메뉴가 맡으므로 `createCodeBlockSpec`에 `supportedLanguages`를 넘기지 않는다.
+  별칭은 shiki가 직접 풀어서 `js`, `javascript`, `bash` 블록 모두 하이라이트된다.
+- **하이라이트 설정 자리가 바뀌었다.** `createCodeBlockSpec({ createHighlighter })`가 없어지고,
+  에디터의 `extensions`에 `SyntaxHighlightingExtension({ createHighlighter })`를 넣는다. 이 확장도 `prosemirror-highlight`에서
+  `createHighlightPlugin` 하나만 가져가므로 alias 계약은 그대로다.
+- **언어를 바꿔도 하이라이트가 남았다.** 0.54.2는 블록 속성을 `AttrStep`으로 바꾸는데 이 step은 위치 맵이 비어 있다.
+  `incrementalHighlightPlugin.ts`가 step 맵으로 바뀐 범위를 찾아서 언어 변경을 놓쳤다. 이제 이전 문서와 새 문서를
+  `findDiffStart`와 `findDiffEnd`로 직접 비교해 범위를 구한다.
+
+**확인한 것**
+
+- `npm test`, E2E 37건, 400개 표본 왕복 측정: 400개 표본은 0.51.4와 줄 단위까지 같다(달라진 파일 329, 변환 실패 0).
+- 공개되지 않은 내부 API(`_tiptapEditor`, undo 히스토리 비우기, 검색 플러그인 등록)와 mermaid, callout 블록: 타입 검사와 E2E가 통과했다.
+- `npm audit`: 18건(moderate 14, high 4)에서 5건(moderate 2, high 3)으로 줄었다. 남은 5건(dompurify, mermaid, nanoid, postcss, undici)은 올리기 전에도 있었다.
+
+**아직 처리하지 않은 것**: 지연 로딩 언어(rust, go 등)는 하이라이트되지 않는다. parser가 언어 이름 문자열로 `loadLanguage`를 부르는데,
+앱의 지연 로딩은 parser가 쓰지 않는 `codeToHtml`을 가로채 두었기 때문이다. 0.51.4에서도 같은 코드 경로였다.
+이것은 코드를 읽고 내린 판단이고 0.51.4에서 직접 돌려 보지는 않았다. 이번 항목에 넣지 않았고 언제 처리할지 정하지 않았다.
+
+## 추가 검토 4. 진단 로그의 "내용을 기록하지 않는다"는 약속을 코드가 강제하지 않는다
+
+2026-09-23 네 번째 정기 검토에서 더했다.
+
+### 문제
+
+`docs/MONITORING.md`와 `diagnosticsLog.ts`의 머리 주석은 "문서 내용은 어떤 경우에도 기록하지 않는다"고 약속한다.
+그러나 호스트의 `diag` 분기(`zenMdEditorProvider.ts`의 `case 'diag'`)는 웹뷰가 보낸 필드를 거르지 않고 `{ ev, doc, ...rest }`로 그대로 넘긴다.
+약속을 지키는 것은 웹뷰 호출 지점마다 코드와 수치만 보내는 관례뿐이다. 누가 `diag('x', { message: err.message })`를 한 줄만 더해도
+오류 메시지에 섞인 원고 조각이 로그 파일에 남는다.
+
+같은 줄에 문제가 둘 더 있다.
+
+- `...rest`가 `doc` 뒤에 펼쳐지므로 웹뷰가 보낸 `doc`이 호스트가 계산한 경로 해시를 덮어쓴다.
+- `DiagnosticsLog.record`도 `{ ts, ...event }` 순서라 이벤트의 `ts`가 기록 시각을 덮어쓴다. 집계 보고서는 `ts`로 일별, 주별, 월별 구간을 나눈다.
+
+### 근거
+
+**지금의 호출 지점**: 2026-09-23 HEAD 기준으로 웹뷰의 `diag` 호출은 13곳이다(`App.tsx` 9곳, `useDocumentSync.ts` 2곳, `useSearchReplace.ts` 1곳, 헬퍼 1곳).
+모두 이벤트 코드와 수치만 보내거나, `choice`처럼 값이 정해진 문자열(`'external' | 'mine'`)만 보낸다.
+**지금 내용이 새고 있지는 않다.** 이 항목은 앞으로 새는 것을 막는 것이다.
+
+**실측**: 컴파일된 `out/diagnosticsLog.js`를 `vscode` 모듈만 흉내 낸 채 실행했다. 호스트 `diag` 분기와 같은 식으로 아래 메시지를 넣었다.
+
+```json
+{"type":"diag","ev":"serialize_failed","message":"비밀 원고 첫 문단","doc":"forged","ts":"1999-01-01T00:00:00Z"}
+```
+
+로그 파일에 기록된 줄은 이것이다.
+
+```json
+{"ts":"1999-01-01T00:00:00Z","ev":"serialize_failed","doc":"forged","message":"비밀 원고 첫 문단"}
+```
+
+문자열이 그대로 남았고, `doc`과 `ts`는 웹뷰가 보낸 값이 이겼다. 실행 스크립트는
+`C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\diagtest\run.cjs`다.
+`node run.cjs <out/diagnosticsLog.js 절대 경로>`로 돌린다.
+
+### 설계
+
+웹뷰 메시지가 들어오는 신뢰 경계인 호스트에서 거른다.
+
+- `ev`는 `^[a-z_]{1,64}$`만 받는다.
+- 나머지 필드는 값이 유한한 숫자이거나 불리언인 것만 남긴다.
+- 문자열은 필드별 허용 목록에 있는 값만 남긴다. 지금 필요한 것은 `choice`의 `external`과 `mine`뿐이다.
+- `roundtrip_drift`의 `kinds`는 `DriftKind` 이름을 키로, 숫자를 값으로 하는 객체만 남긴다.
+- `doc`과 `ts`는 웹뷰가 보내도 버리고 호스트 값을 쓴다. `record` 안에서 `{ ...event, ts }` 순서로 바꾼다.
+- 걸러진 필드가 있으면 그 이름의 개수만 `dropped`로 남긴다. 이름과 값은 남기지 않는다.
+
+거르는 함수는 순수 함수로 두어 P1-3의 `src/hostLogic.ts`에 함께 넣고 같은 `node:test`로 검사한다.
+P1-3보다 먼저 하게 되면 이 함수가 그 파일의 첫 항목이 된다.
+
+### 완료 기준
+
+단위 테스트가 아래를 확인한다.
+
+| 입력 | 기대 |
+|---|---|
+| `message: "원고"` 같은 임의 문자열 필드 | 기록에 없고 `dropped: 1`이 있다 |
+| `doc: "forged"`, `ts: "1999-..."` | 호스트의 해시와 기록 시각이 남는다 |
+| `choice: "mine"` | 그대로 남는다 |
+| `choice: "원고"` | 버려진다 |
+| `kinds: { fence_lang: 2, 원고: 1 }` | `fence_lang`만 남는다 |
+| `ev: "a b"`, `ev`가 1,000자 | 기록하지 않는다 |
+| 지금의 13개 호출 지점이 보내는 모양 | 전과 같게 기록된다 |
+
+`docs/MONITORING.md`의 "무엇이 기록되는가"에 이 거름을 한 문단으로 적는다.
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -396,6 +567,8 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 9 | P1-5 번들 측정 | `docs:` |
 | 10 | P1-4 CI | `chore:` |
 | 11 | 추가 검토 2: 코드 블록 하이라이트 증분 갱신 (3번 다음에 처리함) | `perf:` |
+| 12 | 추가 검토 3: BlockNote 0.54.2로 올리기 (11번 다음에 처리함) | `perf:` |
+| 13 | 추가 검토 4: 진단 필드를 호스트에서 거르기 | `fix:` |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
