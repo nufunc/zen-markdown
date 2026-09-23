@@ -1,0 +1,86 @@
+[
+ {
+  "section": "GFM table",
+  "markdown": "| foo | bar |\n| --- | --- |\n| baz | bim |\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | defghi |\n:-: | -----------:\nbar | baz\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| f\\|oo  |\n| ------ |\n| b `\\|` az |\n| b **\\|** im |\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | def |\n| --- | --- |\n| bar | baz |\n> bar\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | def |\n| --- |\n| bar |\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | def |\n| --- | --- |\n| bar |\n| bar | baz | boo |\n"
+ },
+ {
+  "section": "GFM table",
+  "markdown": "| abc | def |\n| --- | --- |\n"
+ },
+ {
+  "section": "GFM strikethrough",
+  "markdown": "~~Hi~~ Hello, world!\n"
+ },
+ {
+  "section": "GFM strikethrough",
+  "markdown": "This ~~has a\n\nnew paragraph~~.\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "www.commonmark.org\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "Visit www.commonmark.org/help for more information.\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "Visit www.commonmark.org.\n\nVisit www.commonmark.org/a.b.\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "www.google.com/search?q=Markup+(business)\n\nwww.google.com/search?q=Markup+(business)))\n\n(www.google.com/search?q=Markup+(business))\n\n(www.google.com/search?q=Markup+(business)\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "www.google.com/search?q=(business))+ok\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "www.google.com/search?q=commonmark&hl=en\n\nwww.google.com/search?q=commonmark&hl;\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "www.commonmark.org/he<lp\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "http://commonmark.org\n\n(Visit https://encrypted.google.com/search?q=Markup+(business))\n\nAnonymous FTP is available at ftp://foo.bar.baz.\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "foo@bar.baz\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "hello@mail+xyz.example isn't valid, but hello+xyz@mail.example is.\n"
+ },
+ {
+  "section": "GFM autolink",
+  "markdown": "a.b-c_d@a.b\n\na.b-c_d@a.b.\n\na.b-c_d@a.b-\n\na.b-c_d@a.b_\n"
+ }
+]
