@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
+import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
@@ -96,7 +96,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, AlertTriangle, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, RefreshCw, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -1651,23 +1651,6 @@ ${markdown}` : markdown;
             data-tooltip-pos="right"
           >
             <RefreshCw size={14} />
-          </button>
-          <button 
-            onClick={() => {
-              if (typeof documentText === 'string') {
-                const broken = detectBrokenImageLinks(documentText);
-                if (broken.length === 0) {
-                  vscode.postMessage({ type: 'notify', message: 'Manual Validation Passed: All media relative paths are valid.' });
-                } else {
-                  vscode.postMessage({ type: 'notify', message: `Manual Validation Warning: Found ${broken.length} broken media link(s). (Line ${broken[0].line}: ${broken[0].url})` });
-                }
-              }
-            }}
-            className="tb-btn action-icon-btn"
-            data-tooltip="Validate Media Links"
-            data-tooltip-pos="right"
-          >
-            <AlertTriangle size={14} />
           </button>
           <div style={{ position: 'relative' }} ref={settingsRef}>
             <button 
