@@ -56,16 +56,15 @@ export function createHighlightPlugin({
     return { decorations: DecorationSet.create(doc, decorations), promises };
   };
 
-  /** 트랜잭션이 새 문서에서 건드린 범위들 */
-  const changedRanges = (tr: Transaction) => {
-    const ranges: [number, number][] = [];
-    tr.mapping.maps.forEach((map, i) => {
-      map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-        const rest = tr.mapping.slice(i + 1);
-        ranges.push([rest.map(newStart, -1), rest.map(newEnd, 1)]);
-      });
-    });
-    return ranges;
+  /** 트랜잭션이 새 문서에서 건드린 범위. step 맵이 아니라 두 문서를 직접 비교한다.
+   *  속성만 바꾸는 AttrStep(언어 변경)은 맵이 비어 있어 step 맵으로는 잡히지 않기 때문이다.
+   *  공유된 하위 트리는 동일성 비교로 건너뛰므로 비용은 바뀐 곳 크기에 비례한다. */
+  const changedRanges = (tr: Transaction): [number, number][] => {
+    const start = tr.before.content.findDiffStart(tr.doc.content);
+    if (start === null) return [];
+    const end = tr.before.content.findDiffEnd(tr.doc.content);
+    const b = end ? end.b : start;
+    return [[Math.min(start, b), Math.max(start, b)]];
   };
 
   const incremental = (tr: Transaction, prev: State): State => {

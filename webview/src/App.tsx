@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec } from '@blocknote/core';
+import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
-import { createShikiHighlighter, supportedLanguages } from './shikiHighlighter';
+import { createShikiHighlighter } from './shikiHighlighter';
 import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, detectBrokenImageLinks, parseTableFromClipboardText, extractTagsFromMarkdown, normalizeOrderedListNumbers, normalizeUnorderedListBullets, restoreHtml } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
@@ -23,8 +23,8 @@ const buildSchema = (defaultCodeLanguage: string) => BlockNoteSchema.create({
     codeBlock: createCodeBlockSpec({
       indentLineWithTab: true,
       defaultLanguage: defaultCodeLanguage || 'text',
-      supportedLanguages,
-      createHighlighter: createShikiHighlighter as any,
+      // supportedLanguages를 넘기지 않는다. 0.54의 기본 언어 셀렉트는 목록에 없는 언어(js 같은 별칭 포함)에서
+      // 예외를 던져 에디터 전체가 그려지지 않는다. 셀렉트는 CSS로 숨겨 왔고 언어 변경은 케밥 메뉴가 맡는다.
     }),
     mermaid: MermaidBlock(),
   },
@@ -674,6 +674,8 @@ function App() {
           const newEditor = BlockNoteEditor.create({ 
             schema: buildSchema(configRef.current.defaultCodeLanguage), 
             uploadFile,
+            // 0.54부터 코드 블록 하이라이트는 스키마가 아니라 에디터 확장으로 켠다
+            extensions: [SyntaxHighlightingExtension({ createHighlighter: createShikiHighlighter as any })],
             _tiptapOptions: {
               extensions: [SearchHighlightExtension],
             },

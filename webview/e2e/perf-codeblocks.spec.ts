@@ -57,9 +57,15 @@ test('코드 블록 안에 입력하면 하이라이트가 갱신되고, 언어�
 
   // 케밥 메뉴에서 언어를 Plain Text로 바꾸면 토큰 span이 사라지고, Python으로 바꾸면 다시 생긴다
   const setLanguage = async (name: string) => {
-    await code.hover();
-    // 버튼은 호버 중에만 보인다. 호버로 대상 블록을 잡은 뒤 click을 직접 보낸다
-    await page.locator('.bn-floating-menu-btn').dispatchEvent('click');
+    // 버튼은 호버 중에만 보인다. 블록 위에서 mousemove를 두 번 내 대상 블록을 잡은 뒤 click을 직접 보낸다.
+    // 부하가 걸리면 숨김 타이머와 경합하므로 메뉴가 열릴 때까지 다시 시도한다.
+    await expect(async () => {
+      const box = (await code.boundingBox())!;
+      await page.mouse.move(box.x + 5, box.y + 5);
+      await page.mouse.move(box.x + 10, box.y + 5);
+      await page.locator('.bn-floating-menu-btn').dispatchEvent('click');
+      await expect(page.locator('.cbm-panel')).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 10000 });
     await page.locator('.cbm-item.cbm-has-sub', { hasText: /^언어/ }).hover();
     await page.locator('.cbm-item.cbm-has-sub', { hasText: /^언어/ }).locator('.cbm-sub .cbm-item', { hasText: name }).click();
   };
