@@ -76,7 +76,7 @@ node tools/Get-ZenDiagnostics.mjs --dir <경로>    # 로그 위치 지정
 | `edit_failed` | O | 문서에 편집을 적용하지 못했다 |
 | `flush_timeout` | O | 저장 직전 웹뷰가 1초 안에 응답하지 않았다. 낡은 내용이 저장될 수 있다 |
 | `serialize_failed` | O | 에디터 내용을 마크다운으로 만들지 못했다 |
-| `autofix_failed` | O | 포커스를 잃을 때의 자동 포맷이 실패했다 |
+| `autofix_failed` | O | 포커스를 잃을 때의 자동 포맷이 실패했다. 자동 정리를 지워 더 기록하지 않고, 예전 로그를 분류하려고 남긴다 |
 | `mode_toggle_serialize_failed` | O | 모드 전환 중 직렬화가 실패했다 |
 | `block_type_apply_failed` | O | 블록 타입 변경이 실패했다 |
 | `table_paste_failed` | O | 표 붙여넣기 변환이 실패했다 |

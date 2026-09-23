@@ -10,7 +10,6 @@ import { sanitizeDiag } from './hostLogic';
 const ALLOWED_CONFIG_KEYS = [
     'theme',
     'fontSize',
-    'autoFix',
     'autoRefresh',
     'showToc',
     'showProperties',
@@ -82,7 +81,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const config = vscode.workspace.getConfiguration('zenMarkdown');
             const theme = config.get<string>('theme') || 'auto';
             const fontSize = config.get<number>('fontSize') || 16;
-            const autoFix = config.get<boolean>('autoFix') || false;
             const autoRefresh = config.get<boolean>('autoRefresh') ?? true;
             const showToc = config.get<boolean>('showToc') ?? false;
             const showProperties = config.get<boolean>('showProperties') ?? true;
@@ -104,7 +102,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 type: 'config',
                 theme,
                 fontSize,
-                autoFix,
                 autoRefresh,
                 showToc,
                 showProperties,

@@ -96,7 +96,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Zap, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, Info, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, Eye, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import YAML from 'yaml';
 import '@blocknote/mantine/style.css';
@@ -175,7 +175,6 @@ function App() {
   const [config, setConfig] = useState<{
     theme: string,
     fontSize: number,
-    autoFix: boolean,
     autoRefresh: boolean,
     showToc: boolean,
     showProperties: boolean,
@@ -191,7 +190,6 @@ function App() {
   }>({
     theme: "auto",
     fontSize: 16,
-    autoFix: false,
     autoRefresh: true,
     showToc: false,
     showProperties: true,
@@ -362,7 +360,6 @@ function App() {
           setConfig({
             theme: message.theme,
             fontSize: message.fontSize,
-            autoFix: message.autoFix,
             autoRefresh: message.autoRefresh,
             showToc: message.showToc,
             showProperties: message.showProperties,
@@ -853,7 +850,7 @@ function App() {
     if (isRawMode) return documentText === "loading" ? null : documentText;
     if (!editor) return null;
     extractHeadings(editor);
-    const markdown = await generateMarkdownFromEditor(true);
+    const markdown = await generateMarkdownFromEditor();
 
     // 본문의 #태그를 프론트매터 tags에 반영.
     // YAML 파싱에 실패한 프론트매터는 건드리지 않는다 (전체 재직렬화가 주석과 미지의 키를 날림).
@@ -891,7 +888,7 @@ ${markdown}` : markdown;
     postChange(fullText);
   };
 
-  const generateMarkdownFromEditor = async (skipAutoFix = false) => {
+  const generateMarkdownFromEditor = async () => {
     if (!editor) return "";
     const blocksForMd = processBlocksToMarkdown(editor.document);
     let markdown = await editor.blocksToMarkdownLossy(blocksForMd as any);
@@ -901,20 +898,7 @@ ${markdown}` : markdown;
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
-    
-    if (config.autoFix && !skipAutoFix) {
-      try {
-        const prettier = await import('prettier/standalone');
-        const prettierPluginMarkdown = await import('prettier/plugins/markdown');
-        const formatted = await prettier.format(markdown, { parser: "markdown", plugins: [prettierPluginMarkdown.default || prettierPluginMarkdown] });
-        if (formatted && typeof formatted === 'string' && formatted.trim().length > 0) {
-          markdown = formatted;
-        }
-      } catch (e) {
-        console.warn("Auto fix formatting skipped due to parser warning/error:", e);
-      }
-    }
-    
+
     // 직렬화 체인. markdownPipeline.ts가 파싱 체인과 나란히 담는다.
     return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
   };
@@ -1017,28 +1001,6 @@ ${markdown}` : markdown;
     const md = await generateMarkdownFromEditor();
     saveToHost(newFmString, md);
   };
-
-  useEffect(() => {
-    const handleBlur = async () => {
-      if (hasEdited.current && config.autoFix && !isRawMode && editor) {
-        if (isHolding() || configRef.current.isReadOnly) return;
-        // 대기 중인 디바운스 직렬화가 나중에 도착해 autoFix 결과를 덮어쓰지 않게 취소
-        debouncedSerialize.cancel();
-        try {
-          // Blur 시점에 한 번만 autoFix 적용하여 저장
-          const markdown = await generateMarkdownFromEditor(false);
-          const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
-          sendNow(fullText);
-        } catch {
-          console.error("AutoFix on blur failed");
-          diag('autofix_failed');
-        }
-      }
-    };
-    window.addEventListener('blur', handleBlur);
-    return () => window.removeEventListener('blur', handleBlur);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.autoFix, isRawMode, editor, parsedFrontmatter]);
 
 
   useEffect(() => {
@@ -1751,17 +1713,6 @@ ${markdown}` : markdown;
               </div>
 
               <div className="settings-group-title">Behavior</div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <Zap size={14} opacity={0.7} />
-                  <span>Auto Fix on Edit</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.autoFix} onChange={(e) => updateConfig('autoFix', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
 
               <div className="settings-item">
                 <label className="settings-item-label">

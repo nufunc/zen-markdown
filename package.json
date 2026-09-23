@@ -122,11 +122,6 @@
           "default": "auto",
           "description": "Select the theme for Zen Markdown. 'auto' follows the VS Code theme."
         },
-        "zenMarkdown.autoFix": {
-          "type": "boolean",
-          "default": false,
-          "description": "Automatically run Auto-Fix formatting (Prettier) on save or edit."
-        },
         "zenMarkdown.autoRefresh": {
           "type": "boolean",
           "default": true,
