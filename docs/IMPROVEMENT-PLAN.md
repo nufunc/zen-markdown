@@ -478,7 +478,7 @@ alias를 바꾼 뒤에는 `node_modules/.vite`를 지우고 잰다. Vite가 미�
 
 **아직 처리하지 않은 것**: 지연 로딩 언어(rust, go 등)는 하이라이트되지 않는다. parser가 언어 이름 문자열로 `loadLanguage`를 부르는데,
 앱의 지연 로딩은 parser가 쓰지 않는 `codeToHtml`을 가로채 두었기 때문이다. 0.51.4에서도 같은 코드 경로였다.
-이것은 코드를 읽고 내린 판단이고 0.51.4에서 직접 돌려 보지는 않았다. 이번 항목에 넣지 않았고 언제 처리할지 정하지 않았다.
+이것은 코드를 읽고 내린 판단이고 0.51.4에서 직접 돌려 보지는 않았다. 이번 항목에 넣지 않았고 언제 처리할지 정하지 않았다. 추가 검토 5에서 고쳤다.
 
 ## 추가 검토 4. 진단 로그의 "내용을 기록하지 않는다"는 약속을 코드가 강제하지 않는다
 
@@ -565,6 +565,86 @@ P1-3보다 먼저 하게 되면 이 함수가 그 파일의 첫 항목이 된다
 {"dropped":3,"ev":"serialize_failed","doc":"hash01","ts":"2026-09-23T15:02:14.682Z"}
 ```
 
+## 추가 검토 5. 지연 로딩하는 코드 언어 15개가 하이라이트되지 않는다
+
+2026-09-24 다섯 번째 정기 검토에서 더했다. 추가 검토 3의 결과 보고에서 "남은 것"으로 적힌 항목을 재현하고 원인을 확인했다.
+
+### 문제
+
+`shikiHighlighter.ts`가 초기에 싣지 않고 필요할 때 불러오도록 만든 15개 언어는 코드 블록에서 하이라이트가 되지 않는다.
+대상은 `rust`, `go`, `java`, `sql`, `xml`, `c`, `cpp`, `csharp`, `php`, `ruby`, `docker`, `diff`, `ini`, `toml`, `kql`이다.
+
+원인은 지연 로딩을 가로채는 자리가 잘못됐다는 데 있다.
+
+- `shikiHighlighter.ts`는 `highlighter.codeToHtml`만 감싸서, 로드되지 않은 언어가 오면 `langLoaders`로 불러온다.
+- BlockNote의 하이라이트 parser는 `codeToHtml`을 부르지 않는다. 로드된 언어면 `prosemirror-highlight/shiki`의 `createParser`로 `codeToTokens`를 부른다.
+  로드되지 않은 언어면 `highlighter.loadLanguage("rust")`처럼 **언어 이름 문자열**로 부른다.
+- `createHighlighterCore`로 만든 하이라이터는 이름만으로 문법을 찾을 수 없어 이 호출이 실패한다. BlockNote는 실패한 언어를 집합에 넣고
+  그 뒤로는 그 언어에 빈 장식을 돌려준다. 한 번 실패하면 문서를 다시 열기 전까지 다시 시도하지 않는다.
+- 그래서 `langLoaders`와 `shiki-lang-loaded` 이벤트, 그 이벤트를 받아 코드 블록을 다시 그리는 `App.tsx`의 효과는 한 번도 실행되지 않는다.
+
+### 근거
+
+**브라우저 재현 (2026-09-24, BlockNote 0.54.2, dev 서버)**: 19개 언어의 코드 블록을 한 문서에 넣었다.
+문서를 열고 6초를 기다린 뒤, 블록마다 `.shiki` 토큰 span을 셌다.
+
+| 언어 | 토큰 span |
+|---|---|
+| `javascript`, `python`, `shellscript`, `yaml` (초기 로드) | 14, 18, 2, 1 |
+| 지연 로딩 15개 | 모두 0 |
+
+콘솔 오류는 0건이었다. BlockNote가 `loadLanguage`의 실패를 `catch`로 삼키기 때문에 겉으로는 드러나지 않는다.
+
+**0.51.4에서도 같았는가**: npm에서 `@blocknote/core@0.51.4`를 받아 같은 자리를 봤다.
+`getLoadedLanguages().includes(o) ? ... : n.loadLanguage(o)`로 0.54.2와 같은 경로다. 따라서 이번 업그레이드 전부터 있던 결함이다.
+0.51.4를 브라우저에서 돌려 보지는 않았다.
+
+재현 스크립트는 `C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\zz-lang`에 있다.
+webview 폴더에 복사한 뒤 `npx playwright test -c zz-lang/pw.config.ts`로 돌린다.
+
+### 설계
+
+가로채는 자리를 BlockNote가 실제로 부르는 `loadLanguage`로 옮긴다.
+
+- `createHighlighterInternal`에서 `highlighter.loadLanguage`를 감싼다. 인수가 문자열이면 별칭을 언어 id로 바꾼다.
+  별칭 표는 `supportedLanguages`의 `aliases`를 쓴다(`rs` → `rust`, `golang` → `go`). 그다음 `langLoaders[id]`로 모듈을 받아 원래의 `loadLanguage`에 넘긴다.
+  문자열이 아니면 원래 함수를 그대로 부른다.
+- `langLoaders`에 없는 이름이면 지금처럼 실패하게 둔다. BlockNote가 그 언어를 빈 장식으로 처리한다.
+- BlockNote는 `loadLanguage`가 돌려준 Promise가 끝나면 하이라이트를 다시 계산한다. 그러면 앱 쪽의 재렌더링 장치가 필요 없다.
+  `codeToHtml` 감싸기, `pendingLangs`, `shiki-lang-loaded` 이벤트와 `App.tsx`의 수신 효과를 지운다.
+  지우기 전에, 로드가 끝난 뒤 다시 계산하는지를 아래 E2E로 먼저 확인한다. 다시 계산하지 않으면 이벤트 경로만 남기고 `loadLanguage` 쪽에서 쏜다.
+- 불러오기가 네트워크나 청크 오류로 실패하면 BlockNote의 실패 집합에 들어가 문서를 다시 열 때까지 복구되지 않는다.
+  이 동작은 이번에 바꾸지 않는다. 웹뷰 청크는 로컬 파일이라 실패할 일이 드물다.
+
+### 완료 기준
+
+- 위 19개 언어 문서를 E2E로 둔다. 지연 로딩 15개가 모두 토큰 span 1개 이상이다.
+- 별칭 펜스(`rs`, `golang`, `cs`)도 하이라이트된다.
+- 코드 블록의 언어를 `text`에서 `rust`로 바꾸면 하이라이트된다.
+- 기존 하이라이트 E2E와 `perf-codeblocks.spec.ts`가 통과한다. 증분 플러그인이 비동기 로드 뒤의 갱신을 놓치지 않는지 이 둘로 확인한다.
+- `grep "shiki-lang-loaded" webview/src`가 0건이다. 위 설계의 확인에서 이벤트 경로를 남기기로 했으면 이 조건은 빼고 그 이유를 적는다.
+
+### 결과
+
+2026-09-24에 code 세션이 고쳤다. `shikiHighlighter.ts`가 `loadLanguage`를 감싼다. 인수가 문자열이면 `supportedLanguages`의 별칭으로
+대표 id를 풀고, `langLoaders`로 문법 모듈을 받아 원래 `loadLanguage`에 넘긴다.
+
+BlockNote는 `loadLanguage`의 Promise가 끝나면 하이라이트 플러그인에 갱신 트랜잭션(`prosemirror-highlight-refresh`)을 보내고,
+증분 플러그인은 이 트랜잭션에서 전체를 다시 계산한다. 앱 쪽 재렌더링 장치가 필요 없으므로 `codeToHtml` 가로채기,
+`pendingLangs`, `shiki-lang-loaded` 이벤트, `App.tsx`의 수신 효과를 모두 지웠다.
+
+설계에 하나를 더했다. 문법을 로드할 때 `supportedLanguages`의 별칭을 그 문법의 `aliases`에 합쳐 넘긴다(`withAliases`).
+shiki는 로드된 문법의 `aliases`만 별칭으로 안다. 이것이 없으면 `golang`처럼 shiki 문법에 없는 별칭은 `go`를 로드한 뒤에도
+미로드로 보여 하이라이트되지 않았다. shiki의 `langAlias` 옵션은 대상이 로드되지 않았어도 별칭을 로드된 언어로 보고하므로 지연 로딩과 맞지 않아 쓰지 않았다.
+초기 로드 언어 12개에도 같은 처리를 한다.
+
+| 확인 | 결과 |
+|---|---|
+| 재현 스크립트 19개 언어 | 수정 전 지연 로딩 15개가 모두 0, 수정 후 모두 하이라이트된다. 콘솔 오류 0건 |
+| 별칭 `rs`, `golang`, `dockerfile` | 하이라이트된다 |
+| 로드를 마친 뒤 3초 동안 스크립트 실행 시간 | 0초. 목록에 없는 `foo`가 섞여도 로드와 갱신이 되풀이되지 않는다 |
+| `perf-codeblocks.spec.ts` | 기존 두 테스트와 새 테스트(지연 로딩 언어와 별칭 여섯 블록) 모두 통과 |
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -586,6 +666,7 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 11 | 추가 검토 2: 코드 블록 하이라이트 증분 갱신 (3번 다음에 처리함) | `perf:` |
 | 12 | 추가 검토 3: BlockNote 0.54.2로 올리기 (11번 다음에 처리함) | `perf:` |
 | 13 | 추가 검토 4: 진단 필드를 호스트에서 거르기 (12번 다음에 처리함) | `fix:` |
+| 14 | 추가 검토 5: 지연 로딩 언어 하이라이트 (13번 다음에 처리함) | `fix:` |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
