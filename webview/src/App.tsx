@@ -2,8 +2,8 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import type { WikilinkOccurrence } from './markdownTransforms';
-import { quoteJoinIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
+import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
@@ -230,6 +230,8 @@ function App() {
   const unverifiedRef = useRef(false);
   // 앞 인용에 이어지는 인용 블록의 ID. 저장할 때 앞 인용과 `>` 빈 줄로 합치고, 화면에서는 한 인용처럼 붙여 보인다.
   const quoteJoinsRef = useRef<Set<string>>(new Set());
+  // 표 블록 ID별 원문 표. 저장할 때 바뀌지 않은 행과 정렬(:-:)을 원문대로 쓴다
+  const tableOriginalsRef = useRef<Map<string, TableOriginal>>(new Map());
   const [quoteJoinCss, setQuoteJoinCss] = useState('');
   const {
     lastSentTextRef, lastInitializedTextRef,
@@ -546,14 +548,17 @@ function App() {
         wikilinkNamesRef.current = new Set();
         wikilinkOrderRef.current = [];
         const quoteJoinFlags: boolean[] = [];
+        const tableRows: TableOriginal[] = [];
         const safeContent = toEditorMarkdown(content, {
           docBaseUri: docBaseUriRef.current,
           wikilinkNames: wikilinkNamesRef.current,
           wikilinkOrder: wikilinkOrderRef.current,
-          quoteJoins: quoteJoinFlags
+          quoteJoins: quoteJoinFlags,
+          tables: tableRows
         });
         const rememberQuoteJoins = (blocks: any[]) => {
           quoteJoinsRef.current = quoteJoinIds(blocks, quoteJoinFlags);
+          tableOriginalsRef.current = tableOriginalIds(blocks, tableRows);
           setQuoteJoinCss([...quoteJoinsRef.current].map(id =>
             `.bn-editor .bn-block-outer[data-id="${id}"] [data-content-type="quote"] blockquote { margin-top: -0.4em !important; padding-top: calc(2px + 0.4em) !important; }`
           ).join('\n'));
@@ -746,8 +751,8 @@ ${markdown}` : markdown;
   buildDocumentTextRef.current = buildDocumentText;
 
   // 블록을 디스크에 쓸 마크다운 본문으로 만든다. 직렬화 체인은 markdownPipeline.ts가 파싱 체인과 나란히 담는다.
-  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current, wikilinkOrder = wikilinkOrderRef.current) => {
-    let markdown = blocksToMarkdown(blocks, bs => ed.blocksToMarkdownLossy(bs), quoteJoins);
+  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current, wikilinkOrder = wikilinkOrderRef.current, tables = tableOriginalsRef.current) => {
+    let markdown = blocksToMarkdown(blocks, bs => ed.blocksToMarkdownLossy(bs), quoteJoins, tables);
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
@@ -764,8 +769,9 @@ ${markdown}` : markdown;
     const names = new Set<string>();
     const flags: boolean[] = [];
     const order: WikilinkOccurrence[] = [];
-    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, wikilinkOrder: order, quoteJoins: flags })));
-    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags), order).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
+    const delims: TableOriginal[] = [];
+    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, wikilinkOrder: order, quoteJoins: flags, tables: delims })));
+    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags), order, tableOriginalIds(blocks, delims)).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
   };
 
   /** 이보다 긴 문서는 입력 중에는 검증하지 않고 저장 직전에만 검증한다. 15,000줄에서 검증 한 번이 약 0.9초다. */
@@ -1733,7 +1739,7 @@ ${markdown}` : markdown;
                     const source = only && Array.isArray(only.content) && only.type !== 'table'
                       ? [{ type: 'paragraph', content: only.content }]
                       : blocks;
-                    let markdown = blocksToMarkdown(source as any[], bs => editor.blocksToMarkdownLossy(bs as any), quoteJoinsRef.current);
+                    let markdown = blocksToMarkdown(source as any[], bs => editor.blocksToMarkdownLossy(bs as any), quoteJoinsRef.current, tableOriginalsRef.current);
                     markdown = normalizeUnorderedListBullets(normalizeOrderedListNumbers(markdown));
                     // 저장 경로와 같은 표기로 맞춘다
                     text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current, wikilinkOrder: wikilinkOrderRef.current });

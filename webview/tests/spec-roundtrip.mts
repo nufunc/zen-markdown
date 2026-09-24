@@ -20,16 +20,16 @@ const T = await import('../src/markdownTransforms.ts');
 const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
 
 /** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298, 평문 이스케이프 뒤 293, 목록 자식 들여쓰기 뒤 287 */
-const BASELINE = 287;
+const BASELINE = 286;
 
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
 
 // 앱의 여는 경로와 저장 경로와 같은 체인
 const roundtrip = async (md: string) => {
-  const ctx = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
+  const ctx: any = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
   const blocks = T.processBlocksFromMarkdown(await editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx)));
-  let out = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), T.quoteJoinIds(blocks, ctx.quoteJoins));
+  let out = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), T.quoteJoinIds(blocks, ctx.quoteJoins), T.tableOriginalIds(blocks, ctx.tables ?? []));
   out = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(out)));
   return fromEditorMarkdown(out, ctx);
 };
@@ -64,7 +64,7 @@ const named: { name: string; md: string; fixed: boolean }[] = [
   { name: '백슬래시 이스케이프', md: '\\*not emphasized*\n', fixed: false },
   { name: '목록 항목의 둘째 문단', md: '- foo\n\n  bar\n', fixed: false },
   { name: '들여쓴 코드 블록', md: '    a simple\n      indented code block\n', fixed: false },
-  { name: '표 정렬', md: '| a | b |\n| :-: | --: |\n| 1 | 2 |\n', fixed: false },
+  { name: '표 정렬', md: '| a | b |\n| :-: | --: |\n| 1 | 2 |\n', fixed: true },
   { name: '링크 제목', md: '[link](/uri "title")\n', fixed: false },
   { name: '인용 안의 헤딩', md: '> # Foo\n> bar\n', fixed: false },
   { name: '숫자와 점으로 시작하는 둘째 줄', md: 'The number of windows in my house is\n14.  The number of doors is 6.\n', fixed: false },

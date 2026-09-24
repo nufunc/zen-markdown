@@ -21,8 +21,10 @@ import {
   processBlocksFromMarkdown,
   processBlocksToMarkdown,
   serializeKeepingListChildren,
+  recordTables,
+  compactTables,
 } from './markdownTransforms';
-import type { WikilinkOccurrence } from './markdownTransforms';
+import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
 
 export interface PipelineContext {
   /** 문서 폴더의 webview URI — 상대경로 이미지 미리보기용 */
@@ -33,11 +35,14 @@ export interface PipelineContext {
   wikilinkOrder?: WikilinkOccurrence[];
   /** splitQuoteParagraphs가 채운다. 인용 블록마다 앞 인용에 이어지는지 차례로 */
   quoteJoins?: boolean[];
+  /** recordTables가 채운다. 표마다 원문 구분 행을 차례로. 파싱 뒤 tableOriginalIds로 블록 ID에 짝짓는다 */
+  tables?: TableOriginal[];
 }
 
 /** 디스크의 마크다운 -> 에디터가 파싱할 마크다운 */
 export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string {
   const normalized = joinListItemLines(splitQuoteParagraphs(markdown.replace(/\r\n/g, '\n'), ctx.quoteJoins ??= []));
+  recordTables(normalized, ctx.tables ??= []);
   return parseWikilinks(
     preserveMarkdownLineBreaks(
       preserveBlankLines(
@@ -77,7 +82,8 @@ export function makeLiteralVerifier(parse: (markdown: string) => any[]) {
 }
 
 /** 블록을 마크다운으로 직렬화한다(정규화 전). 앱의 저장, 안전장치, 복사와 테스트가 같은 경로를 쓴다.
- *  toMarkdown은 에디터의 blocksToMarkdownLossy다. 목록 항목 안의 목록 아닌 자식은 들여 써서 항목 안에 남긴다. */
-export function blocksToMarkdown(blocks: any[], toMarkdown: (blocks: any[]) => string, quoteJoins?: Set<string>): string {
-  return serializeKeepingListChildren(processBlocksToMarkdown(blocks, quoteJoins), toMarkdown);
+ *  toMarkdown은 에디터의 blocksToMarkdownLossy다. 목록 항목 안의 목록 아닌 자식은 들여 써서 항목 안에 남긴다.
+ *  표는 칸을 채우지 않고 쓰며, tables(블록 ID별 원문 표)가 있으면 바뀌지 않은 행과 구분 행을 원문대로 쓴다. */
+export function blocksToMarkdown(blocks: any[], toMarkdown: (blocks: any[]) => string, quoteJoins?: Set<string>, tables?: Map<string, TableOriginal>): string {
+  return compactTables(serializeKeepingListChildren(processBlocksToMarkdown(blocks, quoteJoins), toMarkdown), blocks, tables);
 }

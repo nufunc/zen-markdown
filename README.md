@@ -51,7 +51,7 @@ Parts you did not edit are saved exactly as in the original file. The items belo
 | Limitation | Notes |
 | --- | --- |
 | Lists, heading markers, code fences and nested quotes inside a blockquote are shown flat | Editing that quote rewrites it flat |
-| Table column alignment and link titles are dropped when you edit that table or link | |
+| Link titles are dropped when you edit that link. When you add or remove table columns, column alignment is carried over from the left | Editing a table cell rewrites only that row |
 | Indented (four-space) code blocks are shown as paragraphs; four leading spaces in a paragraph are dropped when you edit it | |
 | Images and paragraphs after a blank line following a nested list, emphasis inside HTML comments, and strikethrough combined with code in table cells are not shown exactly | |
 | Frontmatter is not shown in the block editor | It is kept as is; edit it in the text editor |

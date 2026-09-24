@@ -346,6 +346,106 @@ export function quoteJoinIds(blocks: any[], joins: boolean[]): Set<string> {
   return new Set(quotes.filter((_, i) => joins[i]).map(q => q.id));
 }
 
+// --- 표: 행 하나가 원문의 행 하나와 같은 줄이 되게 직렬화한다(추가 검토 16) ---
+// BlockNote는 모든 칸을 폭에 맞춰 채우고 구분 행을 `----------`로 새로 써서, 칸 하나만 고쳐도 표 전체가 달라진다.
+// 그러면 2단계 병합이 표 전체를 편집 결과로 쓰고 정렬(:-:)도 사라진다.
+
+/** 원문 표. delim은 구분 행, rows는 머리 행과 본문 행이다. 모두 들여쓰기를 뺀 원문 그대로다 */
+export type TableOriginal = { cols: number; delim: string; rows: string[] };
+
+const TABLE_DELIM_ROW = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const OUT_DELIM_ROW = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
+
+/** 표 한 행을 칸으로 나눈다. 앞뒤 `|`는 떼고, 셀 안의 `\|`는 나누지 않는다 */
+const splitTableRow = (line: string): string[] => {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
+  return s.split(/(?<!\\)\|/).map(c => c.trim());
+};
+
+/** 원문의 표를 차례대로 out에 적는다. 인용 안의 표는 BlockNote가 표로 읽지 않으므로 뺀다 */
+export function recordTables(md: string, out: TableOriginal[]): void {
+  mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    for (let i = 1; i < lines.length; i++) {
+      const delim = lines[i], head = lines[i - 1];
+      if (!delim.includes('|') || !TABLE_DELIM_ROW.test(delim)) continue;
+      if (!head.trim() || !head.includes('|') || /^\s*>/.test(head)) continue;
+      const cols = splitTableRow(delim).length;
+      if (splitTableRow(head).length !== cols) continue;
+      const rows = [head.trimStart()];
+      let j = i + 1;
+      for (; j < lines.length && lines[j].trim() && !/^\s*>/.test(lines[j]); j++) rows.push(lines[j].trimStart());
+      out.push({ cols, delim: delim.trim(), rows });
+      i = j - 1;
+    }
+    return part;
+  });
+}
+
+/** 파싱한 표 블록을 차례대로 기록한 원문 표와 짝지어 블록 ID로 돌려준다. 열 수가 맞지 않는 기록은 건너뛴다 */
+export function tableOriginalIds(blocks: any[], tables: TableOriginal[]): Map<string, TableOriginal> {
+  const ids = new Map<string, TableOriginal>();
+  let next = 0;
+  const walk = (bs: any[]) => bs.forEach(b => {
+    if (b.type === 'table') {
+      const cols = b.content?.rows?.[0]?.cells?.length ?? 0;
+      const j = tables.findIndex((t, k) => k >= next && t.cols === cols);
+      if (j >= 0) { ids.set(b.id, tables[j]); next = j + 1; }
+    }
+    walk(b.children ?? []);
+  });
+  walk(blocks);
+  return ids;
+}
+
+/** 원문 구분 행을 쓴다. 열 수가 바뀌었으면 정렬을 앞에서부터 옮기고 남는 열은 `---`로 둔다 */
+const delimiterRow = (orig: TableOriginal | undefined, cols: number): string => {
+  const cells = orig ? splitTableRow(orig.delim) : [];
+  if (orig && cells.length === cols) return orig.delim;
+  return '| ' + Array.from({ length: cols }, (_, i) => cells[i] || '---').join(' | ') + ' |';
+};
+
+/** 직렬화 결과의 표를 원문에 가깝게 되돌린다. 칸 내용이 원문의 어느 행과 같으면 그 행을 원문 그대로 쓰고,
+ *  아니면(고친 행, 새 행) 칸 채우지 않은 `| 칸 | 칸 |` 모양으로 쓴다. 구분 행은 원문대로 쓴다.
+ *  blocks는 직렬화한 블록이고, 표가 나타나는 차례가 직렬화 결과의 표 차례와 같다. */
+export function compactTables(md: string, blocks: any[], tables?: Map<string, TableOriginal>): string {
+  const origs: (TableOriginal | undefined)[] = [];
+  const walk = (bs: any[]) => bs.forEach(b => { if (b.type === 'table') origs.push(tables?.get(b.id)); walk(b.children ?? []); });
+  walk(blocks);
+  if (origs.length === 0) return md;
+  // BlockNote는 모자란 칸을 빈 칸으로 채우므로 끝의 빈 칸은 떼고 견준다
+  const key = (line: string) => splitTableRow(line).join('\uE000').replace(/\uE000+$/, '');
+  let k = 0;
+  return mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    for (let i = 0; i + 1 < lines.length; i++) {
+      if (!TABLE_ROW.test(lines[i]) || !OUT_DELIM_ROW.test(lines[i + 1])) continue;
+      const indent = lines[i].match(/^\s*/)![0];
+      const orig = origs[k++];
+      // 칸 내용이 같은 원문 행. 같은 내용의 행이 여럿이면 차례로 쓴다
+      const unused = new Map<string, string[]>();
+      for (const row of orig?.rows ?? []) {
+        const list = unused.get(key(row)) ?? [];
+        list.push(row);
+        unused.set(key(row), list);
+      }
+      const cols = splitTableRow(lines[i + 1]).length;
+      let j = i;
+      for (; j < lines.length && TABLE_ROW.test(lines[j]); j++) {
+        if (j === i + 1) continue;
+        const same = unused.get(key(lines[j]))?.shift();
+        lines[j] = indent + (same ?? '| ' + splitTableRow(lines[j]).join(' | ') + ' |');
+      }
+      lines[i + 1] = indent + delimiterRow(orig, cols);
+      i = j - 1;
+    }
+    return lines.join('\n');
+  });
+}
+
 /** 직렬화 결과에서 표식이 붙은 인용을 앞 인용과 `>` 빈 줄로 합친다 */
 export function restoreQuoteJoins(md: string): string {
   return md.replace(new RegExp('\\n\\n((?: {0,3}>)+ ?)' + QUOTE_JOIN_MARK, 'g'), (_m, prefix: string) => `\n${prefix.trimEnd()}\n${prefix}`)
