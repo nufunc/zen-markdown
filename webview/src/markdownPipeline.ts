@@ -12,6 +12,7 @@ import {
   restoreHtml,
   restoreLinkText,
   splitQuoteParagraphs,
+  joinListItemLines,
   restoreQuoteJoins,
   parseWikilinks,
   serializeWikilinks,
@@ -33,7 +34,7 @@ export interface PipelineContext {
 
 /** 디스크의 마크다운 -> 에디터가 파싱할 마크다운 */
 export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string {
-  const normalized = splitQuoteParagraphs(markdown.replace(/\r\n/g, '\n'), ctx.quoteJoins ??= []);
+  const normalized = joinListItemLines(splitQuoteParagraphs(markdown.replace(/\r\n/g, '\n'), ctx.quoteJoins ??= []));
   return parseWikilinks(
     preserveMarkdownLineBreaks(
       preserveBlankLines(

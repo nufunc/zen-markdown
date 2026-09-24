@@ -50,10 +50,19 @@ const stripBreakSpace = (content: any[]): any[] => {
   let afterBreak = false;
   for (const c of content) {
     if (c.type === 'text' && typeof c.text === 'string' && !c.styles?.code) {
-      let text = c.text.replace(/\n /g, '\n');
+      // joinListItemLines가 이어 붙인 목록 항목의 줄은 여기서 항목 텍스트의 줄바꿈이 된다
+      let text = c.text.replaceAll(LIST_BREAK_MARK, '\n').replace(/\n /g, '\n');
       if (afterBreak && text.startsWith(' ')) text = text.slice(1);
       afterBreak = text.endsWith('\n');
       if (text) out.push({ ...c, text });
+      continue;
+    }
+    // 강제 줄바꿈이 앞의 인라인 코드 조각 안으로 들어간다(`x`\ → 코드 "x\n"). 줄바꿈을 평문 조각으로 떼어 내야 다음 조각의 앞 공백도 걷힌다
+    if (c.type === 'text' && c.styles?.code && typeof c.text === 'string' && /\n+$/.test(c.text)) {
+      const body = c.text.replace(/\n+$/, '');
+      if (body) out.push({ ...c, text: body });
+      out.push({ type: 'text', text: c.text.slice(body.length), styles: {} });
+      afterBreak = true;
       continue;
     }
     afterBreak = false;
@@ -184,14 +193,44 @@ const escapeLiteralMarkdown = (content: any[], blockStart = false): any[] => {
 const LIST_ITEM_TYPES = new Set(['bulletListItem', 'numberedListItem', 'checkListItem', 'toggleListItem']);
 const LIST_MARK = '⁤';
 
+// BlockNote 파서는 목록 항목의 둘째 줄부터를 자식 문단으로 떼어 내고, 백슬래시 줄바꿈이면 항목 끝에 \를 글자로 남긴다.
+// 파싱 전에 항목 첫 문단의 이어지는 줄을 표식으로 이어 붙이고, 파싱 뒤 stripBreakSpace가 표식을 항목 텍스트의 줄바꿈으로 바꾼다.
+// 원래 줄바꿈 표기(\, 두 칸, 부드러운 줄바꿈)는 강제 줄바꿈으로 통일되지만, 편집하지 않은 줄은 2단계 병합이 원문을 지킨다.
+const LIST_BREAK_MARK = '⁠';
+const LIST_ITEM_LINE = /^ *(?:[-*+]|\d{1,9}[.)])(?: +|$)/;
+// 이어지는 줄이 아니라 새 블록을 여는 줄
+const BLOCK_START = /^ *(?:[-*+](?: |$)|\d{1,9}[.)](?: |$)|#{1,6}(?: |$)|>|`{3,}|~{3,}|\||(?:[-*_] *){3,}$)/;
+
+export function joinListItemLines(md: string): string {
+  return mapOutsideCodeFences(md, part => {
+    const out: string[] = [];
+    let inItem = false;
+    for (const line of part.split('\n')) {
+      if (inItem && line.trim() !== '' && !BLOCK_START.test(line)) {
+        let prev = out.pop()!;
+        const slashes = /\\+$/.exec(prev)?.[0].length ?? 0;
+        prev = slashes % 2 === 1 ? prev.slice(0, -1) : prev.replace(/ {2,}$/, '');
+        out.push(prev + LIST_BREAK_MARK + line.trimStart());
+        continue;
+      }
+      inItem = LIST_ITEM_LINE.test(line) && line.replace(LIST_ITEM_LINE, '').trim() !== '';
+      out.push(line);
+    }
+    return out.join('\n');
+  });
+}
+
 export function serializeKeepingListChildren(blocks: any[], toMarkdown: (blocks: any[]) => string): string {
-  const entries: { item: string; extras: { before: string | null; markdown: string }[] }[] = [];
+  const entries: { item: string; breaks: boolean; extras: { before: string | null; markdown: string }[] }[] = [];
   let next = 0;
   const newMark = () => LIST_MARK + next++ + LIST_MARK;
   const withMark = (b: any, mark: string) => ({ ...b, content: [{ type: 'text', text: mark, styles: {} }, ...(Array.isArray(b.content) ? b.content : [])] });
   const walk = (bs: any[]): any[] => bs.map(b => {
     const children: any[] = b.children ?? [];
-    if (!LIST_ITEM_TYPES.has(b.type) || !children.some(c => !LIST_ITEM_TYPES.has(c.type))) {
+    const isItem = LIST_ITEM_TYPES.has(b.type);
+    // 항목 텍스트에 줄바꿈이 있으면 직렬화기가 둘째 줄부터를 들여 쓰지 않으므로 표식을 붙여 나중에 들여 쓴다
+    const breaks = isItem && Array.isArray(b.content) && b.content.some((c: any) => typeof c.text === 'string' && c.text.includes('\n'));
+    if (!isItem || (!breaks && !children.some(c => !LIST_ITEM_TYPES.has(c.type)))) {
       return children.length ? { ...b, children: walk(children) } : b;
     }
     const item = newMark();
@@ -209,11 +248,21 @@ export function serializeKeepingListChildren(blocks: any[], toMarkdown: (blocks:
       }
     }
     extras.push(...waiting.map(markdown => ({ before: null, markdown })));
-    entries.push({ item, extras });
+    entries.push({ item, breaks, extras });
     return { ...withMark(b, item), children: kept };
   });
 
   const lines = toMarkdown(walk(blocks)).split('\n');
+  // 항목 텍스트의 강제 줄바꿈(줄 끝 \가 홀수 개) 뒤 줄을 항목 내용 폭만큼 들여 쓴다
+  for (const { item, breaks } of entries) {
+    if (!breaks) continue;
+    const li = lines.findIndex(l => l.includes(item));
+    if (li < 0) continue;
+    const width = lines[li].indexOf(item);
+    for (let i = li; i + 1 < lines.length && lines[i + 1] !== '' && (/\\+$/.exec(lines[i])?.[0].length ?? 0) % 2 === 1; i++) {
+      lines[i + 1] = ' '.repeat(width) + lines[i + 1];
+    }
+  }
   const insertAt = (at: number, block: string[]) => {
     const before = at > 0 && lines[at - 1] !== '' ? [''] : [];
     const after = at < lines.length && lines[at] !== '' ? [''] : [];
@@ -338,6 +387,18 @@ export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
   });
 };
 
+/** 블록 끝의 줄바꿈은 화면에 효과가 없지만 저장하면 줄 끝 \가 되어, 다시 열 때 글자로 보인다. 직렬화하는 동안만 떼어 낸다. */
+const trimTrailingBreaks = (content: any[]): any[] => {
+  let i = content.length - 1;
+  while (i >= 0 && content[i].type === 'text' && !content[i].styles?.code && /^\n*$/.test(content[i].text)) i--;
+  const kept = content.slice(0, i + 1);
+  const last = kept[kept.length - 1];
+  if (last?.type === 'text' && !last.styles?.code && /\n+$/.test(last.text)) {
+    kept[kept.length - 1] = { ...last, text: last.text.replace(/\n+$/, '') };
+  }
+  return kept;
+};
+
 /** quoteJoins: 앞 인용에 이어지는 인용 블록의 ID(quoteJoinIds). 저장할 때 앞 인용과 한 인용으로 합친다. */
 export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>): any[] => {
   return blocks.map((b: any, i: number) => {
@@ -358,7 +419,7 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
       } as any;
     }
     if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
-      newB.content = splitEmphasisEdgeSpaces(escapeLiteralMarkdown(markSameTextLinks(newB.content), newB.type === 'paragraph'));
+      newB.content = splitEmphasisEdgeSpaces(escapeLiteralMarkdown(markSameTextLinks(trimTrailingBreaks(newB.content)), newB.type === 'paragraph'));
     }
     if (newB.type === 'quote' && quoteJoins?.has(newB.id) && blocks[i - 1]?.type === 'quote' && Array.isArray(newB.content)) {
       newB.content = [{ type: 'text', text: QUOTE_JOIN_MARK, styles: {} }, ...newB.content];

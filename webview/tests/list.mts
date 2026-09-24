@@ -47,5 +47,20 @@ check('문단, 중첩 목록, 코드 블록이 섞인 자식은 모델 순서를
 }
 check('두 단계 중첩 항목 안의 코드 블록', '- a\n  - b\n\n    ```sh\n    ls\n    ```\n  - c\n- d');
 
+// 추가 검토 12: 여러 줄 목록 항목은 처음 열 때부터 항목 하나이고, 둘째 줄은 항목 텍스트의 줄바꿈이다
+const firstOpen = (name: string, md: string, text: string) => {
+  const m = parse(md, ctx());
+  const ok = m.length === 1 && !(m[0].children?.length) && m[0].content.map((c: any) => c.text).join('') === text;
+  if (ok) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + '\n  ' + JSON.stringify(tree(m))); }
+};
+firstOpen('백슬래시 줄바꿈 항목은 처음 열 때 항목 하나', '- item one\\\n  next line', 'item one\nnext line');
+firstOpen('두 칸 줄바꿈 항목은 처음 열 때 항목 하나', '- item one  \n  next line', 'item one\nnext line');
+firstOpen('부드러운 줄바꿈 항목은 처음 열 때 항목 하나', '- item one\n  lazy continuation', 'item one\nlazy continuation');
+firstOpen('세 줄 번호 항목은 처음 열 때 항목 하나', '1. a\\\n   b\\\n   c', 'a\nb\nc');
+check('백슬래시 줄바꿈 항목은 편집 없이 저장하면 원문 그대로', '2. start the server.\\\n   next line', '2. start the server.\\\n   next line');
+check('두 칸 줄바꿈 항목은 저장하고 다시 열어도 같다', '- item one  \n  next line');
+check('여러 줄 항목과 코드 블록 자식', '- one\\\n  two\n\n  ```js\n  x();\n  ```\n- next');
+check('여러 줄 항목 아래 중첩 목록', '1. one\\\n   two\n   - nested\\\n     more\n2. next');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
