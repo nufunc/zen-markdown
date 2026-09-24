@@ -228,7 +228,8 @@ export function normalizeUnorderedListBullets(md: string): string {
 
     // 마크다운 불릿 리스트 매칭 (- * +). 단, 수평선(---, ***)은 제외.
     const match = line.match(/^(\s*)([-*+])\s+(.*)/);
-    const isHr = line.match(/^\s*([-*+])\s*\1\s*\1/);
+    // 수평선은 같은 기호 셋 이상과 공백만으로 된 줄이다. 앞부분만 보면 '* **굵게**'를 수평선으로 잘못 본다.
+    const isHr = /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
     
     if (match && !isHr) {
       const indent = match[1].length;
