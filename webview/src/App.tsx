@@ -4,7 +4,8 @@ import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
 import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
-import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } from './markdownPipeline';
+import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, expandQuoteStructures, markdownToBlocks } from './markdownPipeline';
+import type { PipelineContext } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
@@ -549,15 +550,16 @@ function App() {
         wikilinkOrderRef.current = [];
         const quoteJoinFlags: boolean[] = [];
         const tableRows: TableOriginal[] = [];
-        const safeContent = toEditorMarkdown(content, {
+        const openCtx: PipelineContext = {
           docBaseUri: docBaseUriRef.current,
           wikilinkNames: wikilinkNamesRef.current,
           wikilinkOrder: wikilinkOrderRef.current,
           quoteJoins: quoteJoinFlags,
           tables: tableRows
-        });
+        };
+        const safeContent = toEditorMarkdown(content, openCtx);
         const rememberQuoteJoins = (blocks: any[]) => {
-          quoteJoinsRef.current = quoteJoinIds(blocks, quoteJoinFlags);
+          quoteJoinsRef.current = new Set([...quoteJoinIds(blocks, quoteJoinFlags), ...(openCtx.innerQuoteJoins ?? [])]);
           tableOriginalsRef.current = tableOriginalIds(blocks, tableRows);
           setQuoteJoinCss([...quoteJoinsRef.current].map(id =>
             `.bn-editor .bn-block-outer[data-id="${id}"] [data-content-type="quote"] blockquote { margin-top: -0.4em !important; padding-top: calc(2px + 0.4em) !important; }`
@@ -588,7 +590,7 @@ function App() {
           });
           setLiteralVerifier(makeLiteralVerifier(md => newEditor.tryParseMarkdownToBlocks(md)));
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
-          blocks = processBlocksFromMarkdown(blocks);
+          blocks = expandQuoteStructures(processBlocksFromMarkdown(blocks), openCtx, md => newEditor.tryParseMarkdownToBlocks(md));
           rememberQuoteJoins(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
           const base = serializeBlocks(newEditor, newEditor.document);
@@ -666,7 +668,7 @@ function App() {
           } catch { /* noop */ }
           
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
-          blocks = processBlocksFromMarkdown(blocks);
+          blocks = expandQuoteStructures(processBlocksFromMarkdown(blocks), openCtx, md => editor.tryParseMarkdownToBlocks(md));
           rememberQuoteJoins(blocks);
           editor.replaceBlocks(editor.document, blocks);
           baselineRef.current = { original: content.replace(/\r\n/g, '\n'), base: serializeBlocks(editor, editor.document), conflictReported: false };
@@ -766,12 +768,10 @@ ${markdown}` : markdown;
 
   /** 병합 결과 R을 다시 열면 지금 에디터(N)와 같은 문서가 되는가 */
   const reopensAs = (merged: string, edited: string) => {
-    const names = new Set<string>();
-    const flags: boolean[] = [];
-    const order: WikilinkOccurrence[] = [];
-    const delims: TableOriginal[] = [];
-    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, wikilinkOrder: order, quoteJoins: flags, tables: delims })));
-    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags), order, tableOriginalIds(blocks, delims)).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
+    const ctx: PipelineContext = { docBaseUri: docBaseUriRef.current, wikilinkNames: new Set<string>(), wikilinkOrder: [], quoteJoins: [], tables: [] };
+    const blocks = markdownToBlocks(merged, ctx, md => editor!.tryParseMarkdownToBlocks(md));
+    const joins = new Set([...quoteJoinIds(blocks, ctx.quoteJoins!), ...(ctx.innerQuoteJoins ?? [])]);
+    return serializeBlocks(editor, blocks, ctx.wikilinkNames, joins, ctx.wikilinkOrder, tableOriginalIds(blocks, ctx.tables!)).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
   };
 
   /** 이보다 긴 문서는 입력 중에는 검증하지 않고 저장 직전에만 검증한다. 15,000줄에서 검증 한 번이 약 0.9초다. */

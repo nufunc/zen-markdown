@@ -20,6 +20,20 @@ export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockT
     // 한국어 등 IME 합성(입력 중) 상태에서는 단축키 이벤트를 가로채지 않음 (글자 씹힘 및 겹침 방지)
     if (e.nativeEvent.isComposing) return;
 
+    // 자식(목록, 헤딩 등)이 있는 인용의 첫 줄 끝에서 Enter: 기본 동작은 새 문단을 인용 밖에 만들고 자식을 모두 그 밑으로 옮긴다.
+    // 새 문단을 인용의 첫 자식으로 넣는다(추가 검토 20)
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const block = editor.getTextCursorPosition?.()?.block;
+      const sel = editor._tiptapEditor?.state?.selection;
+      if (block?.type === 'quote' && block.children?.length && sel?.empty && sel.$from.parentOffset === sel.$from.parent.content.size) {
+        e.preventDefault();
+        e.stopPropagation();
+        const [inserted] = editor.insertBlocks([{ type: 'paragraph' }], block.children[0], 'before');
+        editor.setTextCursorPosition(inserted, 'start');
+        return;
+      }
+    }
+
     // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();

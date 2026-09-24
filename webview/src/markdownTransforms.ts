@@ -340,10 +340,79 @@ export function splitQuoteParagraphs(md: string, joins: boolean[]): string {
 /** 파싱한 블록에서 앞 인용에 이어지는 인용의 ID를 모은다. 인용 수가 기록과 다르면 짝을 믿을 수 없으므로 비운다. */
 export function quoteJoinIds(blocks: any[], joins: boolean[]): Set<string> {
   const quotes: any[] = [];
-  const walk = (bs: any[]) => bs.forEach(b => { if (b.type === 'quote') quotes.push(b); walk(b.children ?? []); });
+  const walk = (bs: any[]) => bs.forEach(b => { if (isStructuredQuote(b)) return; if (b.type === 'quote') quotes.push(b); walk(b.children ?? []); });
   walk(blocks);
   if (quotes.length !== joins.length) return new Set();
   return new Set(quotes.filter((_, i) => joins[i]).map(q => q.id));
+}
+
+// --- 구조가 든 인용: 인용 안의 목록, 헤딩, 코드 펜스, 중첩 인용, 표를 인용의 자식 블록으로 담는다(추가 검토 20) ---
+// BlockNote의 quote는 인라인만 담아서 인용 안 구조를 평평한 글자로 읽는다. 목록 항목 자식으로 한 번에 파싱하는 방법은
+// 파서가 자식 문단이나 헤딩 뒤의 목록을 항목 밖으로 끌어내 쓸 수 없다. 그래서 인용 안쪽을 따로 파싱해 자식으로 단다.
+// 파싱 전에 그런 인용을 자리표시 한 줄로 바꾸고 안쪽을 보관한다. 파싱 뒤 expandQuoteStructures(markdownPipeline.ts)가 자리표시를 인용으로 바꾼다.
+// 저장할 때는 자식이 있는 인용을 표식을 붙인 목록 항목으로 직렬화하고(목록 자식 직렬화를 그대로 쓴다) restoreQuoteStructures가 `> ` 줄로 되돌린다.
+const QUOTE_STRUCT_MARK = '\u2062';
+const QUOTE_PLACEHOLDER = new RegExp('^' + QUOTE_STRUCT_MARK + 'Q(\\d+)' + QUOTE_STRUCT_MARK + '$');
+const QUOTE_PREFIX = /^ {0,3}> ?/;
+const QUOTE_INNER_STRUCTURE = /^ {0,3}(?:[-*+] |\d{1,9}[.)] |#{1,6}(?:\s|$)|```|~~~|>)/;
+
+/** 구조가 든 인용을 자리표시로 바꾸고 안쪽 마크다운을 inners에 차례로 넣는다. 구조 없는 인용은 그대로 둔다(추가 검토 9가 다룬다) */
+export function extractQuoteStructures(md: string, inners: string[]): string {
+  return mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    const out: string[] = [];
+    for (let i = 0; i < lines.length;) {
+      if (!QUOTE_LINE.test(lines[i])) { out.push(lines[i]); i++; continue; }
+      let j = i;
+      while (j < lines.length && QUOTE_LINE.test(lines[j])) j++;
+      const inner = lines.slice(i, j).map(l => l.replace(QUOTE_PREFIX, ''));
+      const hasTable = inner.some((l, k) => k > 0 && l.includes('|') && TABLE_DELIM_ROW.test(l) && inner[k - 1].includes('|'));
+      if (hasTable || inner.some(l => QUOTE_INNER_STRUCTURE.test(l))) {
+        inners.push(inner.join('\n'));
+        // 자리표시가 제 문단이 되도록 앞뒤를 빈 줄로 떼되, 이미 빈 줄이면 더하지 않는다(연속 빈 줄은 빈 문단으로 보존된다)
+        if (out.length && out[out.length - 1].trim()) out.push('');
+        out.push(lines[i].match(/^ */)![0] + QUOTE_STRUCT_MARK + 'Q' + (inners.length - 1) + QUOTE_STRUCT_MARK);
+        if (j < lines.length && lines[j].trim()) out.push('');
+      } else {
+        out.push(...lines.slice(i, j));
+      }
+      i = j;
+    }
+    return out.join('\n');
+  });
+}
+
+/** 블록이 구조 인용의 자리표시면 그 번호를, 아니면 null */
+export function quotePlaceholderIndex(block: any): number | null {
+  if (block?.type !== 'paragraph' || !Array.isArray(block.content) || block.content.length !== 1) return null;
+  const m = String(block.content[0].text ?? '').match(QUOTE_PLACEHOLDER);
+  return m ? Number(m[1]) : null;
+}
+
+/** 자식이 있는 인용(구조 인용)인가 */
+export const isStructuredQuote = (block: any): boolean => block?.type === 'quote' && (block.children?.length ?? 0) > 0;
+
+/** 직렬화 결과에서 표식을 붙인 목록 항목을 `> ` 인용으로 되돌린다. 항목 글자가 인용 첫 문단이고 들여 쓴 자식이 나머지다 */
+export function restoreQuoteStructures(md: string): string {
+  if (!md.includes(QUOTE_STRUCT_MARK)) return md;
+  const ITEM = new RegExp('^( *)[-*+] ' + QUOTE_STRUCT_MARK + '(.*)$');
+  const lines = md.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(ITEM);
+    if (!m) { out.push(lines[i]); continue; }
+    const indent = m[1], width = indent.length + 2;
+    let j = i + 1;
+    while (j < lines.length && (!lines[j].trim() || lines[j].startsWith(' '.repeat(width)))) j++;
+    while (j > i + 1 && !lines[j - 1].trim()) j--;
+    // 안쪽의 구조 인용, 목록 표기, 이어진 인용을 바깥과 같은 규칙으로 정리한 뒤 줄마다 `> `를 붙인다
+    const inner = restoreQuoteJoins(normalizeUnorderedListBullets(normalizeOrderedListNumbers(
+      restoreQuoteStructures(lines.slice(i + 1, j).map(l => l.slice(width)).join('\n')))));
+    const body = m[2] ? [m[2], ...inner.split('\n')] : inner.replace(/^\n+/, '').split('\n');
+    out.push(...body.map(l => indent + (l.trim() ? '> ' + l : '>')));
+    i = j - 1;
+  }
+  return out.join('\n');
 }
 
 // --- 표: 행 하나가 원문의 행 하나와 같은 줄이 되게 직렬화한다(추가 검토 16) ---
@@ -395,7 +464,7 @@ export function tableOriginalIds(blocks: any[], tables: TableOriginal[]): Map<st
       const j = tables.findIndex((t, k) => k >= next && t.cols === cols);
       if (j >= 0) { ids.set(b.id, tables[j]); next = j + 1; }
     }
-    walk(b.children ?? []);
+    if (!isStructuredQuote(b)) walk(b.children ?? []);
   });
   walk(blocks);
   return ids;
@@ -413,7 +482,7 @@ const delimiterRow = (orig: TableOriginal | undefined, cols: number): string => 
  *  blocks는 직렬화한 블록이고, 표가 나타나는 차례가 직렬화 결과의 표 차례와 같다. */
 export function compactTables(md: string, blocks: any[], tables?: Map<string, TableOriginal>): string {
   const origs: (TableOriginal | undefined)[] = [];
-  const walk = (bs: any[]) => bs.forEach(b => { if (b.type === 'table') origs.push(tables?.get(b.id)); walk(b.children ?? []); });
+  const walk = (bs: any[]) => bs.forEach(b => { if (b.type === 'table') origs.push(tables?.get(b.id)); if (!isStructuredQuote(b)) walk(b.children ?? []); });
   walk(blocks);
   if (origs.length === 0) return md;
   // BlockNote는 모자란 칸을 빈 칸으로 채우므로 끝의 빈 칸은 떼고 견준다
@@ -521,6 +590,16 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
         props: { language: "mermaid" },
         content: [{ type: "text", text: newB.props.code, styles: {} }]
       } as any;
+    }
+    if (isStructuredQuote(newB)) {
+      // 첫 문단은 인용의 줄 머리에 온다. restoreQuoteStructures가 `> `로 되돌린다
+      return {
+        ...newB,
+        type: 'bulletListItem',
+        props: { ...newB.props, textAlignment: 'left' },
+        content: [{ type: 'text', text: QUOTE_STRUCT_MARK, styles: {} }, ...prepareInline(Array.isArray(newB.content) ? newB.content : [], true)],
+        children: processBlocksToMarkdown(newB.children, quoteJoins),
+      };
     }
     if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
       newB.content = prepareInline(newB.content, newB.type === 'paragraph');
@@ -788,10 +867,10 @@ export function mapOutsideCode(markdown: string, fn: (part: string) => string): 
 }
 
 /** 문서에 나타난 .md 링크의 차례. wiki가 true면 원문이 위키링크였고, raw는 그 표기, key는 변환한 링크의 글자와 주소다 */
-export type WikilinkOccurrence = { name: string; wiki: boolean; raw?: string; key?: string };
+export type WikilinkOccurrence = { name: string; wiki: boolean; raw?: string; key?: string; quote?: number };
 
 // 위키링크, 또는 주소가 꺾쇠이거나 공백 없는 일반 링크
-const WIKI_OR_LINK = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s()<>]+))\)/g;
+const WIKI_OR_LINK = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s()<>]+))\)|\u2062Q(\d+)\u2062/g;
 const MD_LINK = /\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s()<>]+))\)/g;
 
 /** 링크 주소를 문서 이름과 조각으로 나눈다. .md 문서가 아니면 null */
@@ -807,7 +886,11 @@ const splitMdHref = (href: string): { target: string; frag: string } | null => {
 export function parseWikilinks(md: string, seen?: Set<string>, order?: WikilinkOccurrence[]): string {
   const strip = (s: string) => s.replaceAll(ZWSP, '');
   return mapOutsideCode(md, part =>
-    part.replace(WIKI_OR_LINK, (m, inner: string | undefined, _text, angled: string | undefined, bare: string | undefined) => {
+    part.replace(WIKI_OR_LINK, (m, inner: string | undefined, _text, angled: string | undefined, bare: string | undefined, quote: string | undefined) => {
+      if (quote !== undefined) {
+        order?.push({ name: '', wiki: false, quote: Number(quote) });
+        return m;
+      }
       if (inner === undefined) {
         const href = splitMdHref(angled ?? bare!);
         if (href) order?.push({ name: strip(href.target), wiki: false });

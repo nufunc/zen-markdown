@@ -7,7 +7,7 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
+const { fromEditorMarkdown, makeLiteralVerifier, markdownToBlocks, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
 
@@ -15,7 +15,7 @@ T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(m
 // 앱의 여는 경로와 저장 경로와 같은 체인. 이어진 인용의 ID를 파싱 결과에서 모아 저장에 넘긴다.
 const roundtrip = (md: string) => {
   const ctx = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
-  const blocks = T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx)));
+  const blocks = markdownToBlocks(md, ctx, m => editor.tryParseMarkdownToBlocks(m));
   const joins = T.quoteJoinIds(blocks, ctx.quoteJoins);
   let out = editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks, joins));
   out = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(out)));
@@ -48,6 +48,52 @@ same('이어진 인용과 떨어진 인용이 섞인 문서', '> A\n>\n> B\n\nte
   check('중첩 인용이 있어도 실패하지 않고 글자가 남는다', out.includes('a') && out.includes('nested') && out.includes('after'), JSON.stringify(out));
 }
 same('코드 펜스 안의 > 줄은 건드리지 않는다', '```js\n> A\n>\n> B\n```');
+
+// 구조가 든 인용(추가 검토 20): 인용 안의 목록, 헤딩, 코드, 중첩 인용이 인용의 자식 블록이 된다.
+// 앱과 같은 저장 경로(blocksToMarkdown)를 쓰고, 안쪽의 인용 이어짐도 합친다
+const openS = (md: string) => {
+  const ctx: any = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
+  return { ctx, blocks: markdownToBlocks(md, ctx, m => editor.tryParseMarkdownToBlocks(m)) };
+};
+const saveS = (blocks: any[], ctx: any) => {
+  const joins = new Set([...T.quoteJoinIds(blocks, ctx.quoteJoins), ...(ctx.innerQuoteJoins ?? [])]);
+  let out = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), joins, T.tableOriginalIds(blocks, ctx.tables ?? []));
+  out = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(out)));
+  return fromEditorMarkdown(out, ctx).replace(/\n+$/, '');
+};
+const treeOf = (bs: any[]): string => bs.map((b: any) => b.type + ':' + (Array.isArray(b.content) ? b.content.map((c: any) => c.text ?? `<${c.type}>`).join('') : '') + (b.children?.length ? '[' + treeOf(b.children) + ']' : '')).join(', ');
+/** 연 모델이 expected이고, 저장하면 saved(생략하면 원문)이며, 다시 열어도 같은 모델이고 두 번째 저장이 같다 */
+const structured = (name: string, md: string, expected: string, saved = md) => {
+  const { ctx, blocks } = openS(md);
+  check(name + ': 모델', treeOf(blocks) === expected, treeOf(blocks));
+  const s1 = saveS(blocks, ctx);
+  check(name + ': 저장', s1 === saved, JSON.stringify(s1));
+  const o2 = openS(s1);
+  check(name + ': 다시 열면 같다', treeOf(o2.blocks) === treeOf(blocks) && saveS(o2.blocks, o2.ctx) === s1, treeOf(o2.blocks));
+};
+structured('인용 안 목록', '> 앞 문단\n> - a\n> - b', 'quote:앞 문단[bulletListItem:a, bulletListItem:b]');
+structured('목록으로 시작하는 인용', '> 1. 하나\n> 2. 둘', 'quote:[numberedListItem:하나, numberedListItem:둘]');
+structured('인용 안 헤딩', '> # 제목\n>\n> 본문', 'quote:[heading:제목, paragraph:본문]');
+structured('인용 안 코드 펜스', '> 앞\n>\n> ```js\n> const x = 1;\n> ```\n>\n> 뒤', 'quote:앞[codeBlock:const x = 1;, paragraph:뒤]');
+structured('중첩 인용', '> 바깥\n>\n> > 안쪽 인용', 'quote:바깥[quote:안쪽 인용]');
+structured('중첩 인용의 두 문단은 한 인용으로 남는다', '> 바깥\n>\n> > 안 A\n> >\n> > 안 B', 'quote:바깥[quote:안 A, quote:안 B]');
+structured('목록 안의 구조 인용', '- 목록\n  > 인용 안\n  > - 중첩', 'bulletListItem:목록[quote:인용 안[bulletListItem:중첩]]');
+structured('인용 안 위키링크', '> 앞 [[위키 링크]]\n> - [[a]] 항목\n\n뒤 [[b]]', 'quote:앞 <link>[bulletListItem:<link> 항목], paragraph:뒤 <link>');
+structured('구조 없는 여러 문단 인용은 추가 검토 9 그대로', '> A\n>\n> B', 'quote:A, quote:B');
+{
+  // 인용 안 목록 항목 하나를 고치면 그 줄만 바뀐다
+  const md = '앞\n\n> 설명\n> - 첫째\n> - 둘째\n\n뒤';
+  const { ctx, blocks } = openS(md);
+  const edited = JSON.parse(JSON.stringify(blocks));
+  edited.find((b: any) => b.type === 'quote').children[1].content[0].text = '둘째 고침';
+  const s = saveS(edited, ctx);
+  check('인용 안 목록 항목을 고치면 그 줄만 바뀐다', s === md.replace('둘째', '둘째 고침'), JSON.stringify(s));
+  // 항목을 더해도 인용 안에 남는다
+  const added = JSON.parse(JSON.stringify(blocks));
+  added.find((b: any) => b.type === 'quote').children.push({ type: 'bulletListItem', content: [{ type: 'text', text: '셋째', styles: {} }], children: [] });
+  const s2 = saveS(added, ctx);
+  check('인용 안에 항목을 더하면 인용 안에 남는다', s2 === '앞\n\n> 설명\n> - 첫째\n> - 둘째\n> - 셋째\n\n뒤', JSON.stringify(s2));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

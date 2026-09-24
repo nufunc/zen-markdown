@@ -46,9 +46,9 @@ test('이어진 인용을 고쳐도 한 인용으로, 떨어진 인용은 떨어
   expect(sent).toContain('> alone one\n\n> alone two');
 });
 
-test('인용 안 헤딩은 다음 줄과 한 단어로 붙지 않는다', async ({ page }) => {
-  // 블록끼리의 textContent는 구분자 없이 이어지므로 블록 단위로 본다
-  const head = page.locator('.bn-editor blockquote', { hasText: 'Head' });
+test('인용 안 헤딩은 인용의 자식 헤딩이고 다음 줄과 붙지 않는다', async ({ page }) => {
+  // 추가 검토 20부터 인용 안 헤딩은 인용 블록의 자식 헤딩 블록이다
+  const head = page.locator('.bn-editor .bn-block:has(> [data-content-type="quote"]) [data-content-type="heading"]', { hasText: 'Head' });
   await expect(head).toHaveCount(1);
   await expect(head).not.toContainText('tail');
 });

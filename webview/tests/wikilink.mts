@@ -7,14 +7,14 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
+const { fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, markdownToBlocks } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
 
 // 파싱과 저장이 같은 ctx를 쓴다(앱과 같다). 병합(2단계)은 거치지 않는다
 const open = (md: string) => {
   const ctx: any = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
-  return { ctx, blocks: T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx))) };
+  return { ctx, blocks: markdownToBlocks(md, ctx, m => editor.tryParseMarkdownToBlocks(m)) };
 };
 const save = (blocks: any[], ctx: any) => {
   let m = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), T.quoteJoinIds(blocks, ctx.quoteJoins));

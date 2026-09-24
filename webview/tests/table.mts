@@ -7,7 +7,7 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
+const { fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, markdownToBlocks } = await import('../src/markdownPipeline.ts');
 const { mergeLines } = await import('../src/lineMerge.ts');
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
@@ -15,7 +15,7 @@ T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(m
 // 앱과 같은 여는 경로와 저장 경로. 병합(2단계)은 거치지 않는다. 원문 표는 앱처럼 연 시점에 블록 ID와 짝짓는다
 const open = (md: string) => {
   const ctx: any = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
-  const blocks = T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx)));
+  const blocks = markdownToBlocks(md, ctx, m => editor.tryParseMarkdownToBlocks(m));
   ctx.tableIds = T.tableOriginalIds(blocks, ctx.tables);
   return { ctx, blocks };
 };

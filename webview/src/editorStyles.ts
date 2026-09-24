@@ -410,6 +410,28 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             color: color-mix(in srgb, var(--text-color) 70%, var(--bg-color)) !important;
           }
 
+          /* 인용의 자식 블록(인용 안 목록, 헤딩, 코드, 중첩 인용): 인용 선과 글자색을 이어 그리고 중첩 안내선은 숨긴다(추가 검토 20) */
+          .bn-editor .bn-block:has(> [data-content-type="quote"]) > .bn-block-group {
+            margin-left: 0 !important;
+            margin-bottom: 0.4em !important;
+            border-left: 3px solid color-mix(in srgb, var(--text-color) 25%, transparent) !important;
+            padding: 0 0 2px 16px !important;
+            color: color-mix(in srgb, var(--text-color) 70%, var(--bg-color)) !important;
+          }
+          .bn-editor .bn-block:has(> .bn-block-group) > [data-content-type="quote"] blockquote {
+            margin-bottom: 0 !important;
+          }
+          .bn-editor .bn-block:has(> [data-content-type="quote"]) > .bn-block-group > .bn-block-outer::before {
+            display: none !important;
+          }
+          /* 목록이나 헤딩으로 시작하는 인용은 첫 줄이 비어 있다. 커서가 없을 때는 접는다 */
+          .bn-editor .bn-block:has(> .bn-block-group) > [data-content-type="quote"]:not([data-is-empty-and-focused]) blockquote:has(> .ProseMirror-trailingBreak:only-child) {
+            height: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            overflow: hidden !important;
+          }
+
           /* Inline Code Styles (GitHub-style sizing, theme accent color) */
           .bn-editor code, .bn-editor [data-inline-style="code"] {
             background-color: color-mix(in srgb, var(--text-color) 8%, transparent) !important;

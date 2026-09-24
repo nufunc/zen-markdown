@@ -7,7 +7,7 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
+const { fromEditorMarkdown, makeLiteralVerifier, markdownToBlocks } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
 
@@ -22,7 +22,7 @@ const save = (text: string) => {
 /** 다시 열었을 때 문단 하나에 스타일 없는 평문만 있으면 그 글자를, 아니면 null */
 const reopenPlain = (md: string): string | null => {
   const c = ctx();
-  const blocks = T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, c)));
+  const blocks = markdownToBlocks(md, c, m => editor.tryParseMarkdownToBlocks(m));
   if (blocks.length !== 1 || blocks[0].type !== 'paragraph') return null;
   const content = blocks[0].content ?? [];
   if (content.some((x: any) => x.type !== 'text' || Object.keys(x.styles ?? {}).length)) return null;
