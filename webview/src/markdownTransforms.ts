@@ -44,13 +44,23 @@ export const isMermaidCode = (text: string): boolean => {
 
 // 파서는 줄바꿈(<br>) 뒤에 공백 하나를 끼워 넣는다. 그대로 두면 저장할 때 백슬래시 줄바꿈 뒤에 공백이 붙고
 // 인용 안에서는 왕복할 때마다 공백이 는다. 연속 줄의 앞 공백은 마크다운에서 뜻이 없으므로 걷어낸다.
-const stripBreakSpace = (content: any[]): any[] => content.map((c: any) => {
-  if (c.type === 'text' && typeof c.text === 'string' && !c.styles?.code) {
-    return { ...c, text: c.text.replace(/\n /g, '\n') };
+// 줄바꿈이 한 조각의 끝이면 그 공백은 다음 조각의 앞에 붙는다(**TL;DR**\n**결론** → [TL;DR\n][ ][결론]).
+const stripBreakSpace = (content: any[]): any[] => {
+  const out: any[] = [];
+  let afterBreak = false;
+  for (const c of content) {
+    if (c.type === 'text' && typeof c.text === 'string' && !c.styles?.code) {
+      let text = c.text.replace(/\n /g, '\n');
+      if (afterBreak && text.startsWith(' ')) text = text.slice(1);
+      afterBreak = text.endsWith('\n');
+      if (text) out.push({ ...c, text });
+      continue;
+    }
+    afterBreak = false;
+    out.push(c.type === 'link' && Array.isArray(c.content) ? { ...c, content: stripBreakSpace(c.content) } : c);
   }
-  if (c.type === 'link' && Array.isArray(c.content)) return { ...c, content: stripBreakSpace(c.content) };
-  return c;
-});
+  return out;
+};
 
 // 텍스트와 주소가 같은 링크를 BlockNote는 주소만 내보내 링크가 사라진다([a.md](a.md) → a.md).
 // 직렬화 동안만 텍스트 끝에 표식을 붙여 [..](..) 형태를 강제하고, restoreLinkText가 지운다.
@@ -61,6 +71,28 @@ const markSameTextLinks = (content: any[]): any[] => content.map((c: any) => {
   if (text !== c.href) return c;
   const last = c.content[c.content.length - 1];
   return { ...c, content: [...c.content.slice(0, -1), { ...last, text: last.text + LINK_TEXT_MARK }] };
+});
+
+// 강조 구분자(**, *, ~~) 바로 안쪽에 공백이 오면 CommonMark는 강조를 열거나 닫지 않는다.
+// BlockNote는 강조 조각 끝의 공백은 구분자 밖으로 옮기지만, 인라인 코드 뒤에 이어지는 조각의 앞 공백은 옮기지 않는다
+// (**a `b` c** → **a** `b`** c**). 직렬화하는 동안만 강조 조각 앞뒤 공백을 강조 없는 조각으로 떼어 낸다.
+const EDGE_STYLES = ['bold', 'italic', 'strike'];
+const splitEmphasisEdgeSpaces = (content: any[]): any[] => content.flatMap((c: any) => {
+  if (c.type === 'link' && Array.isArray(c.content)) return [{ ...c, content: splitEmphasisEdgeSpaces(c.content) }];
+  if (c.type !== 'text' || typeof c.text !== 'string' || c.styles?.code) return [c];
+  if (!EDGE_STYLES.some(k => c.styles?.[k])) return [c];
+  // 떼어 낸 공백에는 강조만 빼고 글자색 같은 나머지 스타일을 남긴다
+  const plain = Object.fromEntries(Object.entries(c.styles).filter(([k]) => !EDGE_STYLES.includes(k)));
+  // 강조가 줄바꿈을 가로지르면 구분자 안에 강제 줄바꿈이 들어가 다시 열 때 강조가 깨진다. 줄마다 강조를 닫고 연다.
+  return c.text.split(/(\n)/).flatMap((piece: string) => {
+    const m = piece.match(/^(\s*)([\s\S]*?)(\s*)$/)!;
+    if (!m[2]) return piece ? [{ ...c, text: piece, styles: plain }] : [];
+    return [
+      ...(m[1] ? [{ ...c, text: m[1], styles: plain }] : []),
+      { ...c, text: m[2] },
+      ...(m[3] ? [{ ...c, text: m[3], styles: plain }] : []),
+    ];
+  });
 });
 
 export function restoreLinkText(md: string): string {
@@ -116,8 +148,8 @@ export const processBlocksToMarkdown = (blocks: any[]): any[] => {
         content: [{ type: "text", text: newB.props.code, styles: {} }]
       } as any;
     }
-    if (Array.isArray(newB.content)) {
-      newB.content = markSameTextLinks(newB.content);
+    if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
+      newB.content = markSameTextLinks(splitEmphasisEdgeSpaces(newB.content));
     }
     if (newB.children && newB.children.length > 0) {
       newB.children = processBlocksToMarkdown(newB.children);
