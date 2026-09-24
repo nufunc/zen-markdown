@@ -24,9 +24,9 @@ const save = (blocks: any[], c: any) => {
 };
 
 /** 보이는 모습의 요약: 공백과 줄바꿈의 스타일은 지우고, 같은 스타일이 이어지면 합친다 */
-const view = (blocks: any[]): string => blocks.map((b: any) => {
+const inline = (content: any[]): string => {
   const parts: { t: string; st: string }[] = [];
-  for (const c of Array.isArray(b.content) ? b.content : []) {
+  for (const c of content) {
     if (c.type !== 'text') { parts.push({ t: `<${c.type}:${c.href ?? ''}>`, st: '' }); continue; }
     for (const piece of c.text.split(/(\s+)/)) {
       if (!piece) continue;
@@ -35,8 +35,14 @@ const view = (blocks: any[]): string => blocks.map((b: any) => {
       if (last && last.st === st) last.t += piece; else parts.push({ t: piece, st });
     }
   }
-  return b.type + '|' + parts.map(p => p.t + p.st).join('') + '|' + view(b.children ?? []);
-}).join('\n');
+  return parts.map(p => p.t + p.st).join('');
+};
+// 표는 칸마다 인라인을 읽고 칸은 ¦, 행은 ⏎로 가른다(추가 검토 17: 표 칸의 퇴행도 잡는다)
+const blockInline = (b: any): string => Array.isArray(b.content) ? inline(b.content)
+  : b.content?.rows ? b.content.rows.map((r: any) => r.cells.map((c: any) => inline(c.content ?? [])).join('¦')).join('⏎') : '';
+const view = (blocks: any[]): string => blocks.map((b: any) =>
+  b.type + '|' + blockInline(b) + '|' + view(b.children ?? [])
+).join('\n');
 
 let pass = 0, fail = 0;
 const check = (name: string, md: string) => {
@@ -54,5 +60,11 @@ check('줄바꿈을 가로지르는 굵게', '**첫 줄\n둘째 줄**');
 check('한국어 조사가 붙은 굵게', '이제 **중요.**다음 문장, 결과는 **87.5%**이다, **결론**: 끝');
 
 check('인라인 코드 뒤 강제 줄바꿈 다음 줄의 굵게', '> **A**: `x.md`\\\n> **B**: y\n> **C**: z');
+// 표 칸도 문단과 같은 인라인 후처리를 거친다(추가 검토 17)
+check('표 칸: 굵게 안의 인라인 코드', '| a |\n| --- |\n| **auditd `auid=-1` 만 기록** |');
+check('표 칸: 이스케이프한 링크 모양', '| a |\n| --- |\n| \\[x](y) |');
+check('표 칸: 이스케이프한 별표', '| a |\n| --- |\n| \\*not em* |');
+check('표 칸: 글자와 주소가 같은 링크', '| a |\n| --- |\n| [01_현황진단.md](01_현황진단.md) |');
+check('표 칸: 셀 안의 \\|는 겹쳐 이스케이프하지 않는다', '| a |\n| --- |\n| x \\| y *z* |');
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

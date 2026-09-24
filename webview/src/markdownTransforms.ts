@@ -500,6 +500,10 @@ const trimTrailingBreaks = (content: any[]): any[] => {
 };
 
 /** quoteJoins: 앞 인용에 이어지는 인용 블록의 ID(quoteJoinIds). 저장할 때 앞 인용과 한 인용으로 합친다. */
+/** 직렬화 전 인라인 후처리. blockStart면 첫 글자가 줄 머리라서 줄 머리 판정(#, -, 1. 등)도 한다 */
+const prepareInline = (content: any[], blockStart: boolean): any[] =>
+  splitEmphasisEdgeSpaces(escapeLiteralMarkdown(markSameTextLinks(trimTrailingBreaks(content)), blockStart));
+
 export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>): any[] => {
   return blocks.map((b: any, i: number) => {
     const newB = { ...b };
@@ -519,7 +523,11 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
       } as any;
     }
     if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
-      newB.content = splitEmphasisEdgeSpaces(escapeLiteralMarkdown(markSameTextLinks(trimTrailingBreaks(newB.content)), newB.type === 'paragraph'));
+      newB.content = prepareInline(newB.content, newB.type === 'paragraph');
+    } else if (newB.type === 'table' && Array.isArray(newB.content?.rows)) {
+      // 표 내용은 { rows: [{ cells }] } 객체라 위 조건을 지나치지 않게 칸마다 건다. 칸은 줄 머리가 아니다(| 뒤)
+      newB.content = { ...newB.content, rows: newB.content.rows.map((r: any) => ({ ...r, cells: r.cells.map((c: any) =>
+        Array.isArray(c?.content) ? { ...c, content: prepareInline(c.content, false) } : Array.isArray(c) ? prepareInline(c, false) : c) })) };
     }
     if (newB.type === 'quote' && quoteJoins?.has(newB.id) && blocks[i - 1]?.type === 'quote' && Array.isArray(newB.content)) {
       newB.content = [{ type: 'text', text: QUOTE_JOIN_MARK, styles: {} }, ...newB.content];
