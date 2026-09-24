@@ -1,7 +1,12 @@
 import { test, expect } from '@playwright/test';
 
+// 성능 테스트는 perf 프로젝트로 나머지 E2E가 끝난 뒤 한 번에 하나씩 돈다(playwright.config.ts, 추가 검토 15).
+// 여유 메모리가 1GB 아래인 PC에서 돌린 결과는 판정에 쓰지 않는다. 부하로 수치가 몇 배씩 흔들린다.
+test.describe.configure({ mode: 'serial' });
+
 // 추가 검토 2: 코드 블록이 많은 문서에서 코드 블록이 아닌 문단에 입력할 때 메인 스레드가 멈추지 않아야 한다.
 // 입력 구간(첫 키부터 마지막 키 뒤 200ms까지)의 긴 작업만 센다. 멈춘 뒤 600ms에 도는 전체 직렬화는 따로다.
+// 기준 600ms는 고친 뒤 값(0~63ms)의 약 10배, 퇴행 값(2,479~2,870ms)의 약 4분의 1이다.
 const mock = `
   window.acquireVsCodeApi = () => {
     if (!window.__vscode) window.__vscode = { postMessage: () => {}, getState: () => ({}), setState: () => {} };
@@ -19,7 +24,7 @@ const makeDoc = () => {
   return s;
 };
 
-test('코드 블록 1,000개 문서에서 문단 입력 중 긴 작업 합계가 200ms 아래다', async ({ page }) => {
+test('코드 블록 1,000개 문서에서 문단 입력 중 긴 작업 합계가 600ms 아래다', async ({ page }) => {
   test.setTimeout(120000);
   await page.addInitScript(mock);
   await page.goto('/');
@@ -39,7 +44,7 @@ test('코드 블록 1,000개 문서에서 문단 입력 중 긴 작업 합계가
   const sum = await page.evaluate(([s, e]) =>
     (window as any).__long.filter((x: any) => x.s >= s && x.s <= e).reduce((a: number, x: any) => a + x.d, 0), [start, end]);
   console.log(`long task sum during typing: ${Math.round(sum)}ms`);
-  expect(sum).toBeLessThan(200);
+  expect(sum).toBeLessThan(600);
 });
 
 test('코드 블록 안에 입력하면 하이라이트가 갱신되고, 언어를 바꾸면 다시 하이라이트된다', async ({ page }) => {

@@ -14,10 +14,19 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'on-first-retry',
   },
+  // 성능 테스트(perf-*.spec.ts)는 다른 테스트와 CPU를 나눠 쓰면 수치가 흔들린다. 나머지가 끝난 뒤 따로 돌린다
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /perf-.*\.spec\.ts/,
+    },
+    {
+      name: 'perf',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /perf-.*\.spec\.ts/,
+      dependencies: ['chromium'],
+      workers: 1,
     },
   ],
   webServer: {
