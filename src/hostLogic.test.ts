@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { sanitizeDiag } from './hostLogic';
+import * as path from 'path';
+import { sanitizeDiag, resolveLinkPath } from './hostLogic';
 
 test('임의 문자열 필드는 기록하지 않고 개수만 남긴다', () => {
     const r = sanitizeDiag({ type: 'diag', ev: 'serialize_failed', message: '비밀 원고 첫 문단' });
@@ -49,4 +50,14 @@ test('지금의 호출 지점이 보내는 모양은 그대로 남는다', () =>
 
 test('공백이 든 ev는 기록하지 않는다', () => {
     assert.equal(sanitizeDiag({ ev: 'a b' }), null);
+});
+
+test('openLink 경로: 공백과 폴더, 헤딩 조각, 퍼센트 인코딩을 받고 문서 폴더 밖은 막는다', () => {
+    const dir = path.resolve('/vault/notes');
+    const roots = [dir];
+    assert.equal(resolveLinkPath(dir, 'my doc.md', roots), path.join(dir, 'my doc.md'));
+    assert.equal(resolveLinkPath(dir, '폴더/한글 문서.md', roots), path.join(dir, '폴더', '한글 문서.md'));
+    assert.equal(resolveLinkPath(dir, 'a.md#Heading Two', roots), path.join(dir, 'a.md'));
+    assert.equal(resolveLinkPath(dir, 'my%20doc.md', roots), path.join(dir, 'my doc.md'));
+    assert.equal(resolveLinkPath(dir, '../outside.md', roots), null);
 });

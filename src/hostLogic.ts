@@ -1,4 +1,5 @@
 // 확장 호스트의 순수 로직. vscode 모듈에 기대지 않으므로 node:test로 바로 검사한다(hostLogic.test.ts).
+import * as path from 'path';
 
 /** 웹뷰의 roundtripCheck.ts DriftKind와 같은 목록이어야 한다. 호스트는 웹뷰 코드를 import하지 않는다. */
 const DRIFT_KINDS = new Set(['fence_lang', 'link_form', 'blank_line', 'trailing_space', 'list_marker', 'heading', 'html', 'other']);
@@ -49,4 +50,17 @@ export function sanitizeDiag(msg: Record<string, unknown>): SanitizedDiag | null
     }
     if (dropped > 0) fields.dropped = dropped;
     return { ev, fields };
+}
+
+/**
+ * openLink가 받은 상대 링크를 파일 경로로 바꾼다. 조각(#헤딩)은 떼고, 퍼센트 인코딩과 공백이 든 경로를 그대로 받는다.
+ * roots(문서 폴더와 워크스페이스 폴더) 밖이면 null. ../로 빠져나가는 링크를 막는다.
+ */
+export function resolveLinkPath(docDir: string, href: string, roots: string[]): string | null {
+    const targetPath = path.resolve(docDir, decodeURIComponent(href.split('#')[0]));
+    const inScope = roots.some(root => {
+        const rel = path.relative(root, targetPath);
+        return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    });
+    return inScope ? targetPath : null;
 }

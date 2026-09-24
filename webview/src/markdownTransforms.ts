@@ -679,22 +679,43 @@ export function mapOutsideCode(markdown: string, fn: (part: string) => string): 
   });
 }
 
-/** 문서에 나타난 [x](x.md) 모양 링크의 차례. wiki가 true면 원문이 [[x]]였다 */
-export type WikilinkOccurrence = { name: string; wiki: boolean };
+/** 문서에 나타난 .md 링크의 차례. wiki가 true면 원문이 위키링크였고, raw는 그 표기, key는 변환한 링크의 글자와 주소다 */
+export type WikilinkOccurrence = { name: string; wiki: boolean; raw?: string; key?: string };
 
-// [[문서명]]을 BlockNote가 아는 링크로 바꾼다. 이름만 기억하면 같은 이름의 일반 링크 [x](x.md)까지 저장할 때 [[x]]로 되돌리므로,
-// 나타나는 차례를 order에 적어 둔다. 이름에서 protectHtml의 표식을 빼고 적어야 restoreHtml 뒤의 이름과 맞는다.
+// 위키링크, 또는 주소가 꺾쇠이거나 공백 없는 일반 링크
+const WIKI_OR_LINK = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s()<>]+))\)/g;
+const MD_LINK = /\[([^\]]+)\]\((?:<([^<>\n]+)>|([^\s()<>]+))\)/g;
+
+/** 링크 주소를 문서 이름과 조각으로 나눈다. .md 문서가 아니면 null */
+const splitMdHref = (href: string): { target: string; frag: string } | null => {
+  const m = href.match(/^(.*)\.md(#.*)?$/);
+  return m ? { target: m[1], frag: m[2] ?? '' } : null;
+};
+
+// [[문서명]]을 BlockNote가 아는 링크로 바꾼다. [[문서#헤딩]]은 주소 문서.md#헤딩, [[문서|별칭]]은 글자 별칭으로 만든다.
+// 주소에 공백이나 괄호가 있으면 꺾쇠로 감싼다(그러지 않으면 공백 앞에서 주소가 잘린다).
+// 이름만 기억하면 같은 이름의 일반 링크까지 저장할 때 위키링크로 되돌리므로, 나타나는 차례를 order에 적어 둔다.
+// 이름에서 protectHtml의 표식을 빼고 적어야 restoreHtml 뒤의 이름과 맞는다.
 export function parseWikilinks(md: string, seen?: Set<string>, order?: WikilinkOccurrence[]): string {
+  const strip = (s: string) => s.replaceAll(ZWSP, '');
   return mapOutsideCode(md, part =>
-    part.replace(/\[\[([^\]]+)\]\]|\[([^\]]+)\]\(<?\2\.md>?\)/g, (m, wiki: string | undefined, plain: string | undefined) => {
-      if (wiki === undefined) {
-        order?.push({ name: plain!.replaceAll(ZWSP, ''), wiki: false });
+    part.replace(WIKI_OR_LINK, (m, inner: string | undefined, _text, angled: string | undefined, bare: string | undefined) => {
+      if (inner === undefined) {
+        const href = splitMdHref(angled ?? bare!);
+        if (href) order?.push({ name: strip(href.target), wiki: false });
         return m;
       }
-      const name = wiki.replaceAll(ZWSP, '');
+      const bar = inner.indexOf('|');
+      const ref = bar < 0 ? inner : inner.slice(0, bar);
+      const hash = ref.indexOf('#');
+      const target = hash < 0 ? ref : ref.slice(0, hash);
+      const frag = hash < 0 ? '' : ref.slice(hash);
+      const label = bar < 0 ? ref : inner.slice(bar + 1);
+      const url = `${target}.md${frag}`;
+      const name = strip(target);
       seen?.add(name);
-      order?.push({ name, wiki: true });
-      return `[${wiki}](${wiki}.md)`;
+      order?.push({ name, wiki: true, raw: strip(m), key: strip(label) + '\n' + strip(url) });
+      return `[${label}](${/[\s()]/.test(url) ? `<${url}>` : url})`;
     })
   );
 }
@@ -714,26 +735,35 @@ const alignNames = (a: string[], b: string[]): number[] => {
   return pair;
 };
 
-// 저장할 때 원문에서 [[x]]였던 링크만 되돌린다. 저장 결과의 [x](x.md) 모양 링크를 원문의 차례와 이름으로 짝지어,
-// 짝이 원문에서 [[x]]였던 것만 바꾼다. 편집으로 수가 달라져도 이름과 차례가 맞는 것만 되돌린다.
-// order가 없으면(예전 호출) 이름 목록으로 판정한다.
+// 저장할 때 원문에서 위키링크였던 링크만 되돌린다. 저장 결과의 .md 링크를 원문의 차례와 문서 이름으로 짝지어,
+// 짝이 원문에서 위키링크였던 것만 바꾼다. 글자와 주소가 그대로면 원래 표기를 쓰고, 바뀌었으면 위키링크를 다시 만든다.
+// 다시 만들 수 없는 모양(글자나 주소에 ], |, 줄바꿈)이면 일반 링크로 둔다. order가 없으면(예전 호출) 이름 목록으로 판정한다.
 export function serializeWikilinks(md: string, seen?: Set<string>, order?: WikilinkOccurrence[]): string {
-  const LINK = /\[([^\]]+)\]\(<?\1\.md>?\)/g;
   if (order && order.length > 0) {
     if (!order.some(o => o.wiki)) return md;
     const found: string[] = [];
-    mapOutsideCode(md, part => { for (const m of part.matchAll(LINK)) found.push(m[1]); return part; });
+    mapOutsideCode(md, part => {
+      for (const m of part.matchAll(MD_LINK)) { const h = splitMdHref(m[2] ?? m[3]); if (h) found.push(h.target); }
+      return part;
+    });
     if (found.length * order.length > 1_000_000) return md;
     const pair = alignNames(order.map(o => o.name), found);
     let k = 0;
-    return mapOutsideCode(md, part => part.replace(LINK, (m, name: string) => {
-      const x = pair[k++];
-      return x >= 0 && order[x].wiki ? `[[${name}]]` : m;
+    return mapOutsideCode(md, part => part.replace(MD_LINK, (m, text: string, angled: string | undefined, bare: string | undefined) => {
+      const url = angled ?? bare!;
+      const h = splitMdHref(url);
+      if (!h) return m;
+      const o = order[pair[k++]];
+      if (!o?.wiki) return m;
+      if (o.key === text + '\n' + url) return o.raw!;
+      const ref = h.target + h.frag;
+      if (/[\]|\n]/.test(ref + text)) return m;
+      return text === ref ? `[[${ref}]]` : `[[${ref}|${text}]]`;
     }));
   }
   if (!seen || seen.size === 0) return md;
   return mapOutsideCode(md, part =>
-    part.replace(LINK, (m, docName) => (seen.has(docName) ? `[[${docName}]]` : m))
+    part.replace(/\[([^\]]+)\]\(<?\1\.md>?\)/g, (m, docName) => (seen.has(docName) ? `[[${docName}]]` : m))
   );
 }
 

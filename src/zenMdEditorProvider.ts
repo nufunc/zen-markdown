@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -271,14 +271,10 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                                 return;
                             }
                             if (!docDir) return;
-                            const targetPath = path.resolve(docDir, decodeURIComponent(href.split('#')[0]));
                             // 문서 폴더 또는 워크스페이스 내부만 허용 (../ 탈출 차단)
                             const roots = [docDir, ...(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath)];
-                            const inScope = roots.some(root => {
-                                const rel = path.relative(root, targetPath);
-                                return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-                            });
-                            if (!inScope) {
+                            const targetPath = resolveLinkPath(docDir, href, roots);
+                            if (!targetPath) {
                                 vscode.window.showWarningMessage(`Blocked link outside the workspace: ${href}`);
                                 return;
                             }
