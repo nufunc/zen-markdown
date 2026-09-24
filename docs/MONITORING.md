@@ -71,6 +71,7 @@ node tools/Get-ZenDiagnostics.mjs --dir <경로>    # 로그 위치 지정
 | `open` | | 문서를 열었다. 바이트 수와 줄 수를 함께 남긴다 |
 | `external_update` | | 외부에서 파일이 바뀌어 웹뷰에 알렸다 |
 | `external_conflict` | O | 전송하지 않은 로컬 편집이 있을 때 외부 변경이 와서 사용자에게 물었다. `choice`는 `mine`이나 `external`이다 |
+| `merge_fallback` | O | 원문 조각 보존 병합이 일부나 전부를 편집 결과로 물러섰다. `conflicts`는 서식 차이와 편집이 겹친 구간 수(원문 기준마다 한 번), `check_failed`는 병합 결과를 다시 열면 지금 에디터와 달라 편집 결과를 저장했다는 뜻이다. `unmergeable`과 `error`는 병합을 시도하지 못했다 |
 | `roundtrip_drift` | O | 문서를 연 직후 검증에서 왕복 손실을 찾았다. **가장 강한 신호다** |
 | `roundtrip_check_failed` | O | 왕복 검증 자체가 실패했다 |
 | `edit_failed` | O | 문서에 편집을 적용하지 못했다 |

@@ -23,8 +23,11 @@ export const normalizeMd = (str: string) => str.replace(/\r\n/g, '\n').trim();
 const PENDING_EXTERNAL_DELAY = 1500;
 
 export interface DocumentSyncDeps {
-  /** 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다. 만들 수 없으면 null. */
-  buildDocumentText: () => Promise<string | null>;
+  /** 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다. 만들 수 없으면 null.
+   *  final이면 저장 직전이므로 비용이 커도 결과를 끝까지 검증한다. */
+  buildDocumentText: (final: boolean) => Promise<string | null>;
+  /** 마지막으로 보낸 텍스트가 아직 검증되지 않아 저장 직전에 다시 만들어야 하는가 */
+  needsFinalSerialize?: () => boolean;
   /** 외부 변경을 채택할 때 호출된다 (에디터를 그 내용으로 다시 그린다) */
   applyExternalText: (text: string) => void;
   /** 읽기 전용 문서인가 */
@@ -64,10 +67,10 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     send(text);
   }, 300);
 
-  const serializeAndSend = async () => {
+  const serializeAndSend = async (final = false) => {
     if (!canSend()) return;
     try {
-      const fullText = await depsRef.current.buildDocumentText();
+      const fullText = await depsRef.current.buildDocumentText(final);
       if (fullText === null) return;
       lastInitializedTextRef.current = fullText;
       send(fullText);
@@ -77,7 +80,7 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     }
   };
 
-  const serializeDebounced = useDebouncedCallback(serializeAndSend, 600);
+  const serializeDebounced = useDebouncedCallback(() => serializeAndSend(false), 600);
 
   // 호출 시점에 편집을 표시하는 래퍼. cancel·flush·isPending은 원래 디바운스 것을 그대로 쓴다.
   const postChange = Object.assign((text: string) => {
@@ -102,9 +105,9 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
   /** 대기 중인 편집을 즉시 배출한다. 저장 직전과 탭 전환에서 부른다. */
   const flush = async () => {
     if (postChange.isPending()) postChange.flush();
-    if (debouncedSerialize.isPending()) {
+    if (debouncedSerialize.isPending() || depsRef.current.needsFinalSerialize?.()) {
       debouncedSerialize.cancel();
-      await serializeAndSend();
+      await serializeAndSend(true);
     }
   };
   const flushRef = useRef(flush);

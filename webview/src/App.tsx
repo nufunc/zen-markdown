@@ -9,6 +9,7 @@ import { isEditorElement, isPlainInputTarget } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
 import { useDocumentSync, normalizeMd } from './useDocumentSync';
 import { compareRoundtrip } from './roundtripCheck';
+import { mergeLines } from './lineMerge';
 import { resolveTheme } from './themes';
 import { buildEditorStyles } from './editorStyles';
 import { CodeBlockMenu } from './CodeBlockMenu';
@@ -245,14 +246,19 @@ function App() {
   const docBaseUriRef = useRef<string>("");
   // parseWikilinks가 실제로 변환한 문서명 — 저장 시 그것만 [[..]]로 되돌린다
   // 동기화 계층이 부를 최신 직렬화 함수 (선언 순서 역전 회피)
-  const buildDocumentTextRef = useRef<() => Promise<string | null>>(async () => null);
+  const buildDocumentTextRef = useRef<(final: boolean) => Promise<string | null>>(async () => null);
+  // 원문 조각 보존: 연 때의 원문 본문 O와, O를 편집 없이 직렬화한 기준 C. 저장할 때 C→N 편집만 O에 적용한다.
+  const baselineRef = useRef<{ original: string; base: string; conflictReported: boolean } | null>(null);
+  // 검증하지 않은 병합 결과를 보냈는가. 그러면 저장 직전에 다시 만들어 검증한다.
+  const unverifiedRef = useRef(false);
   const {
     lastSentTextRef, lastInitializedTextRef,
     postChange, debouncedSerialize, flush,
     holdExternal, deferPending, isHolding,
     hasUnsentEdits, sendNow, conflict, resolveConflict,
   } = useDocumentSync({
-    buildDocumentText: () => buildDocumentTextRef.current(),
+    buildDocumentText: (final) => buildDocumentTextRef.current(final),
+    needsFinalSerialize: () => unverifiedRef.current,
     applyExternalText: (text) => setDocumentText(text),
     isReadOnly: () => configRef.current.isReadOnly,
   });
@@ -600,6 +606,9 @@ function App() {
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
+          const base = serializeBlocks(newEditor, newEditor.document);
+          baselineRef.current = { original: content.replace(/\r\n/g, '\n'), base, conflictReported: false };
+          unverifiedRef.current = false;
           // 초기 로드는 되돌릴 대상이 아니다 — undo 히스토리를 비워 첫 Ctrl+Z가
           // 문서를 빈 상태로 만드는 것을 막는다
           clearUndoHistory(newEditor);
@@ -630,25 +639,16 @@ function App() {
           // 편집 흐름을 막지 않도록 다음 틱으로 미룬다.
           setTimeout(() => {
             try {
-              const blocksForMd = processBlocksToMarkdown(newEditor.document);
-              Promise.resolve(newEditor.blocksToMarkdownLossy(blocksForMd as any)).then((md: string) => {
-                let out = normalizeOrderedListNumbers(md);
-                out = normalizeUnorderedListBullets(out);
-                out = preserveMarkdownLineBreaks(out);
-                out = fromEditorMarkdown(out, {
-                  docBaseUri: docBaseUriRef.current,
-                  wikilinkNames: wikilinkNamesRef.current
+              // 연 직후 만든 기준 C가 곧 편집 없는 직렬화 결과다
+              const drift = compareRoundtrip(content, base);
+              if (drift) {
+                diag('roundtrip_drift', {
+                  removed: drift.removed,
+                  added: drift.added,
+                  kinds: drift.kinds,
+                  lines: content.split('\n').length
                 });
-                const drift = compareRoundtrip(content, out);
-                if (drift) {
-                  diag('roundtrip_drift', {
-                    removed: drift.removed,
-                    added: drift.added,
-                    kinds: drift.kinds,
-                    lines: content.split('\n').length
-                  });
-                }
-              }).catch(() => diag('roundtrip_check_failed'));
+              }
             } catch {
               diag('roundtrip_check_failed');
             }
@@ -706,6 +706,8 @@ function App() {
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
           editor.replaceBlocks(editor.document, blocks);
+          baselineRef.current = { original: content.replace(/\r\n/g, '\n'), base: serializeBlocks(editor, editor.document), conflictReported: false };
+          unverifiedRef.current = false;
           // 외부 변경으로 문서 전체가 갈렸다. 이 교체가 undo 스택에 남으면 Ctrl+Z 한 번이
           // 외부 변경을 통째로 되돌리고, 그 이전 스텝들은 위치가 어긋나 무의미하다.
           clearUndoHistory(editor);
@@ -772,11 +774,11 @@ function App() {
 
   // 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다.
   // 실제 전송과 디바운스·flush·경합 조정은 useDocumentSync가 맡는다.
-  const buildDocumentText = async (): Promise<string | null> => {
+  const buildDocumentText = async (final = false): Promise<string | null> => {
     if (isRawMode) return documentText === "loading" ? null : documentText;
     if (!editor) return null;
     extractHeadings(editor);
-    const markdown = await generateMarkdownFromEditor();
+    const markdown = mergeWithOriginal(await generateMarkdownFromEditor(), final);
 
     // frontmatter는 연 때 떼어 둔 원문 그대로 다시 붙인다. 편집은 Raw 모드에서 한다.
     return parsedFrontmatter ? `---
@@ -786,19 +788,62 @@ ${markdown}` : markdown;
   };
   buildDocumentTextRef.current = buildDocumentText;
 
-  const generateMarkdownFromEditor = async () => {
-    if (!editor) return "";
-    const blocksForMd = processBlocksToMarkdown(editor.document);
-    let markdown = await editor.blocksToMarkdownLossy(blocksForMd as any);
-    
-
-
+  // 블록을 디스크에 쓸 마크다운 본문으로 만든다. 직렬화 체인은 markdownPipeline.ts가 파싱 체인과 나란히 담는다.
+  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current) => {
+    let markdown = ed.blocksToMarkdownLossy(processBlocksToMarkdown(blocks) as any);
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
+    return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames });
+  };
 
-    // 직렬화 체인. markdownPipeline.ts가 파싱 체인과 나란히 담는다.
-    return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
+  const generateMarkdownFromEditor = async () => {
+    if (!editor) return "";
+    return serializeBlocks(editor, editor.document);
+  };
+
+  /** 병합 결과 R을 다시 열면 지금 에디터(N)와 같은 문서가 되는가 */
+  const reopensAs = (merged: string, edited: string) => {
+    const names = new Set<string>();
+    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names })));
+    return serializeBlocks(editor, blocks, names).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
+  };
+
+  /** 이보다 긴 문서는 입력 중에는 검증하지 않고 저장 직전에만 검증한다. 15,000줄에서 검증 한 번이 약 0.9초다. */
+  const VERIFY_EVERY_SEND_MAX_LINES = 2000;
+
+  /** 편집 결과 N에서 사용자 편집만 원문 O에 적용한다. 병합할 수 없거나 검증에 실패하면 N을 쓴다. */
+  const mergeWithOriginal = (edited: string, final: boolean): string => {
+    const b = baselineRef.current;
+    if (!b || !editor) return edited;
+    try {
+      const r = mergeLines(b.original, b.base, edited);
+      if (!r) {
+        diag('merge_fallback', { unmergeable: true });
+        return edited;
+      }
+      if (r.conflicts > 0 && !b.conflictReported) {
+        b.conflictReported = true;
+        diag('merge_fallback', { conflicts: r.conflicts });
+      }
+      if (r.text === edited) {
+        unverifiedRef.current = false;
+        return edited;
+      }
+      if (final || b.original.split('\n').length <= VERIFY_EVERY_SEND_MAX_LINES) {
+        unverifiedRef.current = false;
+        if (!reopensAs(r.text, edited)) {
+          diag('merge_fallback', { check_failed: true });
+          return edited;
+        }
+      } else {
+        unverifiedRef.current = true;
+      }
+      return r.text;
+    } catch {
+      diag('merge_fallback', { error: true });
+      return edited;
+    }
   };
 
   useEffect(() => {
@@ -933,10 +978,12 @@ ${markdown}` : markdown;
     if (!isRawMode && editor) {
       try {
         if (hasEdited.current) {
-          const markdown = await generateMarkdownFromEditor();
-          const fullText = parsedFrontmatter ? `---\n${parsedFrontmatter}\n---\n${markdown}` : markdown;
-          setDocumentText(fullText);
-          sendNow(fullText);
+          // 병합을 거친 텍스트를 보여 주고 보낸다. 그러지 않으면 모드를 바꾸는 순간 문서 전체가 다시 쓰인다.
+          const fullText = await buildDocumentText(true);
+          if (fullText !== null) {
+            setDocumentText(fullText);
+            sendNow(fullText);
+          }
         }
       } catch (err) {
         console.error("Failed to generate markdown during mode toggle", err);
