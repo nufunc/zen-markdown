@@ -1,4 +1,3 @@
-import * as cmThemes from '@uiw/codemirror-themes-all';
 
 // 에디터 테마 팔레트 중앙 정의.
 // 새 테마 추가 시: 여기 + package.json enum + App.tsx 설정 드롭다운 <option> 세 곳을 갱신.
@@ -12,8 +11,6 @@ export interface ThemePalette {
   /** 인라인 코드 액센트 색 */
   codeTextColor: string;
   blockNoteTheme: 'light' | 'dark';
-  /** Raw 모드 CodeMirror 테마 */
-  cmTheme: any;
   dropdownBg: string;
   dropdownBorder: string;
   inputBg: string;
@@ -30,7 +27,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#333333',
     codeTextColor: '#a31515',
     blockNoteTheme: 'light',
-    cmTheme: cmThemes.vscodeLight,
     dropdownBg: '#ffffff',
     dropdownBorder: '#dddddd',
     inputBg: 'rgba(0,0,0,0.05)',
@@ -44,7 +40,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#d4d4d4',
     codeTextColor: '#e06c75',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.vscodeDark,
     dropdownBg: '#252526',
     dropdownBorder: '#555555',
     inputBg: 'rgba(255,255,255,0.1)',
@@ -58,7 +53,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#d8dee9',
     codeTextColor: '#88c0d0',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.nord,
     dropdownBg: '#3b4252',
     dropdownBorder: '#4c566a',
     inputBg: 'rgba(255,255,255,0.06)',
@@ -72,7 +66,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#dcdfe4',
     codeTextColor: '#e06c75',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.atomone,
     dropdownBg: '#2c323c',
     dropdownBorder: '#3e4452',
     inputBg: 'rgba(255,255,255,0.06)',
@@ -86,7 +79,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#839496',
     codeTextColor: '#cb4b16',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.solarizedDark,
     dropdownBg: '#073642',
     dropdownBorder: '#586e75',
     inputBg: 'rgba(255,255,255,0.06)',
@@ -100,7 +92,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#3a3a3a',
     codeTextColor: '#b57614',
     blockNoteTheme: 'light',
-    cmTheme: cmThemes.gruvboxLight,
     dropdownBg: '#e8dcc3',
     dropdownBorder: '#d5c4a1',
     inputBg: 'rgba(0,0,0,0.04)',
@@ -114,7 +105,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#ebdbb2',
     codeTextColor: '#fe8019',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.gruvboxDark,
     dropdownBg: '#3c3836',
     dropdownBorder: '#504945',
     inputBg: 'rgba(255,255,255,0.06)',
@@ -128,7 +118,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#343b58',
     codeTextColor: '#f52a65',
     blockNoteTheme: 'light',
-    cmTheme: cmThemes.tokyoNightDay,
     dropdownBg: '#d5d6db',
     dropdownBorder: '#a8aecb',
     inputBg: 'rgba(0,0,0,0.04)',
@@ -142,7 +131,6 @@ export const THEMES: Record<string, ThemePalette> = {
     codeColor: '#e2e8f0',
     codeTextColor: '#34d399',
     blockNoteTheme: 'dark',
-    cmTheme: cmThemes.vscodeDark,
     dropdownBg: '#09090b',
     dropdownBorder: '#27272a',
     inputBg: 'rgba(255,255,255,0.03)',
