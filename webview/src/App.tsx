@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
+import type { WikilinkOccurrence } from './markdownTransforms';
 import { quoteJoinIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
@@ -266,6 +267,8 @@ function App() {
     isReadOnly: () => configRef.current.isReadOnly,
   });
   const wikilinkNamesRef = useRef<Set<string>>(new Set());
+  // 연 문서의 [x](x.md) 모양 링크 차례. 저장할 때 원문이 [[x]]였던 차례의 링크만 되돌린다
+  const wikilinkOrderRef = useRef<WikilinkOccurrence[]>([]);
   const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -579,10 +582,12 @@ function App() {
         const { frontmatter, content } = extractFrontmatter(documentText);
         setParsedFrontmatter(frontmatter);
         wikilinkNamesRef.current = new Set();
+        wikilinkOrderRef.current = [];
         const quoteJoinFlags: boolean[] = [];
         const safeContent = toEditorMarkdown(content, {
           docBaseUri: docBaseUriRef.current,
           wikilinkNames: wikilinkNamesRef.current,
+          wikilinkOrder: wikilinkOrderRef.current,
           quoteJoins: quoteJoinFlags
         });
         const rememberQuoteJoins = (blocks: any[]) => {
@@ -803,12 +808,12 @@ ${markdown}` : markdown;
   buildDocumentTextRef.current = buildDocumentText;
 
   // 블록을 디스크에 쓸 마크다운 본문으로 만든다. 직렬화 체인은 markdownPipeline.ts가 파싱 체인과 나란히 담는다.
-  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current) => {
+  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current, wikilinkOrder = wikilinkOrderRef.current) => {
     let markdown = blocksToMarkdown(blocks, bs => ed.blocksToMarkdownLossy(bs), quoteJoins);
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
-    return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames });
+    return fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames, wikilinkOrder });
   };
 
   const generateMarkdownFromEditor = async () => {
@@ -820,8 +825,9 @@ ${markdown}` : markdown;
   const reopensAs = (merged: string, edited: string) => {
     const names = new Set<string>();
     const flags: boolean[] = [];
-    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, quoteJoins: flags })));
-    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags)).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
+    const order: WikilinkOccurrence[] = [];
+    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, wikilinkOrder: order, quoteJoins: flags })));
+    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags), order).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
   };
 
   /** 이보다 긴 문서는 입력 중에는 검증하지 않고 저장 직전에만 검증한다. 15,000줄에서 검증 한 번이 약 0.9초다. */
@@ -1999,7 +2005,7 @@ ${markdown}` : markdown;
                     let markdown = blocksToMarkdown(source as any[], bs => editor.blocksToMarkdownLossy(bs as any), quoteJoinsRef.current);
                     markdown = normalizeUnorderedListBullets(normalizeOrderedListNumbers(markdown));
                     // 저장 경로와 같은 표기로 맞춘다
-                    text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
+                    text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current, wikilinkOrder: wikilinkOrderRef.current });
                     if (only) text = text.replace(/\n+$/, '');
                   }
                   e.preventDefault();

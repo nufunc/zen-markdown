@@ -22,12 +22,15 @@ import {
   processBlocksToMarkdown,
   serializeKeepingListChildren,
 } from './markdownTransforms';
+import type { WikilinkOccurrence } from './markdownTransforms';
 
 export interface PipelineContext {
   /** 문서 폴더의 webview URI — 상대경로 이미지 미리보기용 */
   docBaseUri: string;
   /** parseWikilinks가 실제로 변환한 문서명. 저장 시 그것만 되돌린다. */
   wikilinkNames: Set<string>;
+  /** parseWikilinks가 채운다. [x](x.md) 모양 링크의 차례와 원문이 [[x]]였는지. 저장할 때 같은 차례의 링크만 되돌린다 */
+  wikilinkOrder?: WikilinkOccurrence[];
   /** splitQuoteParagraphs가 채운다. 인용 블록마다 앞 인용에 이어지는지 차례로 */
   quoteJoins?: boolean[];
 }
@@ -43,7 +46,8 @@ export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string
         )
       )
     ),
-    ctx.wikilinkNames
+    ctx.wikilinkNames,
+    ctx.wikilinkOrder ??= []
   );
 }
 
@@ -55,7 +59,8 @@ export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): stri
         fromWebviewImageUrls(restoreQuoteJoins(markdown), ctx.docBaseUri)
       )
     )),
-    ctx.wikilinkNames
+    ctx.wikilinkNames,
+    ctx.wikilinkOrder
   );
 }
 

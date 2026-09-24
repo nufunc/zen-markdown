@@ -662,25 +662,78 @@ export function parseTableFromClipboardText(text: string): string | null {
 
 // --- Phase 2: Obsidian Integration Helpers ---
 
-// [[문서명]] -> [문서명](문서명.md) 로 변환하여 에디터 렌더링 지원.
-// 변환한 문서명을 seen에 기록해 두면 저장 시 그것만 되돌린다 (사용자가 직접 쓴
-// [X](X.md) 형태의 일반 링크가 위키링크로 바뀌는 것을 막음).
-export function parseWikilinks(md: string, seen?: Set<string>): string {
-  return mapOutsideCodeFences(md, part =>
-    part.replace(/\[\[([^\]]+)\]\]/g, (_, docName) => {
-      seen?.add(docName);
-      return `[${docName}](${docName}.md)`;
+// 인라인 코드 스팬(같은 수의 백틱 짝)과 HTML 태그를 앞에서부터 함께 훑는다. 먼저 시작한 쪽이 이긴다(CommonMark).
+// 그래서 <a href="`">처럼 태그 안의 백틱은 코드 스팬을 열지 않는다. 백슬래시로 이스케이프한 백틱도 열지 않는다
+const INLINE_CODE_OR_TAG = /<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?\/?>|(?<!\\)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
+
+/** 코드 펜스와 인라인 코드 스팬 밖에만 fn을 적용한다. 위키링크와 HTML 보호는 코드 안의 글자를 바꾸면 안 된다 */
+export function mapOutsideCode(markdown: string, fn: (part: string) => string): string {
+  return mapOutsideCodeFences(markdown, part => {
+    let out = '', last = 0;
+    for (const m of part.matchAll(INLINE_CODE_OR_TAG)) {
+      if (m[1] === undefined) continue; // HTML 태그는 코드 밖으로 남긴다
+      out += fn(part.slice(last, m.index)) + m[0];
+      last = m.index! + m[0].length;
+    }
+    return out + fn(part.slice(last));
+  });
+}
+
+/** 문서에 나타난 [x](x.md) 모양 링크의 차례. wiki가 true면 원문이 [[x]]였다 */
+export type WikilinkOccurrence = { name: string; wiki: boolean };
+
+// [[문서명]]을 BlockNote가 아는 링크로 바꾼다. 이름만 기억하면 같은 이름의 일반 링크 [x](x.md)까지 저장할 때 [[x]]로 되돌리므로,
+// 나타나는 차례를 order에 적어 둔다. 이름에서 protectHtml의 표식을 빼고 적어야 restoreHtml 뒤의 이름과 맞는다.
+export function parseWikilinks(md: string, seen?: Set<string>, order?: WikilinkOccurrence[]): string {
+  return mapOutsideCode(md, part =>
+    part.replace(/\[\[([^\]]+)\]\]|\[([^\]]+)\]\(<?\2\.md>?\)/g, (m, wiki: string | undefined, plain: string | undefined) => {
+      if (wiki === undefined) {
+        order?.push({ name: plain!.replaceAll(ZWSP, ''), wiki: false });
+        return m;
+      }
+      const name = wiki.replaceAll(ZWSP, '');
+      seen?.add(name);
+      order?.push({ name, wiki: true });
+      return `[${wiki}](${wiki}.md)`;
     })
   );
 }
 
-// 저장 시 parseWikilinks가 실제로 변환했던 문서명만 [[문서명]]으로 원상 복구
-export function serializeWikilinks(md: string, seen?: Set<string>): string {
+/** a와 b의 최장 공통 부분열로 b의 각 자리가 a의 몇 번째와 짝인지 돌려준다(짝이 없으면 -1) */
+const alignNames = (a: string[], b: string[]): number[] => {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let x = n - 1; x >= 0; x--) for (let y = m - 1; y >= 0; y--)
+    dp[x][y] = a[x] === b[y] ? dp[x + 1][y + 1] + 1 : Math.max(dp[x + 1][y], dp[x][y + 1]);
+  const pair = new Array<number>(m).fill(-1);
+  for (let x = 0, y = 0; x < n && y < m;) {
+    if (a[x] === b[y]) { pair[y] = x; x++; y++; }
+    else if (dp[x + 1][y] >= dp[x][y + 1]) x++;
+    else y++;
+  }
+  return pair;
+};
+
+// 저장할 때 원문에서 [[x]]였던 링크만 되돌린다. 저장 결과의 [x](x.md) 모양 링크를 원문의 차례와 이름으로 짝지어,
+// 짝이 원문에서 [[x]]였던 것만 바꾼다. 편집으로 수가 달라져도 이름과 차례가 맞는 것만 되돌린다.
+// order가 없으면(예전 호출) 이름 목록으로 판정한다.
+export function serializeWikilinks(md: string, seen?: Set<string>, order?: WikilinkOccurrence[]): string {
+  const LINK = /\[([^\]]+)\]\(<?\1\.md>?\)/g;
+  if (order && order.length > 0) {
+    if (!order.some(o => o.wiki)) return md;
+    const found: string[] = [];
+    mapOutsideCode(md, part => { for (const m of part.matchAll(LINK)) found.push(m[1]); return part; });
+    if (found.length * order.length > 1_000_000) return md;
+    const pair = alignNames(order.map(o => o.name), found);
+    let k = 0;
+    return mapOutsideCode(md, part => part.replace(LINK, (m, name: string) => {
+      const x = pair[k++];
+      return x >= 0 && order[x].wiki ? `[[${name}]]` : m;
+    }));
+  }
   if (!seen || seen.size === 0) return md;
-  return mapOutsideCodeFences(md, part =>
-    part.replace(/\[([^\]]+)\]\(\1\.md\)/g, (m, docName) =>
-      seen.has(docName) ? `[[${docName}]]` : m
-    )
+  return mapOutsideCode(md, part =>
+    part.replace(LINK, (m, docName) => (seen.has(docName) ? `[[${docName}]]` : m))
   );
 }
 
@@ -690,7 +743,7 @@ const ZWSP = '\u200B';
 // 무단 삭제하거나 태그를 벗겨내지 못하도록 폭 없는 공백(ZWSP)으로 임시 보호한다.
 // 단, CommonMark autolink(<https://...>, <mailto:...>)는 BlockNote 링크 파서 유지를 위해 제외한다.
 export function protectHtml(md: string): string {
-  return mapOutsideCodeFences(md, part =>
+  return mapOutsideCode(md, part =>
     part.replace(/<!--[\s\S]*?-->|<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?\/?>/g, (tag, offset: number, whole: string) => {
       if (/^<[a-zA-Z][a-zA-Z0-9+.-]*:[^>]+>$/i.test(tag) || /^<[^\s@]+@[^\s@]+\.[^\s@]+>$/.test(tag)) {
         return tag;
@@ -707,7 +760,7 @@ export function protectHtml(md: string): string {
 
 // 저장 직전 ZWSP 임시 보호 표식을 원상 복구하고, BlockNote가 주석 내부에 붙인 하드브레이크(\)를 정리한다.
 export function restoreHtml(md: string): string {
-  return mapOutsideCodeFences(md, part => {
+  return mapOutsideCode(md, part => {
     // 보호한 HTML 태그만 있는 줄은 원래 하드브레이크가 아니다. 파싱 전 줄 보존이 붙인 \를 걷어낸다.
     let res = part.replace(/^([ \t]*<\u200B[^\n]*>)\\$/gm, '$1');
     res = res.replaceAll('<' + ZWSP, '<');
