@@ -13,10 +13,10 @@ const T = await import('../src/markdownTransforms.ts');
 const { toEditorMarkdown, fromEditorMarkdown } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
 
-const ctx = () => ({ docBaseUri: '', wikilinkNames: new Set<string>() });
+const ctx = () => ({ docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] });
 const parse = (md: string, c: any) => T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, c)));
 const save = (blocks: any[], c: any) => {
-  let m = editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks));
+  let m = editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks, T.quoteJoinIds(blocks, c.quoteJoins)));
   m = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(m)));
   return fromEditorMarkdown(m, c).replace(/\n+$/, '');
 };

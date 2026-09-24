@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import { processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import { quoteJoinIds, processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
@@ -251,6 +251,9 @@ function App() {
   const baselineRef = useRef<{ original: string; base: string; conflictReported: boolean } | null>(null);
   // 검증하지 않은 병합 결과를 보냈는가. 그러면 저장 직전에 다시 만들어 검증한다.
   const unverifiedRef = useRef(false);
+  // 앞 인용에 이어지는 인용 블록의 ID. 저장할 때 앞 인용과 `>` 빈 줄로 합치고, 화면에서는 한 인용처럼 붙여 보인다.
+  const quoteJoinsRef = useRef<Set<string>>(new Set());
+  const [quoteJoinCss, setQuoteJoinCss] = useState('');
   const {
     lastSentTextRef, lastInitializedTextRef,
     postChange, debouncedSerialize, flush,
@@ -576,10 +579,18 @@ function App() {
         const { frontmatter, content } = extractFrontmatter(documentText);
         setParsedFrontmatter(frontmatter);
         wikilinkNamesRef.current = new Set();
+        const quoteJoinFlags: boolean[] = [];
         const safeContent = toEditorMarkdown(content, {
           docBaseUri: docBaseUriRef.current,
-          wikilinkNames: wikilinkNamesRef.current
+          wikilinkNames: wikilinkNamesRef.current,
+          quoteJoins: quoteJoinFlags
         });
+        const rememberQuoteJoins = (blocks: any[]) => {
+          quoteJoinsRef.current = quoteJoinIds(blocks, quoteJoinFlags);
+          setQuoteJoinCss([...quoteJoinsRef.current].map(id =>
+            `.bn-editor .bn-block-outer[data-id="${id}"] [data-content-type="quote"] blockquote { margin-top: -0.4em !important; padding-top: calc(2px + 0.4em) !important; }`
+          ).join('\n'));
+        };
 
         isInitializing.current = true;
         if (!editor) {
@@ -605,6 +616,7 @@ function App() {
           });
           let blocks = await newEditor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
+          rememberQuoteJoins(blocks);
           newEditor.replaceBlocks(newEditor.document, blocks);
           const base = serializeBlocks(newEditor, newEditor.document);
           baselineRef.current = { original: content.replace(/\r\n/g, '\n'), base, conflictReported: false };
@@ -705,6 +717,7 @@ function App() {
           
           let blocks = await editor.tryParseMarkdownToBlocks(safeContent);
           blocks = processBlocksFromMarkdown(blocks);
+          rememberQuoteJoins(blocks);
           editor.replaceBlocks(editor.document, blocks);
           baselineRef.current = { original: content.replace(/\r\n/g, '\n'), base: serializeBlocks(editor, editor.document), conflictReported: false };
           unverifiedRef.current = false;
@@ -789,8 +802,8 @@ ${markdown}` : markdown;
   buildDocumentTextRef.current = buildDocumentText;
 
   // 블록을 디스크에 쓸 마크다운 본문으로 만든다. 직렬화 체인은 markdownPipeline.ts가 파싱 체인과 나란히 담는다.
-  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current) => {
-    let markdown = ed.blocksToMarkdownLossy(processBlocksToMarkdown(blocks) as any);
+  const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current) => {
+    let markdown = ed.blocksToMarkdownLossy(processBlocksToMarkdown(blocks, quoteJoins) as any);
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
@@ -805,8 +818,9 @@ ${markdown}` : markdown;
   /** 병합 결과 R을 다시 열면 지금 에디터(N)와 같은 문서가 되는가 */
   const reopensAs = (merged: string, edited: string) => {
     const names = new Set<string>();
-    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names })));
-    return serializeBlocks(editor, blocks, names).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
+    const flags: boolean[] = [];
+    const blocks = processBlocksFromMarkdown(editor!.tryParseMarkdownToBlocks(toEditorMarkdown(merged, { docBaseUri: docBaseUriRef.current, wikilinkNames: names, quoteJoins: flags })));
+    return serializeBlocks(editor, blocks, names, quoteJoinIds(blocks, flags)).replace(/\n+$/, '') === edited.replace(/\n+$/, '');
   };
 
   /** 이보다 긴 문서는 입력 중에는 검증하지 않고 저장 직전에만 검증한다. 15,000줄에서 검증 한 번이 약 0.9초다. */
@@ -1743,6 +1757,7 @@ ${markdown}` : markdown;
         onKeyDownCapture={handleKeyDownCapture}
       >
         <style>{editorCss}</style>
+        {quoteJoinCss && <style>{quoteJoinCss}</style>}
 
         {/* 좌측 사이드바 TOC 패널 (Orca 스타일) */}
         {!isRawMode && showToc && headings.length > 0 && (
@@ -1980,7 +1995,7 @@ ${markdown}` : markdown;
                     const source = only && Array.isArray(only.content) && only.type !== 'table'
                       ? [{ type: 'paragraph', content: only.content }]
                       : blocks;
-                    let markdown = editor.blocksToMarkdownLossy(processBlocksToMarkdown(source as any[]) as any);
+                    let markdown = editor.blocksToMarkdownLossy(processBlocksToMarkdown(source as any[], quoteJoinsRef.current) as any);
                     markdown = normalizeUnorderedListBullets(normalizeOrderedListNumbers(markdown));
                     // 저장 경로와 같은 표기로 맞춘다
                     text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });

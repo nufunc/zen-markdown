@@ -19,15 +19,15 @@ const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
 const { toEditorMarkdown, fromEditorMarkdown } = await import('../src/markdownPipeline.ts');
 
-/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299 */
-const BASELINE = 299;
+/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298 */
+const BASELINE = 298;
 
 const editor = BlockNoteEditor.create() as any;
 // 앱의 여는 경로와 저장 경로와 같은 체인
 const roundtrip = async (md: string) => {
-  const ctx = { docBaseUri: '', wikilinkNames: new Set<string>() };
+  const ctx = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
   const blocks = T.processBlocksFromMarkdown(await editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx)));
-  let out = await editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks));
+  let out = await editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks, T.quoteJoinIds(blocks, ctx.quoteJoins)));
   out = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(out)));
   return fromEditorMarkdown(out, ctx);
 };

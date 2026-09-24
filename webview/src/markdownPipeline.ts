@@ -11,6 +11,8 @@ import {
   protectHtml,
   restoreHtml,
   restoreLinkText,
+  splitQuoteParagraphs,
+  restoreQuoteJoins,
   parseWikilinks,
   serializeWikilinks,
   toWebviewImageUrls,
@@ -22,11 +24,13 @@ export interface PipelineContext {
   docBaseUri: string;
   /** parseWikilinks가 실제로 변환한 문서명. 저장 시 그것만 되돌린다. */
   wikilinkNames: Set<string>;
+  /** splitQuoteParagraphs가 채운다. 인용 블록마다 앞 인용에 이어지는지 차례로 */
+  quoteJoins?: boolean[];
 }
 
 /** 디스크의 마크다운 -> 에디터가 파싱할 마크다운 */
 export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string {
-  const normalized = markdown.replace(/\r\n/g, '\n');
+  const normalized = splitQuoteParagraphs(markdown.replace(/\r\n/g, '\n'), ctx.quoteJoins ??= []);
   return parseWikilinks(
     preserveMarkdownLineBreaks(
       preserveBlankLines(
@@ -44,7 +48,7 @@ export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): stri
   return serializeWikilinks(
     restoreLinkText(restoreHtml(
       restoreBlankLines(
-        fromWebviewImageUrls(markdown, ctx.docBaseUri)
+        fromWebviewImageUrls(restoreQuoteJoins(markdown), ctx.docBaseUri)
       )
     )),
     ctx.wikilinkNames

@@ -95,6 +95,66 @@ const splitEmphasisEdgeSpaces = (content: any[]): any[] => content.flatMap((c: a
   });
 });
 
+// BlockNote 인용 블록은 인라인 텍스트 한 덩어리만 담아 `> A\n>\n> B`의 두 문단을 한 문단으로 합친다.
+// 파싱 전에 인용 문단마다 인용 블록 하나로 나누고(`> A\n\n> B`), 각 인용이 앞 인용에 이어지는지 차례로 적어 둔다.
+// 저장할 때는 이어진 인용 사이에만 `>` 빈 줄을 넣어 다시 합친다. 원래부터 떨어진 인용 둘은 합치지 않는다.
+// 인용 안의 헤딩은 BlockNote가 다음 줄과 한 단어로 붙이므로(`Htext`) 헤딩 줄도 문단 경계로 본다.
+const QUOTE_JOIN_MARK = '⁣';
+const QUOTE_LINE = /^ {0,3}>/;
+const QUOTE_NESTED = /^ {0,3}>\s*>/;
+const QUOTE_EMPTY = /^ {0,3}>\s*$/;
+const QUOTE_HEADING = /^ {0,3}>\s*#{1,6}\s/;
+
+export function splitQuoteParagraphs(md: string, joins: boolean[]): string {
+  return mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    const out: string[] = [];
+    let inQuote = false;
+    let prevHeading = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!QUOTE_LINE.test(line)) {
+        inQuote = false;
+        out.push(line);
+        continue;
+      }
+      const next = lines[i + 1];
+      const nextIsContent = next !== undefined && QUOTE_LINE.test(next) && !QUOTE_EMPTY.test(next) && !QUOTE_NESTED.test(next);
+      if (!inQuote) {
+        inQuote = true;
+        joins.push(false);
+      } else if (QUOTE_EMPTY.test(line) && nextIsContent) {
+        // 인용 안의 문단 구분: 빈 줄로 바꿔 다음 문단을 새 인용으로 만든다
+        out.push('');
+        joins.push(true);
+        prevHeading = false;
+        continue;
+      } else if (!QUOTE_NESTED.test(line) && !QUOTE_EMPTY.test(line) && (QUOTE_HEADING.test(line) || prevHeading)) {
+        out.push('');
+        joins.push(true);
+      }
+      prevHeading = QUOTE_HEADING.test(line);
+      out.push(line);
+    }
+    return out.join('\n');
+  });
+}
+
+/** 파싱한 블록에서 앞 인용에 이어지는 인용의 ID를 모은다. 인용 수가 기록과 다르면 짝을 믿을 수 없으므로 비운다. */
+export function quoteJoinIds(blocks: any[], joins: boolean[]): Set<string> {
+  const quotes: any[] = [];
+  const walk = (bs: any[]) => bs.forEach(b => { if (b.type === 'quote') quotes.push(b); walk(b.children ?? []); });
+  walk(blocks);
+  if (quotes.length !== joins.length) return new Set();
+  return new Set(quotes.filter((_, i) => joins[i]).map(q => q.id));
+}
+
+/** 직렬화 결과에서 표식이 붙은 인용을 앞 인용과 `>` 빈 줄로 합친다 */
+export function restoreQuoteJoins(md: string): string {
+  return md.replace(new RegExp('\\n\\n((?: {0,3}>)+ ?)' + QUOTE_JOIN_MARK, 'g'), (_m, prefix: string) => `\n${prefix.trimEnd()}\n${prefix}`)
+    .replaceAll(QUOTE_JOIN_MARK, '');
+}
+
 export function restoreLinkText(md: string): string {
   return mapOutsideCodeFences(md.replaceAll(LINK_TEXT_MARK + '](', ']('), part =>
     // BlockNote는 공백이 든 주소를 꺾쇠 없이 내보내 링크가 깨진다([a](<my file.md>) → [a](my file.md)).
@@ -130,8 +190,9 @@ export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
   });
 };
 
-export const processBlocksToMarkdown = (blocks: any[]): any[] => {
-  return blocks.map((b: any) => {
+/** quoteJoins: 앞 인용에 이어지는 인용 블록의 ID(quoteJoinIds). 저장할 때 앞 인용과 한 인용으로 합친다. */
+export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>): any[] => {
+  return blocks.map((b: any, i: number) => {
     const newB = { ...b };
     // 빈 문단 → nbsp 문단으로 직렬화해 빈 줄이 마크다운에서 유실되지 않게 함
     // (저장 직전 restoreBlankLines가 다시 빈 줄로 복원)
@@ -151,8 +212,11 @@ export const processBlocksToMarkdown = (blocks: any[]): any[] => {
     if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
       newB.content = markSameTextLinks(splitEmphasisEdgeSpaces(newB.content));
     }
+    if (newB.type === 'quote' && quoteJoins?.has(newB.id) && blocks[i - 1]?.type === 'quote' && Array.isArray(newB.content)) {
+      newB.content = [{ type: 'text', text: QUOTE_JOIN_MARK, styles: {} }, ...newB.content];
+    }
     if (newB.children && newB.children.length > 0) {
-      newB.children = processBlocksToMarkdown(newB.children);
+      newB.children = processBlocksToMarkdown(newB.children, quoteJoins);
     }
     return newB;
   });
