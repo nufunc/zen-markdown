@@ -24,15 +24,22 @@ const openMs = async (page: Page, sections: number) => {
 };
 
 test('8,000블록을 여는 시간이 1,000블록의 9배 아래다', async ({ browser }) => {
-  test.setTimeout(120000);
+  test.setTimeout(240000);
   const measure = async (sections: number) => {
     const page = await browser.newPage();
     try { return await openMs(page, sections); } finally { await page.close(); }
   };
   await measure(500); // 개발 서버의 첫 모듈 변환 비용을 측정에서 뺀다
-  const small = await measure(500);
-  const large = await measure(4000);
+  // 한 번씩 재면 짧은 분모(0.3~0.5초)가 한 번의 부하에 흔들려 배율이 4~10으로 바뀌었다(추가 검토 19).
+  // 두 크기를 번갈아 세 번씩 재고 각각 중앙값으로 배율을 낸다
+  const smalls: number[] = [], larges: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    smalls.push(await measure(500));
+    larges.push(await measure(4000));
+  }
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[1];
+  const small = median(smalls), large = median(larges);
   const ratio = large / small;
-  console.log(`open 1000 blocks ${Math.round(small)}ms, 8000 blocks ${Math.round(large)}ms, ratio ${ratio.toFixed(2)}`);
+  console.log(`open 1000 blocks ${smalls.map(Math.round).join('/')}ms, 8000 blocks ${larges.map(Math.round).join('/')}ms, median ratio ${ratio.toFixed(2)}`);
   expect(ratio).toBeLessThan(9);
 });
