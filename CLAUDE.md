@@ -14,3 +14,9 @@
 - **범위 밖**: git 태그와 GitHub 릴리스는 이 규약에 넣지 않는다. 요청이 있을 때만 한다. `.agents/AGENTS.md`의 "버전을 올리면 태그 푸시와 릴리스" 규칙은 따르지 않는다(푸시는 요청받을 때만 한다는 전역 규약과 충돌).
 
 커밋 전 검사(웹뷰 build, lint, test, E2E와 루트 compile, test)는 그대로 먼저 돈다. vsix 빌드는 그 검사를 통과한 뒤에 한다.
+
+## 개발 서버 포트
+
+E2E와 개발 서버의 기본 포트는 5174다. Windows가 이 포트를 예약 범위(`netsh interface ipv4 show excludedportrange protocol=tcp`)로 잡은 PC에서는 개발 서버가 뜨지 않는다.
+그런 PC에서는 저장소를 고치지 않고 사용자 환경변수 `ZEN_DEV_PORT`로 포트를 바꾼다. `playwright.config.ts`가 이 값을 읽는다.
+2026-09-24부터 이 작업 PC는 `ZEN_DEV_PORT=4174`를 쓴다.
