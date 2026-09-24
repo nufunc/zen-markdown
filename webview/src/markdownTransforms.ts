@@ -95,11 +95,93 @@ const splitEmphasisEdgeSpaces = (content: any[]): any[] => content.flatMap((c: a
   });
 });
 
+// 평문에 든 마크다운 기호는 BlockNote가 그대로 내보내, 다시 열면 링크, 목록, 헤딩, 강조가 된다.
+// 직렬화하는 동안만 코드가 아닌 텍스트 조각에 백슬래시 이스케이프를 넣는다. 파서는 이스케이프를 풀어 같은 평문으로 읽는다.
+//
+// 어떤 기호가 서식이 되는지는 규칙으로 다 적을 수 없다(짝이 맞지 않는 **a*, 줄바꿈 뒤의 목록 기호 등).
+// 그래서 세 단계를 차례로 만들어, 다시 열었을 때 같은 평문이 되는 첫 단계를 쓴다. 판정은 주입한 파서(setLiteralVerifier)가 한다.
+//   최소: 백슬래시만 겹친다. 참조 링크, 자동 링크, 엔티티처럼 BlockNote가 평문으로 두는 문법은 여기서 통과해 원문 그대로 남는다.
+//   중간: 줄 머리 기호(# > - + 1. 수평선 펜스, 둘째 줄부터 setext 밑줄)를 더한다.
+//   전체: 인라인 기호(* _ ` ~ [ ])를 더한다.
+// 파서가 없으면(주입 전) 전체 단계를 쓴다.
+const escapeBackslashes = (t: string) => t.replace(/\\(?=[!-/:-@[-`{-~]|\n|$)/g, '\\\\');
+const escapeInlineAll = (t: string) => escapeBackslashes(t)
+  .replace(/[*`[\]~]/g, '\\$&')
+  // 단어 안의 _(a_b_c)는 강조가 되지 않으므로 단어 경계의 것만
+  .replace(/(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/gu, '\\_');
+/** protectHtml이 보호한 HTML 태그(<\u200B...>)는 원문 HTML이므로 그 구간 밖에만 적용한다 */
+const outsideProtectedHtml = (t: string, fn: (s: string) => string) =>
+  t.split(/(<\u200B[^>]*>)/).map((part, i) => (i % 2 ? part : fn(part))).join('');
+
+const escapeLineStart = (line: string) => line
+  .replace(/^( {0,3})(#{1,6})(?=[ \t]|$)/, '$1\\$2')
+  .replace(/^( {0,3})>/, '$1\\>')
+  .replace(/^( {0,3})([-+])(?=[ \t]|$)/, '$1\\$2')
+  .replace(/^( {0,3})(\d{1,9})([.)])(?=[ \t]|$)/, '$1$2\\$3')
+  // 수평선(---, ***, ___)과 코드 펜스
+  .replace(/^( {0,3})([-*_])(?=(?:[ \t]*\2){2,}[ \t]*$)/, '$1\\$2')
+  .replace(/^( {0,3})(`{3,}|~{3,})/, '$1\\$2');
+/** setext 헤딩 밑줄(---)은 앞 줄이 있을 때만 뜻이 있으므로 둘째 줄부터 본다. BlockNote 파서는 \=를 풀지 않아 ===는 이스케이프할 수 없다 */
+const escapeSetextUnderline = (line: string) => line.replace(/^( {0,3})-(?=-*[ \t]*$)/, '$1\\-');
+const escapeLineStarts = (t: string, atLineStart: boolean) => t.split('\n')
+  .map((l, i) => (i > 0 ? escapeSetextUnderline(escapeLineStart(l)) : atLineStart ? escapeLineStart(l) : l)).join('\n');
+
+/** 마크다운 한 문단을 다시 열어 스타일 없는 평문이면 그 글자를, 아니면 null을 돌려주는 함수 */
+let literalVerifier: ((markdown: string) => string | null) | null = null;
+export function setLiteralVerifier(fn: ((markdown: string) => string | null) | null) {
+  literalVerifier = fn;
+  literalCache.clear();
+}
+const literalCache = new Map<string, string>();
+
+const escapeLiteralText = (text: string, atLineStart: boolean, atBlockEnd = true): string => {
+  // 서식이 될 수 있는 기호가 없으면 판정하지 않는다. 줄 머리 기호는 줄 머리에 있을 때만 본다(문장 끝 마침표로 판정기를 부르지 않게)
+  if (!/[\\*_`~[\]]|(?:^|\n) {0,3}(?:#|>|[-+](?:\s|$)|\d{1,9}[.)]|[-=]{2,})/.test(text)) return text;
+  const key = (atLineStart ? '1' : '0') + (atBlockEnd ? '1' : '0') + text;
+  const cached = literalCache.get(key);
+  if (cached !== undefined) return cached;
+  const minimal = outsideProtectedHtml(text, escapeBackslashes);
+  const middle = escapeLineStarts(minimal, atLineStart);
+  const full = escapeLineStarts(outsideProtectedHtml(text, escapeInlineAll), atLineStart);
+  // 블록 중간의 조각은 앞에 글자가 있는 채로 판정한다. 그래야 첫 줄을 블록 머리로 잘못 보지 않는다
+  const lead = atLineStart ? '' : 'x';
+  // 블록 끝이 아닌 조각은 뒤에도 글자를 붙여 판정한다. 떼어 놓으면 끝 공백이 잘려 나가 판정이 틀린다
+  const tail = atBlockEnd ? '' : 'x';
+  // BlockNote는 HTML을 거쳐 파싱하므로 연속 공백을 한 칸으로 접는다. 이스케이프와 무관한 차이라 같게 본다
+  const squeeze = (t: string | null) => t?.replace(/ {2,}/g, ' ');
+  const reopensSame = (escaped: string) => squeeze(literalVerifier!(lead + escaped.replace(/\n/g, '\\\n') + tail)) === squeeze(lead + text + tail);
+  const result = !literalVerifier ? full
+    : reopensSame(minimal) ? minimal
+    : reopensSame(middle) ? middle
+    : full;
+  if (literalCache.size > 5000) literalCache.clear();
+  literalCache.set(key, result);
+  return result;
+};
+
+/** blockStart: 블록 첫머리를 줄 머리로 볼지. 목록 항목과 헤딩의 첫머리는 이미 그 블록의 표식 뒤라 문단만 해당한다. */
+const escapeLiteralMarkdown = (content: any[], blockStart = false): any[] => {
+  let atLineStart = blockStart;
+  return content.map((c: any, i: number) => {
+    if (c.type !== 'text' || typeof c.text !== 'string') {
+      atLineStart = false;
+      return c.type === 'link' && Array.isArray(c.content) ? { ...c, content: escapeLiteralMarkdown(c.content) } : c;
+    }
+    if (c.styles?.code) {
+      atLineStart = c.text.endsWith('\n');
+      return c;
+    }
+    const text = escapeLiteralText(c.text, atLineStart, i === content.length - 1);
+    atLineStart = c.text.endsWith('\n');
+    return { ...c, text };
+  });
+};
+
 // BlockNote 인용 블록은 인라인 텍스트 한 덩어리만 담아 `> A\n>\n> B`의 두 문단을 한 문단으로 합친다.
 // 파싱 전에 인용 문단마다 인용 블록 하나로 나누고(`> A\n\n> B`), 각 인용이 앞 인용에 이어지는지 차례로 적어 둔다.
 // 저장할 때는 이어진 인용 사이에만 `>` 빈 줄을 넣어 다시 합친다. 원래부터 떨어진 인용 둘은 합치지 않는다.
 // 인용 안의 헤딩은 BlockNote가 다음 줄과 한 단어로 붙이므로(`Htext`) 헤딩 줄도 문단 경계로 본다.
-const QUOTE_JOIN_MARK = '⁣';
+const QUOTE_JOIN_MARK = '\u2063';
 const QUOTE_LINE = /^ {0,3}>/;
 const QUOTE_NESTED = /^ {0,3}>\s*>/;
 const QUOTE_EMPTY = /^ {0,3}>\s*$/;
@@ -159,7 +241,7 @@ export function restoreLinkText(md: string): string {
   return mapOutsideCodeFences(md.replaceAll(LINK_TEXT_MARK + '](', ']('), part =>
     // BlockNote는 공백이 든 주소를 꺾쇠 없이 내보내 링크가 깨진다([a](<my file.md>) → [a](my file.md)).
     // 링크 제목은 직렬화에서 버려지므로, 괄호 안에 공백이 있으면 원래 꺾쇠로 감싼 주소다. 인라인 코드 구간은 건너뛴다.
-    part.replace(/(`+)[^`\n][\s\S]*?\1|\]\(([^()<>\n]*\s[^()<>\n]*)\)/g,
+    part.replace(/(`+)[^`\n][\s\S]*?\1|(?<!\\)\]\(([^()<>\n]*[ \t][^()<>\n]*)\)/g,
       (m, ticks: string | undefined, dest: string | undefined) => ticks ? m : `](<${dest}>)`)
   );
 }
@@ -210,7 +292,7 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
       } as any;
     }
     if (Array.isArray(newB.content) && newB.type !== 'codeBlock') {
-      newB.content = markSameTextLinks(splitEmphasisEdgeSpaces(newB.content));
+      newB.content = splitEmphasisEdgeSpaces(escapeLiteralMarkdown(markSameTextLinks(newB.content), newB.type === 'paragraph'));
     }
     if (newB.type === 'quote' && quoteJoins?.has(newB.id) && blocks[i - 1]?.type === 'quote' && Array.isArray(newB.content)) {
       newB.content = [{ type: 'text', text: QUOTE_JOIN_MARK, styles: {} }, ...newB.content];

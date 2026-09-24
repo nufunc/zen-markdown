@@ -17,12 +17,14 @@ const MarkdownIt = require('markdown-it');
 const spec = require('commonmark-spec');
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown } = await import('../src/markdownPipeline.ts');
+const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
 
-/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298 */
-const BASELINE = 298;
+/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298, 평문 이스케이프 뒤 293 */
+const BASELINE = 293;
 
 const editor = BlockNoteEditor.create() as any;
+T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
+
 // 앱의 여는 경로와 저장 경로와 같은 체인
 const roundtrip = async (md: string) => {
   const ctx = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };

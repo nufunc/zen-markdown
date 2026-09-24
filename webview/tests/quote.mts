@@ -7,8 +7,10 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown } = await import('../src/markdownPipeline.ts');
+const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
+T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
+
 
 // 앱의 여는 경로와 저장 경로와 같은 체인. 이어진 인용의 ID를 파싱 결과에서 모아 저장에 넘긴다.
 const roundtrip = (md: string) => {

@@ -17,6 +17,7 @@ import {
   serializeWikilinks,
   toWebviewImageUrls,
   fromWebviewImageUrls,
+  processBlocksFromMarkdown,
 } from './markdownTransforms';
 
 export interface PipelineContext {
@@ -53,4 +54,16 @@ export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): stri
     )),
     ctx.wikilinkNames
   );
+}
+
+/** 평문 이스케이프 판정기(setLiteralVerifier에 넘긴다): 마크다운 한 문단을 앱과 같은 체인으로 다시 열어
+ *  스타일 없는 평문 문단이면 그 글자를, 아니면 null을 돌려준다. parse는 에디터의 tryParseMarkdownToBlocks다. */
+export function makeLiteralVerifier(parse: (markdown: string) => any[]) {
+  return (markdown: string): string | null => {
+    const blocks = processBlocksFromMarkdown(parse(toEditorMarkdown(markdown, { docBaseUri: '', wikilinkNames: new Set() })));
+    if (blocks.length !== 1 || blocks[0].type !== 'paragraph') return null;
+    const content: any[] = blocks[0].content ?? [];
+    if (content.some(c => c.type !== 'text' || Object.keys(c.styles ?? {}).length)) return null;
+    return content.map(c => c.text).join('');
+  };
 }
