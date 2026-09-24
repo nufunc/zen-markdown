@@ -177,6 +177,72 @@ const escapeLiteralMarkdown = (content: any[], blockStart = false): any[] => {
   });
 };
 
+// BlockNote 직렬화기는 목록 항목의 자식 가운데 중첩 목록만 들여 쓰고, 문단, 코드 블록, 이미지, 표는 들여 쓰지 않는다.
+// 그러면 다시 열 때 그 자식이 목록 밖으로 빠진다. 또 목록 아닌 자식이 끼면 뒤 형제의 번호가 1로 되돌아가고 뒤의 중첩 목록도 풀린다.
+// 그래서 목록 아닌 자식을 빼고 목록 자식만 둔 채 한 번에 직렬화한 뒤, 뺀 자식을 따로 직렬화해 항목 표식 폭만큼 들여 써서
+// 모델 순서대로 끼워 넣는다. 위치는 항목과 목록 자식 첫머리에 붙인 보이지 않는 표식으로 찾는다.
+const LIST_ITEM_TYPES = new Set(['bulletListItem', 'numberedListItem', 'checkListItem', 'toggleListItem']);
+const LIST_MARK = '⁤';
+
+export function serializeKeepingListChildren(blocks: any[], toMarkdown: (blocks: any[]) => string): string {
+  const entries: { item: string; extras: { before: string | null; markdown: string }[] }[] = [];
+  let next = 0;
+  const newMark = () => LIST_MARK + next++ + LIST_MARK;
+  const withMark = (b: any, mark: string) => ({ ...b, content: [{ type: 'text', text: mark, styles: {} }, ...(Array.isArray(b.content) ? b.content : [])] });
+  const walk = (bs: any[]): any[] => bs.map(b => {
+    const children: any[] = b.children ?? [];
+    if (!LIST_ITEM_TYPES.has(b.type) || !children.some(c => !LIST_ITEM_TYPES.has(c.type))) {
+      return children.length ? { ...b, children: walk(children) } : b;
+    }
+    const item = newMark();
+    const extras: { before: string | null; markdown: string }[] = [];
+    const kept: any[] = [];
+    let waiting: string[] = [];
+    for (const c of children) {
+      if (LIST_ITEM_TYPES.has(c.type)) {
+        const mark = newMark();
+        extras.push(...waiting.map(markdown => ({ before: mark, markdown })));
+        waiting = [];
+        kept.push(withMark(walk([c])[0], mark));
+      } else {
+        waiting.push(serializeKeepingListChildren([c], toMarkdown).replace(/\n+$/, ''));
+      }
+    }
+    extras.push(...waiting.map(markdown => ({ before: null, markdown })));
+    entries.push({ item, extras });
+    return { ...withMark(b, item), children: kept };
+  });
+
+  const lines = toMarkdown(walk(blocks)).split('\n');
+  const insertAt = (at: number, block: string[]) => {
+    const before = at > 0 && lines[at - 1] !== '' ? [''] : [];
+    const after = at < lines.length && lines[at] !== '' ? [''] : [];
+    lines.splice(at, 0, ...before, ...block, ...after);
+  };
+  for (const { item, extras } of entries) {
+    for (const { before, markdown } of extras) {
+      const li = lines.findIndex(l => l.includes(item));
+      if (li < 0) continue;
+      const width = lines[li].indexOf(item);
+      const block = markdown.split('\n').map(l => (l ? ' '.repeat(width) + l : l));
+      const target = before === null ? -1 : lines.findIndex(l => l.includes(before));
+      if (target >= 0) {
+        insertAt(target, block);
+      } else {
+        // 항목의 끝: 비어 있거나 항목 내용 폭 이상 들여 쓴 줄이 이어지는 데까지
+        let end = li;
+        for (let i = li + 1; i < lines.length; i++) {
+          if (lines[i] === '') continue;
+          if (lines[i].length - lines[i].trimStart().length < width) break;
+          end = i;
+        }
+        insertAt(end + 1, block);
+      }
+    }
+  }
+  return lines.join('\n').replace(new RegExp(LIST_MARK + '\\d+' + LIST_MARK, 'g'), '');
+}
+
 // BlockNote 인용 블록은 인라인 텍스트 한 덩어리만 담아 `> A\n>\n> B`의 두 문단을 한 문단으로 합친다.
 // 파싱 전에 인용 문단마다 인용 블록 하나로 나누고(`> A\n\n> B`), 각 인용이 앞 인용에 이어지는지 차례로 적어 둔다.
 // 저장할 때는 이어진 인용 사이에만 `>` 빈 줄을 넣어 다시 합친다. 원래부터 떨어진 인용 둘은 합치지 않는다.
@@ -304,7 +370,7 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
   });
 };
 
-// 행 단위 스캔으로 코드펜스(``` 및 ~~~, 미폐합 포함)를 정확히 건너뛰고
+// 행 단위 스캔으로 코드펜스(``` 및 ~~~, 미폐합 포함)를 정확히 건너뛰고. 목록 항목 안의 펜스는 네 칸 이상 들여 쓰이므로 들여쓰기 깊이는 따지지 않는다
 // 바깥 텍스트에만 fn을 적용한다 (기존 정규식 분할은 ~~~/미폐합 펜스를 오판했음)
 export function mapOutsideCodeFences(markdown: string, fn: (part: string) => string): string {
   const lines = markdown.split('\n');
@@ -318,7 +384,7 @@ export function mapOutsideCodeFences(markdown: string, fn: (part: string) => str
     }
   };
   for (const line of lines) {
-    const m = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    const m = line.match(/^\s*(`{3,}|~{3,})/);
     if (openFence === null && m) {
       flush();
       openFence = m[1];
@@ -346,7 +412,7 @@ export function normalizeOrderedListNumbers(md: string): string {
     const line = lines[i];
     
     // 코드 펜스 처리
-    const m = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    const m = line.match(/^\s*(`{3,}|~{3,})/);
     if (openFence === null && m) {
       openFence = m[1];
       continue;
@@ -393,7 +459,7 @@ export function normalizeUnorderedListBullets(md: string): string {
     const line = lines[i];
     
     // 코드 펜스 처리
-    const m = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    const m = line.match(/^\s*(`{3,}|~{3,})/);
     if (openFence === null && m) {
       openFence = m[1];
       continue;

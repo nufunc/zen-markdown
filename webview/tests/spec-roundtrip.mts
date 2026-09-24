@@ -17,10 +17,10 @@ const MarkdownIt = require('markdown-it');
 const spec = require('commonmark-spec');
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
+const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
 
-/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298, 평문 이스케이프 뒤 293 */
-const BASELINE = 293;
+/** 뜻이 바뀌는 예제 수의 상한. 고칠 때마다 낮춘다. 2026-09-24 측정 302에서 꺾쇠 링크 수정 뒤 299, 여러 문단 인용 보존 뒤 298, 평문 이스케이프 뒤 293, 목록 자식 들여쓰기 뒤 287 */
+const BASELINE = 287;
 
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
@@ -29,7 +29,7 @@ T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(m
 const roundtrip = async (md: string) => {
   const ctx = { docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] };
   const blocks = T.processBlocksFromMarkdown(await editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, ctx)));
-  let out = await editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks, T.quoteJoinIds(blocks, ctx.quoteJoins)));
+  let out = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), T.quoteJoinIds(blocks, ctx.quoteJoins));
   out = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(out)));
   return fromEditorMarkdown(out, ctx);
 };

@@ -10,7 +10,7 @@ for (const key of ['window','document','navigator','HTMLElement','Element','Node
 }
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
-const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } = await import('../src/markdownPipeline.ts');
+const { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } = await import('../src/markdownPipeline.ts');
 const editor = BlockNoteEditor.create() as any;
 T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(md)));
 
@@ -18,7 +18,7 @@ T.setLiteralVerifier(makeLiteralVerifier(md => editor.tryParseMarkdownToBlocks(m
 const ctx = () => ({ docBaseUri: '', wikilinkNames: new Set<string>(), quoteJoins: [] as boolean[] });
 const parse = (md: string, c: any) => T.processBlocksFromMarkdown(editor.tryParseMarkdownToBlocks(toEditorMarkdown(md, c)));
 const save = (blocks: any[], c: any) => {
-  let m = editor.blocksToMarkdownLossy(T.processBlocksToMarkdown(blocks, T.quoteJoinIds(blocks, c.quoteJoins)));
+  let m = blocksToMarkdown(blocks, bs => editor.blocksToMarkdownLossy(bs), T.quoteJoinIds(blocks, c.quoteJoins));
   m = T.preserveMarkdownLineBreaks(T.normalizeUnorderedListBullets(T.normalizeOrderedListNumbers(m)));
   return fromEditorMarkdown(m, c).replace(/\n+$/, '');
 };

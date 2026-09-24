@@ -18,6 +18,8 @@ import {
   toWebviewImageUrls,
   fromWebviewImageUrls,
   processBlocksFromMarkdown,
+  processBlocksToMarkdown,
+  serializeKeepingListChildren,
 } from './markdownTransforms';
 
 export interface PipelineContext {
@@ -66,4 +68,10 @@ export function makeLiteralVerifier(parse: (markdown: string) => any[]) {
     if (content.some(c => c.type !== 'text' || Object.keys(c.styles ?? {}).length)) return null;
     return content.map(c => c.text).join('');
   };
+}
+
+/** 블록을 마크다운으로 직렬화한다(정규화 전). 앱의 저장, 안전장치, 복사와 테스트가 같은 경로를 쓴다.
+ *  toMarkdown은 에디터의 blocksToMarkdownLossy다. 목록 항목 안의 목록 아닌 자식은 들여 써서 항목 안에 남긴다. */
+export function blocksToMarkdown(blocks: any[], toMarkdown: (blocks: any[]) => string, quoteJoins?: Set<string>): string {
+  return serializeKeepingListChildren(processBlocksToMarkdown(blocks, quoteJoins), toMarkdown);
 }

@@ -2,8 +2,8 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
-import { quoteJoinIds, setLiteralVerifier, processBlocksFromMarkdown, processBlocksToMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
-import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier } from './markdownPipeline';
+import { quoteJoinIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
@@ -804,7 +804,7 @@ ${markdown}` : markdown;
 
   // 블록을 디스크에 쓸 마크다운 본문으로 만든다. 직렬화 체인은 markdownPipeline.ts가 파싱 체인과 나란히 담는다.
   const serializeBlocks = (ed: any, blocks: any[], wikilinkNames = wikilinkNamesRef.current, quoteJoins = quoteJoinsRef.current) => {
-    let markdown = ed.blocksToMarkdownLossy(processBlocksToMarkdown(blocks, quoteJoins) as any);
+    let markdown = blocksToMarkdown(blocks, bs => ed.blocksToMarkdownLossy(bs), quoteJoins);
     markdown = normalizeOrderedListNumbers(markdown);
     markdown = normalizeUnorderedListBullets(markdown);
     markdown = preserveMarkdownLineBreaks(markdown);
@@ -1996,7 +1996,7 @@ ${markdown}` : markdown;
                     const source = only && Array.isArray(only.content) && only.type !== 'table'
                       ? [{ type: 'paragraph', content: only.content }]
                       : blocks;
-                    let markdown = editor.blocksToMarkdownLossy(processBlocksToMarkdown(source as any[], quoteJoinsRef.current) as any);
+                    let markdown = blocksToMarkdown(source as any[], bs => editor.blocksToMarkdownLossy(bs as any), quoteJoinsRef.current);
                     markdown = normalizeUnorderedListBullets(normalizeOrderedListNumbers(markdown));
                     // 저장 경로와 같은 표기로 맞춘다
                     text = fromEditorMarkdown(markdown, { docBaseUri: docBaseUriRef.current, wikilinkNames: wikilinkNamesRef.current });
