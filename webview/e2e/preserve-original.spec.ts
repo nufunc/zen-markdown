@@ -62,15 +62,3 @@ test('문단 하나를 고치면 원문과 그 한 줄만 다르다', async ({ p
     '20: "Target paragraph here." -> "Target paragraph here. EDIT"',
   ]);
 });
-
-test('Raw 모드로 바꿔도 원문의 서식이 남는다', async ({ page }) => {
-  await page.locator('.bn-editor p', { hasText: 'Last paragraph' }).click();
-  await page.keyboard.press('End');
-  await page.keyboard.type('!');
-  await page.locator('.segmented-btn', { hasText: 'Raw' }).click();
-  const raw = page.locator('.raw-markdown-editor .cm-content');
-  await expect(raw).toContainText('Last paragraph.!');
-  expect(changedLines(DOC, (await lastChange(page))!)).toEqual([
-    '22: "Last paragraph." -> "Last paragraph.!"',
-  ]);
-});

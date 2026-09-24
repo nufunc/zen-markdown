@@ -14,7 +14,6 @@ const ALLOWED_CONFIG_KEYS = [
     'defaultCodeLanguage',
     'spellCheck',
     'contentWidth',
-    'defaultMode',
     'showWordCount',
     'showFormattingToolbar'
 ];
@@ -82,7 +81,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const defaultCodeLanguage = config.get<string>('defaultCodeLanguage') || 'text';
             const spellCheck = config.get<boolean>('spellCheck') ?? false;
             const contentWidth = config.get<string>('contentWidth') || 'standard';
-            const defaultMode = config.get<string>('defaultMode') || 'wysiwyg';
             const showWordCount = config.get<boolean>('showWordCount') ?? true;
             const showFormattingToolbar = config.get<boolean>('showFormattingToolbar') ?? true;
             const isReadOnly = !['file', 'untitled', 'vscode-vfs'].includes(document.uri.scheme);
@@ -99,7 +97,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 showToc,
                 spellCheck,
                 contentWidth,
-                defaultMode,
                 showWordCount,
                 showFormattingToolbar,
                 isReadOnly,

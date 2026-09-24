@@ -32,30 +32,11 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     await page.addInitScript(mockVsCodeApi);
     await page.goto('/');
     await page.evaluate((text) => {
-      window.postMessage({ type: 'originalContent', content: '' }, '*');
       window.postMessage({ type: 'config', showWordCount: true }, '*');
       window.postMessage({ type: 'update', text }, '*');
     }, DEMO_DOC);
 
     await page.waitForSelector('.bn-editor');
-  });
-
-  /** PATTERN A: View Mode Switching & Editor State Synchronization */
-  test('Pattern A: View Mode Switching (WYSIWYG <-> RAW)', async ({ page }) => {
-    const segmentedWYSIWYG = page.locator('.segmented-btn', { hasText: 'WYSIWYG' });
-    const segmentedRaw = page.locator('.segmented-btn', { hasText: 'Raw' });
-
-    await expect(segmentedWYSIWYG).toHaveClass(/active/);
-
-    // Switch to RAW CodeMirror editor
-    await segmentedRaw.click();
-    await expect(segmentedRaw).toHaveClass(/active/);
-    await expect(page.locator('.cm-editor')).toBeVisible();
-
-    // Switch back to WYSIWYG BlockNote editor
-    await segmentedWYSIWYG.click();
-    await expect(segmentedWYSIWYG).toHaveClass(/active/);
-    await expect(page.locator('.bn-editor')).toBeVisible();
   });
 
   /** PATTERN B: Quick Stats Badges Dynamic Word and Character Counting */

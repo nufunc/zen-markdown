@@ -31,7 +31,6 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
           }
 
           .bn-container { color: var(--text-color) !important; }
-          .raw-markdown-editor .cm-content { padding: 16px 32px !important; }
 
           /* 
            * WYSIWYG Numbered List Override 

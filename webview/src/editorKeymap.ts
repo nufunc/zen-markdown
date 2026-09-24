@@ -6,15 +6,14 @@ import { isPlainInputTarget } from './domTargets';
 
 export interface EditorKeymapDeps {
   editor: any;
-  isRawMode: boolean;
   handleUndo: () => void;
   handleRedo: () => void;
   applyBlockTypeToSelection: (type: string, props?: Record<string, any>) => void;
 }
 
-export function createEditorKeymap({ editor, isRawMode, handleUndo, handleRedo, applyBlockTypeToSelection }: EditorKeymapDeps) {
+export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection }: EditorKeymapDeps) {
   return (e: React.KeyboardEvent) => {
-    if (!editor || isRawMode) return;
+    if (!editor) return;
     // 프론트매터·TOC 등 본문 밖 입력칸의 키 입력은 본문 단축키로 해석하지 않는다
     if (isPlainInputTarget(e.target)) return;
 

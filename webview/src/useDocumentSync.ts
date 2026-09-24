@@ -94,14 +94,6 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
 
   const hasUnsentEdits = () => unsentRef.current;
 
-  /** canSend()를 거쳐 즉시 보낸다. 호스트에 이미 있는 텍스트면 보내지 않고 편집 표시만 끈다. */
-  const sendNow = (text: string) => {
-    if (!canSend()) return false;
-    if (text === lastSentTextRef.current) unsentRef.current = false;
-    else send(text);
-    return true;
-  };
-
   /** 대기 중인 편집을 즉시 배출한다. 저장 직전과 탭 전환에서 부른다. */
   const flush = async () => {
     if (postChange.isPending()) postChange.flush();
@@ -229,7 +221,6 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     deferPending,
     isHolding,
     hasUnsentEdits,
-    sendNow,
     conflict,
     resolveConflict,
   };

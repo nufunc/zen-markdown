@@ -23,12 +23,8 @@ test.describe('Zen Markdown Webview Editor', () => {
     await page.addInitScript(mockVsCodeApi);
     await page.goto('/');
     
-    // 초기 originalContent 전달로 loading 상태 해제 및 에디터 초기화
+    // 초기 update 전달로 loading 상태 해제 및 에디터 초기화
     await page.evaluate(() => {
-      window.postMessage({
-        type: 'originalContent',
-        content: '# Hello World\n\nThis is a test document.'
-      }, '*');
       window.postMessage({
         type: 'update',
         text: '# Hello World\n\nThis is a test document.'
@@ -142,26 +138,31 @@ test.describe('Zen Markdown Webview Editor', () => {
     expect(editorText).toContain('New content from host.');
   });
 
-  test('should switch to raw mode on config isReadOnly', async ({ page }) => {
-    // config 업데이트 메시지 시뮬레이션
+
+  test('읽기 전용 문서는 WYSIWYG로 열리고 입력이 들어가지 않는다', async ({ page }) => {
+    const sent: any[] = [];
+    await page.exposeFunction('__onPost', (m: any) => { sent.push(m); });
+    await page.evaluate(() => window.addEventListener('vscode-post-message', (e: any) => (window as any).__onPost(e.detail)));
     await page.evaluate(() => {
-      window.postMessage({
-        type: 'config',
-        isReadOnly: true,
-        theme: 'light',
-        fontSize: 16
-      }, '*');
+      window.postMessage({ type: 'config', isReadOnly: true, theme: 'light', fontSize: 16 }, '*');
     });
-
-    // 렌더링 대기
-    await page.waitForTimeout(500);
-
-    // Raw 모드 (readonly 텍스트 뷰어) 컴포넌트가 렌더링되었는지 확인
-    const rawViewer = page.locator('.raw-markdown-editor');
-    await expect(rawViewer).toBeVisible();
-    
-    const text = await rawViewer.innerText();
-    expect(text).toContain('Hello World');
+    const editorEl = page.locator('.bn-editor');
+    await expect(editorEl).toHaveAttribute('contenteditable', 'false');
+    await expect(editorEl).toContainText('Hello World');
+    await page.locator('.bn-editor p', { hasText: 'This is a test document.' }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('XYZ');
+    await page.waitForTimeout(1000);
+    await expect(editorEl).not.toContainText('XYZ');
+    expect(sent.filter(m => m.type === 'change')).toEqual([]);
   });
+});
+
+test('예전 상태에 isRawMode: true가 남아 있어도 WYSIWYG로 열린다', async ({ page }) => {
+  await page.addInitScript(mockVsCodeApi.replace('getState: () => ({})', 'getState: () => ({ isRawMode: true })'));
+  await page.goto('/');
+  await page.evaluate(() => window.postMessage({ type: 'update', text: '# Old State\n\nbody' }, '*'));
+  await expect(page.locator('.bn-editor')).toContainText('Old State');
+  await expect(page.locator('.bn-editor')).toHaveAttribute('contenteditable', 'true');
 });
 

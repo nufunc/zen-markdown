@@ -97,15 +97,10 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, ChevronDown, ChevronUp, ChevronRight, List, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, ChevronDown, ChevronUp, ChevronRight, List, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { codeLanguages } from './codeLanguages';
-import { EditorView } from 'codemirror';
-import { EditorState } from '@codemirror/state';
 
 
 // 진단 이벤트를 호스트로 보낸다. 문서 내용은 절대 싣지 않는다.
@@ -178,7 +173,6 @@ function App() {
     defaultCodeLanguage: string,
     spellCheck: boolean,
     contentWidth: string,
-    defaultMode: string,
     showWordCount: boolean,
     showFormattingToolbar: boolean
   }>({
@@ -190,7 +184,6 @@ function App() {
     defaultCodeLanguage: 'text',
     spellCheck: false,
     contentWidth: 'standard',
-    defaultMode: 'wysiwyg',
     showWordCount: true,
     showFormattingToolbar: true
   });
@@ -200,10 +193,6 @@ function App() {
   // 코드블록 케밥(⋮) 메뉴 상태
   const [codeMenu, setCodeMenu] = useState<{ blockId: string, x: number, y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
-  const [isRawMode, setIsRawMode] = useState(() => {
-    const stateVal = vscode.getState()?.isRawMode;
-    return typeof stateVal === 'boolean' ? stateVal : false;
-  });
   const [editor, setEditor] = useState<any>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -224,18 +213,10 @@ function App() {
     syncMatchesFromPlugin,
   } = useSearchReplace(editor, () => handleWysiwygChangeRef.current());
 
-  const cmExtensions = useMemo(() => [
-    markdown({ base: markdownLanguage, codeLanguages: codeLanguages }),
-    EditorView.lineWrapping,
-    // 읽기 전용 문서에서는 입력 자체를 막는다. postChange 가드만으로는 입력이 들어갔다가
-    // 되돌려져 사용자가 편집 가능하다고 오해한다.
-    ...(config.isReadOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
-  ], [config.isReadOnly]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   
   const settingsRef = useRef<HTMLDivElement>(null);
-  const hasEdited = useRef(false);
   const lastEditTimeRef = useRef(0);
   const lastUndoTimeRef = useRef(0);
   const isInitializing = useRef(false);
@@ -254,7 +235,7 @@ function App() {
     lastSentTextRef, lastInitializedTextRef,
     postChange, debouncedSerialize, flush,
     holdExternal, deferPending, isHolding,
-    hasUnsentEdits, sendNow, conflict, resolveConflict,
+    hasUnsentEdits, conflict, resolveConflict,
   } = useDocumentSync({
     buildDocumentText: (final) => buildDocumentTextRef.current(final),
     needsFinalSerialize: () => unverifiedRef.current,
@@ -267,9 +248,6 @@ function App() {
   const pendingUploads = useRef<Map<string, (v: { relPath?: string, error?: string }) => void>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cmViewRef = useRef<any>(null);
-  // 모드 전환 시 기억할 헤딩. 같은 제목이 여러 번 나오는 문서를 위해 순번을 함께 담는다.
-  const pendingHeadingRef = useRef<{ text: string, ordinal: number } | null>(null);
 
   useEffect(() => {
     vscode.postMessage({ type: 'ready' });
@@ -309,15 +287,9 @@ function App() {
             defaultCodeLanguage: message.defaultCodeLanguage || 'text',
             spellCheck: message.spellCheck || false,
             contentWidth: message.contentWidth || 'standard',
-            defaultMode: message.defaultMode || 'wysiwyg',
             showWordCount: message.showWordCount ?? true,
             showFormattingToolbar: message.showFormattingToolbar ?? true
           });
-          if (message.isReadOnly) {
-            setIsRawMode(true);
-          } else if (vscode.getState()?.isRawMode === undefined && message.defaultMode) {
-            setIsRawMode(message.defaultMode === 'raw');
-          }
           break;
         case 'configSaved':
           setSaveSuccess(true);
@@ -400,7 +372,7 @@ function App() {
   // 클립보드 엑셀/TSV/CSV 붙여넣기 시 마크다운 표 자동 변환 생성
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
-      if (isRawMode || !editor) return;
+      if (!editor) return;
       // 검색창·프론트매터 입력칸의 붙여넣기를 가로채지 않는다
       if (isPlainInputTarget(e.target)) return;
       // 코드블록 안에서는 CSV가 표가 아니라 코드다
@@ -433,15 +405,13 @@ function App() {
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [isRawMode, editor]);
+  }, [editor]);
 
   // 코드블록 호버 시 Copy/Format 플로팅 버튼.
   // Format은 명시적 클릭 시에만 실행 — 커서 이탈 시 자동 재인덴트는 문자열/주석 안의
   // 중괄호를 오판해 사용자가 의도한 들여쓰기를 훼손할 수 있어 제거함.
   // 코드블록 호버 시 Copy 플로팅 버튼
   useEffect(() => {
-    if (isRawMode) return;
-
     let hoverTarget: HTMLElement | null = null;
     let timeoutId: any = null;
 
@@ -537,7 +507,7 @@ function App() {
         }
       }
     };
-  }, [isRawMode]);
+  }, []);
 
   // 코드블록 포맷팅은 사용자의 명시적 조작(케밥 메뉴) 시에만 실행 (커서 이탈 시 자동 변이로 인한 튐 방지)
 
@@ -564,7 +534,7 @@ function App() {
 
   useEffect(() => {
     async function initEditor() {
-      if (documentText !== "loading" && !isRawMode) {
+      if (documentText !== "loading") {
         // setEditor로 인한 이펙트 재실행에서 같은 내용을 다시 파싱하지 않음
         // (이중 파싱 + undo 스택에 replaceBlocks 중복 적재 방지)
         if (editor && lastInitializedTextRef.current === documentText) {
@@ -664,33 +634,10 @@ function App() {
             }
           }, 0);
           extractHeadings(newEditor);
-          // Reset edit flag after initialization
-          hasEdited.current = false;
 
-          // 모드 전환 시 기억한 헤딩 또는 저장된 스크롤 위치로 복원
+          // 저장된 스크롤 위치로 복원
           setTimeout(() => {
-            const target = pendingHeadingRef.current;
-            if (target) {
-              pendingHeadingRef.current = null;
-              // n번째 일치에서 멈춘다. 일치가 부족하면 마지막 일치로 떨어져 무해하다.
-              let seen = 0;
-              let lastMatchId: string | null = null;
-              newEditor.forEachBlock((b: any) => {
-                if (b.type === 'heading') {
-                  const text = b.content?.map((c: any) => c.text || '').join('') || '';
-                  if (text.trim() === target.text) {
-                    lastMatchId = b.id;
-                    if (seen === target.ordinal) return false;
-                    seen++;
-                  }
-                }
-                return true;
-              });
-              if (lastMatchId) {
-                document.querySelector(`[data-id="${lastMatchId}"]`)?.scrollIntoView({ block: 'start' });
-              }
-            } else if (scrollRef.current) {
-              // 헤딩이 없는 문서는 저장된 스크롤 위치로 돌아간다
+            if (scrollRef.current) {
               const saved = vscode.getState();
               if (saved?.scrollTop) scrollRef.current.scrollTop = saved.scrollTop;
             }
@@ -760,7 +707,7 @@ function App() {
       }
     }
     initEditor();
-  }, [documentText, isRawMode, editor]);
+  }, [documentText, editor]);
 
   // 클립보드/드롭 이미지를 문서 옆 assets/ 폴더에 저장하고 미리보기 URL 반환
   const uploadFile = async (file: File): Promise<string> => {
@@ -786,12 +733,11 @@ function App() {
   // 현재 에디터 내용을 디스크에 쓸 전체 텍스트로 만든다.
   // 실제 전송과 디바운스·flush·경합 조정은 useDocumentSync가 맡는다.
   const buildDocumentText = async (final = false): Promise<string | null> => {
-    if (isRawMode) return documentText === "loading" ? null : documentText;
     if (!editor) return null;
     extractHeadings(editor);
     const markdown = mergeWithOriginal(await generateMarkdownFromEditor(), final);
 
-    // frontmatter는 연 때 떼어 둔 원문 그대로 다시 붙인다. 편집은 Raw 모드에서 한다.
+    // frontmatter는 연 때 떼어 둔 원문 그대로 다시 붙인다. 편집은 텍스트 에디터에서 한다.
     return parsedFrontmatter ? `---
 ${parsedFrontmatter}
 ---
@@ -873,7 +819,6 @@ ${markdown}` : markdown;
 
   const handleWysiwygChange = () => {
     if (!editor || isInitializing.current) return;
-    hasEdited.current = true;
     lastEditTimeRef.current = Date.now();
     // 편집으로 매치 위치가 바뀌었으니 검색 위젯의 개수를 다시 읽는다
     syncMatchesFromPlugin();
@@ -887,41 +832,39 @@ ${markdown}` : markdown;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 자체 Search/Replace 위젯을 Ctrl+F와 Ctrl+H 모두에 연동한다 (WYSIWYG 모드에서)
+      // 자체 Search/Replace 위젯을 Ctrl+F와 Ctrl+H 모두에 연동한다
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'h')) {
-        if (!isRawMode) {
-          e.preventDefault();
-          e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
 
-          // 에디터에서 드래그/선택된 텍스트가 있으면 검색어로 자동 반영
-          let selectedText = '';
-          if (editor) {
-            const tiptap = (editor as any)?._tiptapEditor;
-            if (tiptap) {
-              const { from, to } = tiptap.state.selection;
-              if (from !== to) {
-                selectedText = tiptap.state.doc.textBetween(from, to, ' ');
-              }
+        // 에디터에서 드래그/선택된 텍스트가 있으면 검색어로 자동 반영
+        let selectedText = '';
+        if (editor) {
+          const tiptap = (editor as any)?._tiptapEditor;
+          if (tiptap) {
+            const { from, to } = tiptap.state.selection;
+            if (from !== to) {
+              selectedText = tiptap.state.doc.textBetween(from, to, ' ');
             }
           }
-          if (selectedText) {
-            setSearchQuery(selectedText);
-            setActiveIndex(0);
-          }
+        }
+        if (selectedText) {
+          setSearchQuery(selectedText);
+          setActiveIndex(0);
+        }
 
-          setShowSearchReplace(true);
-          if (e.key.toLowerCase() === 'h') {
-            setIsReplaceOpen(true);
-            setTimeout(() => {
-              replaceInputRef.current?.focus();
-              replaceInputRef.current?.select();
-            }, 50);
-          } else {
-            setTimeout(() => {
-              searchInputRef.current?.focus();
-              searchInputRef.current?.select();
-            }, 50);
-          }
+        setShowSearchReplace(true);
+        if (e.key.toLowerCase() === 'h') {
+          setIsReplaceOpen(true);
+          setTimeout(() => {
+            replaceInputRef.current?.focus();
+            replaceInputRef.current?.select();
+          }, 50);
+        } else {
+          setTimeout(() => {
+            searchInputRef.current?.focus();
+            searchInputRef.current?.select();
+          }, 50);
         }
       } else if (e.key === 'Escape' && showSearchReplace) {
         setShowSearchReplace(false);
@@ -930,7 +873,7 @@ ${markdown}` : markdown;
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSearchReplace, isRawMode, editor]);
+  }, [showSearchReplace, editor]);
 
   useEffect(() => {
     const handleWindowScroll = () => {
@@ -941,71 +884,6 @@ ${markdown}` : markdown;
     window.addEventListener('scroll', handleWindowScroll);
     return () => window.removeEventListener('scroll', handleWindowScroll);
   }, []);
-
-  const toggleMode = async () => {
-    // 보류한 외부 변경이 있으면 전환하지 않는다. 전환 직렬화가 외부 변경을 덮어쓰기 때문이다.
-    if (isHolding()) return;
-    // 모드 전환 시 현재 위치의 헤딩을 기억해 반대 모드에서 같은 지점으로 스크롤 (best-effort)
-    try {
-      if (!isRawMode) {
-        // 스크롤 위치를 디바운스 대기 없이 즉시 저장한다 (헤딩이 없는 문서의 폴백)
-        if (scrollRef.current) {
-          if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
-          vscode.updateState({ scrollTop: scrollRef.current.scrollTop });
-        }
-        let current: { text: string, ordinal: number } | null = null;
-        let seenSameText = 0;
-        for (const h of headings) {
-          const el = document.querySelector(`[data-id="${h.id}"]`);
-          if (!el) continue;
-          if ((el as HTMLElement).getBoundingClientRect().top <= 120) {
-            seenSameText = headings.slice(0, headings.indexOf(h)).filter(x => x.text === h.text).length;
-            current = { text: h.text, ordinal: seenSameText };
-          } else break;
-        }
-        pendingHeadingRef.current = current;
-      } else {
-        const view = cmViewRef.current;
-        if (view && typeof documentText === 'string') {
-          const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
-          const lineNo = view.state.doc.lineAt(block.from).number;
-          const lines = documentText.split('\n');
-          for (let i = Math.min(lineNo, lines.length) - 1; i >= 0; i--) {
-            const m = lines[i].match(/^#{1,6}\s+(.+)/);
-            if (!m) continue;
-            const text = m[1].trim();
-            // 이 헤딩이 같은 제목 가운데 몇 번째인지 위쪽에서 센다
-            let ordinal = 0;
-            for (let j = 0; j < i; j++) {
-              const p = lines[j].match(/^#{1,6}\s+(.+)/);
-              if (p && p[1].trim() === text) ordinal++;
-            }
-            pendingHeadingRef.current = { text, ordinal };
-            break;
-          }
-        }
-      }
-    } catch { /* 위치 동기화는 실패해도 무해 */ }
-    vscode.updateState({ isRawMode: !isRawMode });
-
-    if (!isRawMode && editor) {
-      try {
-        if (hasEdited.current) {
-          // 병합을 거친 텍스트를 보여 주고 보낸다. 그러지 않으면 모드를 바꾸는 순간 문서 전체가 다시 쓰인다.
-          const fullText = await buildDocumentText(true);
-          if (fullText !== null) {
-            setDocumentText(fullText);
-            sendNow(fullText);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to generate markdown during mode toggle", err);
-        diag('mode_toggle_serialize_failed');
-      }
-      setEditor(null);
-    }
-    setIsRawMode(!isRawMode);
-  };
 
   const getSelectedOrCursorBlocks = (editorInstance: any) => {
     if (!editorInstance) return [];
@@ -1067,21 +945,21 @@ ${markdown}` : markdown;
   };
 
   const getCanUndo = () => {
-    if (!editor || isRawMode) return false;
+    if (!editor) return false;
     const tiptap = (editor as any)?._tiptapEditor;
     const state = tiptap?.editorState || tiptap?.state;
     return state ? undoDepth(state) > 0 : false;
   };
 
   const getCanRedo = () => {
-    if (!editor || isRawMode) return false;
+    if (!editor) return false;
     const tiptap = (editor as any)?._tiptapEditor;
     const state = tiptap?.editorState || tiptap?.state;
     return state ? redoDepth(state) > 0 : false;
   };
 
   const handleUndo = () => {
-    if (!editor || isRawMode) return;
+    if (!editor) return;
     lastUndoTimeRef.current = Date.now();
     const tiptap = (editor as any)?._tiptapEditor;
     if (tiptap) {
@@ -1099,7 +977,7 @@ ${markdown}` : markdown;
   };
 
   const handleRedo = () => {
-    if (!editor || isRawMode) return;
+    if (!editor) return;
     lastUndoTimeRef.current = Date.now();
     const tiptap = (editor as any)?._tiptapEditor;
     if (tiptap) {
@@ -1116,7 +994,7 @@ ${markdown}` : markdown;
     vscode.postMessage({ type: 'redo' });
   };
 
-  const handleKeyDownCapture = createEditorKeymap({ editor, isRawMode, handleUndo, handleRedo, applyBlockTypeToSelection });
+  const handleKeyDownCapture = createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection });
 
   const updateConfig = (key: string, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -1161,14 +1039,14 @@ ${markdown}` : markdown;
     return <div>Loading document...</div>;
   }
 
-  const { bgColor, textColor, headerBg, blockNoteTheme, cmTheme, dropdownBg, dropdownBorder } = themePalette;
+  const { bgColor, textColor, headerBg, blockNoteTheme, dropdownBg, dropdownBorder } = themePalette;
 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: bgColor, color: textColor }}>
       
       {/* VS Code Style Find & Replace Widget */}
-      {showSearchReplace && !isRawMode && (
+      {showSearchReplace && (
         <div className="vscode-find-widget" role="search" aria-label="Find and Replace">
           {/* Find Row */}
           <div className="find-widget-row">
@@ -1378,35 +1256,15 @@ ${markdown}` : markdown;
           <button
             onClick={() => vscode.postMessage({ type: 'openBuiltIn' })}
             className="tb-btn"
-            data-tooltip="Open in VS Code built-in editor"
+            data-tooltip="Open in VS Code text editor (view or edit the source)"
             data-tooltip-pos="left"
           >
             <ExternalLink size={12} style={{ marginRight: '3px' }} />
-            Built-in
+            Text Editor
           </button>
           {!config.isReadOnly && (
             <>
               <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 4px' }} />
-              
-              {/* Segmented View Mode Toggle */}
-              <div className="segmented-control">
-                <button
-                  onClick={() => { if (isRawMode) toggleMode(); }}
-                  className={`segmented-btn ${!isRawMode ? 'active' : ''}`}
-                  data-tooltip="WYSIWYG Rich Mode"
-                >
-                  <Edit3 size={13} />
-                  <span>WYSIWYG</span>
-                </button>
-                <button
-                  onClick={() => { if (!isRawMode) toggleMode(); }}
-                  className={`segmented-btn ${isRawMode ? 'active' : ''}`}
-                  data-tooltip="Raw Markdown Mode"
-                >
-                  <Code size={13} />
-                  <span>Raw</span>
-                </button>
-              </div>
 
               {/* Quick Stats Badge */}
               {config.showWordCount && (
@@ -1421,8 +1279,7 @@ ${markdown}` : markdown;
                 </div>
               )}
 
-              {!isRawMode && (
-                <button 
+              <button 
                   onClick={() => updateConfig('showToc', !showToc)} 
                   className={`tb-btn action-icon-btn ${showToc ? 'tb-btn-active' : ''}`}
                   style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
@@ -1432,7 +1289,6 @@ ${markdown}` : markdown;
                   <List size={13} style={{ marginRight: '3px' }} />
                   <span>TOC</span>
                 </button>
-              )}
             </>
           )}
           <div style={{ width: '1px', height: '14px', background: dropdownBorder, margin: '0 2px' }} />
@@ -1556,22 +1412,6 @@ ${markdown}` : markdown;
                 </select>
               </div>
 
-              <div className="settings-item">
-                <div className="settings-item-label">
-                  <Edit3 size={14} opacity={0.7} />
-                  <span>Default Mode</span>
-                </div>
-                <select
-                  className="settings-select"
-                  value={config.defaultMode}
-                  onChange={(e) => updateConfig('defaultMode', e.target.value)}
-                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
-                >
-                  <option value="wysiwyg">WYSIWYG</option>
-                  <option value="raw">Raw Markdown</option>
-                </select>
-              </div>
-
               <div className="settings-group-title">Behavior</div>
 
               <div className="settings-item">
@@ -1662,8 +1502,8 @@ ${markdown}` : markdown;
         </div>
       </div>
       
-      {/* 2층 Orca Rich Formatting Toolbar (WYSIWYG 모드일 때만 노출) */}
-      {!isRawMode && !config.isReadOnly && editor && config.showFormattingToolbar && (
+      {/* 2층 Orca Rich Formatting Toolbar */}
+      {!config.isReadOnly && editor && config.showFormattingToolbar && (
         <div style={{ padding: '3px 16px', backgroundColor: headerBg, borderBottom: `1px solid ${dropdownBorder}`, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', overflow: 'visible', flexWrap: 'wrap', userSelect: 'none' }}>
           <button onMouseDown={e => e.preventDefault()} onClick={() => applyBlockTypeToSelection('paragraph')} className="tb-btn" data-tooltip="Paragraph (¶)">
             <Pilcrow size={13} />
@@ -1745,7 +1585,7 @@ ${markdown}` : markdown;
         {quoteJoinCss && <style>{quoteJoinCss}</style>}
 
         {/* 좌측 사이드바 TOC 패널 (Orca 스타일) */}
-        {!isRawMode && showToc && headings.length > 0 && (
+        {showToc && headings.length > 0 && (
           <div style={{
             width: '240px',
             flexShrink: 0,
@@ -1857,53 +1697,6 @@ ${markdown}` : markdown;
             <button onMouseDown={e => e.preventDefault()} onClick={() => { void resolveConflict('external'); }}>Use external version</button>
           </div>
         )}
-        {isRawMode ? (
-            <CodeMirror
-              value={documentText as string}
-              className="raw-markdown-editor"
-              extensions={cmExtensions}
-              onChange={(val) => {
-                lastEditTimeRef.current = Date.now();
-                setDocumentText(val);
-                postChange(val);
-              }}
-              onCreateEditor={(view: any) => {
-                cmViewRef.current = view;
-                // WYSIWYG에서 기억한 헤딩 위치로 스크롤 복원
-                const target = pendingHeadingRef.current;
-                if (target && typeof documentText === 'string') {
-                  pendingHeadingRef.current = null;
-                  const lines = (documentText as string).split('\n');
-                  let pos = 0;
-                  let seen = 0;
-                  let lastMatchPos: number | null = null;
-                  for (const line of lines) {
-                    const m = line.match(/^#{1,6}\s+(.+)/);
-                    if (m && m[1].trim() === target.text) {
-                      lastMatchPos = pos;
-                      if (seen === target.ordinal) break;
-                      seen++;
-                    }
-                    pos += line.length + 1;
-                  }
-                  if (lastMatchPos !== null) {
-                    const at = lastMatchPos;
-                    setTimeout(() => {
-                      try { view.dispatch({ effects: EditorView.scrollIntoView(at, { y: 'start' }) }); } catch { /* noop */ }
-                    }, 50);
-                  }
-                }
-              }}
-              theme={cmTheme}
-              style={{
-                width: '100%',
-                height: '100%',
-                fontSize: 'inherit',
-                fontFamily: "Consolas, 'Courier New', monospace"
-              }}
-              height="100%"
-            />
-        ) : (
           <div
             ref={scrollRef}
             style={{ flex: 1, overflow: 'auto' }}
@@ -1961,7 +1754,7 @@ ${markdown}` : markdown;
                   y: Math.min(e.clientY, window.innerHeight - 240)
                 });
               }}
-              ><BlockNoteView editor={editor} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
+              ><BlockNoteView editor={editor} editable={!config.isReadOnly} onChange={handleWysiwygChange} theme={blockNoteTheme} formattingToolbar={false} slashMenu={false}>
                 <SuggestionMenuController
                   triggerCharacter={"/"}
                   getItems={async (query) => {
@@ -1976,7 +1769,6 @@ ${markdown}` : markdown;
               </BlockNoteView></div>}
             </div>
           </div>
-        )}
         </div>
       </div>
 

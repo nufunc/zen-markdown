@@ -152,19 +152,6 @@
           "default": "standard",
           "description": "Maximum width of the editor content. Narrow (700px), Standard (900px), Full (100% - default max of VS Code)."
         },
-        "zenMarkdown.defaultMode": {
-          "type": "string",
-          "enum": [
-            "wysiwyg",
-            "raw"
-          ],
-          "enumDescriptions": [
-            "WYSIWYG Rich Block Editor",
-            "Raw Markdown Source Editor"
-          ],
-          "default": "wysiwyg",
-          "description": "Default editing mode when opening a markdown document."
-        },
         "zenMarkdown.showWordCount": {
           "type": "boolean",
           "default": true,

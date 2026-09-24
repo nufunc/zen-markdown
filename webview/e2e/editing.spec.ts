@@ -22,10 +22,6 @@ test.describe('WYSIWYG Editing Features', () => {
     
     await page.evaluate(() => {
       window.postMessage({
-        type: 'originalContent',
-        content: ''
-      }, '*');
-      window.postMessage({
         type: 'update',
         text: ''
       }, '*');
