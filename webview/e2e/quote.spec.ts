@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // 추가 검토 9: 여러 문단 인용은 화면에서 인용 블록 여럿으로 보이고, 편집한 뒤에도 한 인용(`>` 빈 줄)으로 저장된다.
 const mock = `
@@ -37,8 +38,7 @@ test('두 문단 인용은 인용 블록 둘로 보이고 사이 간격이 붙�
 });
 
 test('이어진 인용을 고쳐도 한 인용으로, 떨어진 인용은 떨어진 채로 저장된다', async ({ page }) => {
-  await page.locator('.bn-editor blockquote', { hasText: 'second para' }).click();
-  await page.keyboard.press('End');
+  await placeCaretAtEnd(page, page.locator('.bn-editor blockquote', { hasText: 'second para' }));
   await page.keyboard.type(' EDIT');
   await expect.poll(() => lastChange(page)).toContain('second para EDIT');
   const sent = (await lastChange(page))!;

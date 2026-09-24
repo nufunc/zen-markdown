@@ -14,8 +14,18 @@ const DOC = '# Title\n\nHello **bold** and [link](a.md) and `code`.\n\n- item on
 
 type Point = { sel: string; text: string };
 
-/** start.text의 첫 글자부터 end.text의 마지막 글자까지 화면에서 선택한다. 각 text는 해당 요소 글자 안에서 처음 나오는 곳을 쓴다. */
-const select = (page: Page, start: Point, end: Point) =>
+/** start.text의 첫 글자부터 end.text의 마지막 글자까지 화면에서 선택한다. 각 text는 해당 요소 글자 안에서 처음 나오는 곳을 쓴다.
+ *  beforeEach의 클릭 선택이 늦게 반영되면 만든 선택을 덮어 접는다(추가 검토 18). 잠시 뒤에도 선택이 남아 있는지 보고, 접혔으면 다시 만든다. */
+const select = async (page: Page, start: Point, end: Point) => {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await selectOnce(page, start, end);
+    await page.waitForTimeout(50);
+    if (await page.evaluate(() => !window.getSelection()?.isCollapsed)) return;
+    console.log(`select: ${attempt}번째 선택이 접힘`);
+  }
+  throw new Error('선택이 계속 접힌다');
+};
+const selectOnce = (page: Page, start: Point, end: Point) =>
   page.evaluate(([s, e]) => {
     const locate = (p: { sel: string; text: string }, atEnd: boolean) => {
       const el = document.querySelector(p.sel)!;

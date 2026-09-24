@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // 모의 VS Code API 주입 스크립트
 const mockVsCodeApi = `
@@ -50,8 +51,7 @@ test.describe('Zen Markdown Webview Editor', () => {
 
     // 에디터에 포커스하고 텍스트 입력
     const editor = page.locator('.bn-editor');
-    await editor.click();
-    await page.keyboard.press('End');
+    await placeCaretAtEnd(page, editor);
     await page.keyboard.type(' Typing new text');
 
     // 디바운스된 postMessage가 호출될 때까지 대기

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // 성능 테스트는 perf 프로젝트로 나머지 E2E가 끝난 뒤 한 번에 하나씩 돈다(playwright.config.ts, 추가 검토 15).
 // 여유 메모리가 1GB 아래인 PC에서 돌린 결과는 판정에 쓰지 않는다. 부하로 수치가 몇 배씩 흔들린다.
@@ -55,8 +56,7 @@ test('코드 블록 안에 입력하면 하이라이트가 갱신되고, 언어�
   await expect(code.locator('span[style]').first()).toBeVisible({ timeout: 30000 });
 
   // 새로 입력한 키워드가 토큰 span으로 나뉘어야 한다
-  await code.click();
-  await page.keyboard.press('End');
+  await placeCaretAtEnd(page, code);
   await page.keyboard.type(' return');
   await expect(code.locator('span[style]', { hasText: /^return$/ })).toHaveCount(1);
 

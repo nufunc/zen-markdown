@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // 개편 1의 6번: 속성 패널을 지운 뒤 frontmatter는 원문 그대로 보존한다.
 // WYSIWYG에서는 보이지 않고, 본문을 고쳐 저장해도 바이트 단위로 같아야 한다. 편집은 텍스트 에디터에서 한다.
@@ -40,8 +41,7 @@ test('WYSIWYG에는 frontmatter가 보이지 않는다', async ({ page }) => {
 });
 
 test('본문을 한 글자 고쳐 저장해도 frontmatter가 바이트 단위로 같다', async ({ page }) => {
-  await page.locator('.bn-editor p', { hasText: 'Body text' }).click();
-  await page.keyboard.press('End');
+  await placeCaretAtEnd(page, page.locator('.bn-editor p', { hasText: 'Body text' }));
   await page.keyboard.type('X');
   await expect.poll(() => lastChange(page)).toContain('here.X');
   const sent = (await lastChange(page))!;

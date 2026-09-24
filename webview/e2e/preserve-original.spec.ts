@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // 2단계 원문 조각 보존: 서식 차이가 있는 문서에서 문단 하나를 고치면, 저장되는 텍스트는 원문과 그 한 줄만 다르다.
 // 병합이 없으면 BlockNote가 원문과 다르게 쓰는 줄(수평선, 목록 기호, 표 너비, 언어 없는 펜스, 인용)이 모두 함께 바뀐다.
@@ -54,8 +55,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('문단 하나를 고치면 원문과 그 한 줄만 다르다', async ({ page }) => {
-  await page.locator('.bn-editor p', { hasText: 'Target paragraph' }).click();
-  await page.keyboard.press('End');
+  await placeCaretAtEnd(page, page.locator('.bn-editor p', { hasText: 'Target paragraph' }));
   await page.keyboard.type(' EDIT');
   await expect.poll(() => lastChange(page)).toContain('here. EDIT');
   expect(changedLines(DOC, (await lastChange(page))!)).toEqual([

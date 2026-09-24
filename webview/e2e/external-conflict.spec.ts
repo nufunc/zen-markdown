@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { placeCaretAtEnd } from './caret';
 
 // P0: 전송하지 않은 로컬 편집이 있을 때 도착한 외부 변경이 그 편집을 지우지 않아야 한다.
 // 호스트로 나간 메시지는 window.__msgs에 쌓는다.
@@ -27,8 +28,7 @@ const sendExternal = (page: Page) =>
 
 /** 첫 문단 끝에 ' LOCAL'을 입력하고, 디바운스가 끝나기 전에 외부 변경을 보낸다 */
 const typeLocalThenExternal = async (page: Page) => {
-  await page.locator('.bn-editor p', { hasText: 'body' }).click();
-  await page.keyboard.press('End');
+  await placeCaretAtEnd(page, page.locator('.bn-editor p', { hasText: 'body' }));
   await page.keyboard.type(' LOCAL');
   await page.waitForTimeout(100);
   await sendExternal(page);
@@ -98,8 +98,7 @@ test.describe('External change conflict (P0)', () => {
     await typeLocalThenExternal(page);
     await page.waitForTimeout(2500);
     await expect(bar(page)).toBeVisible();
-    await page.locator('.bn-editor p', { hasText: 'LOCAL' }).click();
-    await page.keyboard.press('End');
+    await placeCaretAtEnd(page, page.locator('.bn-editor p', { hasText: 'LOCAL' }));
     await page.keyboard.type(' MORE');
     await page.waitForTimeout(1500);
     expect(await changes(page)).toEqual([]);
