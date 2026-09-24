@@ -6,7 +6,6 @@ Minimalist & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experienc
 
 * **WYSIWYG Block Editing**: Edit markdown like a modern block editor (powered by BlockNote). No more switching between source and preview.
 * **Seamless Markdown Mode**: Toggle between WYSIWYG and Raw Markdown mode instantly. Your scroll position follows you across mode switches.
-* **Git Diff Viewer**: In Raw Markdown mode, compare your current document against the last committed version (Git `HEAD`) side by side.
 * **Mermaid Support**: Visualize complex diagrams and flowcharts seamlessly within the editor. Mermaid is loaded on demand, so documents without diagrams open fast.
 * **Image Paste & Drop**: Paste or drop images directly into the editor — they are saved to an `assets/` folder next to your document and linked with a relative path.
 * **Find & Replace**: Use the native VS Code find widget (`Ctrl/Cmd + F`) or the built-in replace panel (`Ctrl/Cmd + H`).

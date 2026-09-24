@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFile } from 'child_process';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
 import { sanitizeDiag } from './hostLogic';
 
@@ -343,25 +342,6 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     }, (err: any) => {
                         webviewPanel.webview.postMessage({ type: 'configSaveFailed' });
                         vscode.window.showWarningMessage(`Cannot save settings: ${err?.message || err}`);
-                    });
-                    return;
-                }
-                case 'getOriginalContent': {
-                    if (document.uri.scheme !== 'file') {
-                        webviewPanel.webview.postMessage({
-                            type: 'originalContent',
-                            content: '[Git diff is only available for files on disk]'
-                        });
-                        return;
-                    }
-                    const dirname = path.dirname(document.uri.fsPath);
-                    const basename = path.basename(document.uri.fsPath);
-                    // execFile: 파일명에 따옴표/특수문자가 있어도 셸 해석 없이 안전
-                    execFile('git', ['show', `HEAD:./${basename}`], { cwd: dirname, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-                        webviewPanel.webview.postMessage({
-                            type: 'originalContent',
-                            content: err ? `[Git History Not Found or File Untracked]\n\n${stderr || err.message}` : stdout
-                        });
                     });
                     return;
                 }

@@ -97,18 +97,15 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, ChevronDown, ChevronUp, ChevronRight, List, GitCompare, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, ChevronDown, ChevronUp, ChevronRight, List, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Code, Edit3, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Replace, ReplaceAll, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
 import CodeMirror from '@uiw/react-codemirror';
-import CodeMirrorMerge from 'react-codemirror-merge';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { codeLanguages } from './codeLanguages';
 import { EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
-
-const { Original, Modified } = CodeMirrorMerge;
 
 
 // 진단 이벤트를 호스트로 보낸다. 문서 내용은 절대 싣지 않는다.
@@ -207,8 +204,6 @@ function App() {
     const stateVal = vscode.getState()?.isRawMode;
     return typeof stateVal === 'boolean' ? stateVal : false;
   });
-  const [isDiffMode, setIsDiffMode] = useState(false);
-  const [originalText, setOriginalText] = useState<string | null>(null);
   const [editor, setEditor] = useState<any>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -373,9 +368,6 @@ function App() {
               vscode.postMessage({ type: 'flushed' });
             }
           })();
-          break;
-        case 'originalContent':
-          setOriginalText(message.content);
           break;
         case 'imageSaved': {
           const resolve = pendingUploads.current.get(message.requestId);
@@ -1429,21 +1421,7 @@ ${markdown}` : markdown;
                 </div>
               )}
 
-              {isRawMode ? (
-                <button
-                  onClick={() => {
-                    if (!isDiffMode && originalText === null) {
-                      vscode.postMessage({ type: 'getOriginalContent' });
-                    }
-                    setIsDiffMode(!isDiffMode);
-                  }}
-                  className={`tb-btn action-icon-btn ${isDiffMode ? 'tb-btn-active' : ''}`}
-                  data-tooltip="Toggle Git Diff View"
-                >
-                  <GitCompare size={13} style={{ marginRight: '3px' }} />
-                  Diff
-                </button>
-              ) : (
+              {!isRawMode && (
                 <button 
                   onClick={() => updateConfig('showToc', !showToc)} 
                   className={`tb-btn action-icon-btn ${showToc ? 'tb-btn-active' : ''}`}
@@ -1880,45 +1858,6 @@ ${markdown}` : markdown;
           </div>
         )}
         {isRawMode ? (
-          isDiffMode ? (
-            originalText === null ? (
-              <div style={{ padding: '20px', fontFamily: 'monospace', color: textColor, opacity: 0.7 }}>Loading Git HEAD...</div>
-            ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }} className="cm-merge-container">
-                <CodeMirrorMerge orientation="a-b" className="cm-merge-root" theme={cmTheme}>
-                  <Original
-                    value={originalText}
-                    extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping, EditorState.readOnly.of(true)]}
-                  />
-                  <Modified
-                    value={documentText as string}
-                    extensions={[markdown({ base: markdownLanguage, codeLanguages: codeLanguages }), EditorView.lineWrapping]}
-                    onChange={(val) => {
-                      lastEditTimeRef.current = Date.now();
-                      setDocumentText(val);
-                      postChange(val);
-                    }}
-                  />
-                </CodeMirrorMerge>
-                <style>{`
-                  .cm-merge-root { flex: 1; height: 100%; overflow: hidden; display: flex; }
-                  .cm-merge-theme { flex: 1; display: flex; height: 100%; min-height: 0; }
-                  .cm-merge-container .cm-editor { height: 100%; flex: 1; font-family: Consolas, 'Courier New', monospace; font-size: inherit; }
-                  .cm-merge-container .cm-scroller { overflow: auto !important; height: 100%; }
-                  /* Scrollbar & Layout Fixes */
-                  .cm-merge-container .cm-scroller { overflow-y: scroll !important; overflow-x: auto !important; height: 100%; }
-                  .cm-merge-root { overflow: hidden !important; }
-                  /* Make lines transparent so CodeMirror merge background highlights can be seen */
-                  .cm-merge-container .cm-line { background-color: transparent !important; }
-                  /* Diff Highlight Colors */
-                  .cm-merge-a .cm-changedLine, .cm-deletedLine, .cm-deletedChunk { background-color: ${isDark ? 'rgba(255, 80, 80, 0.2)' : 'rgba(255, 0, 0, 0.15)'} !important; }
-                  .cm-merge-b .cm-changedLine, .cm-insertedLine, .cm-insertedChunk { background-color: ${isDark ? 'rgba(80, 255, 80, 0.2)' : 'rgba(0, 255, 0, 0.15)'} !important; }
-                  .cm-deletedText, .cm-merge-a .cm-changedText { background-color: ${isDark ? 'rgba(255, 80, 80, 0.4)' : 'rgba(255, 0, 0, 0.3)'} !important; }
-                  .cm-insertedText, .cm-merge-b .cm-changedText { background-color: ${isDark ? 'rgba(80, 255, 80, 0.4)' : 'rgba(0, 255, 0, 0.3)'} !important; }
-                `}</style>
-              </div>
-            )
-          ) : (
             <CodeMirror
               value={documentText as string}
               className="raw-markdown-editor"
@@ -1964,7 +1903,6 @@ ${markdown}` : markdown;
               }}
               height="100%"
             />
-          )
         ) : (
           <div
             ref={scrollRef}
