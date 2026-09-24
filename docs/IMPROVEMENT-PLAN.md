@@ -1549,6 +1549,111 @@ HTML 주석 안의 `*…*`가 강조로 읽히는 것(sheet), 표 셀 안의 취
 - 원문에 있는 링크와 같은 이름의 링크를 편집으로 새로 넣으면, 이름과 차례만으로 짝짓기 때문에 새 링크가 원문의 `[[x]]` 자리를 차지할 수 있다. 다른 이름의 링크를 넣는 경우는 영향이 없다.
 - 이름에 공백이 든 위키링크(`[[my doc]]`)는 변환한 링크 주소에 공백이 들어가 BlockNote가 `[my doc](my)`로 읽는다. 이번 변경 전에도 같았다.
 
+### 개편 2. Raw 모드와 Git diff 제거
+
+2026-09-24에 사용자가 정했다. 조건표의 셋째 행까지 채워지고, 넷째 행(서식과 보기 불일치)에서 앱이 고칠 수 있는 것을 추가 검토 8~13으로 처리했다.
+남은 불일치는 대부분 BlockNote의 파서와 모델 한계다. 사용자는 이 상태에서 Raw 모드 제거 계획을 세우라고 정했다.
+원문을 봐야 할 때는 헤더의 "텍스트 에디터로 열기"(`openBuiltIn`, `workbench.action.reopenTextEditor`)로 VS Code 기본 에디터를 연다.
+
+#### 알려진 한계 (README에 옮길 목록)
+
+편집하지 않은 부분은 2단계 병합이 파일을 원문 그대로 지킨다. 아래는 화면이나, 해당 블록을 편집했을 때에만 드러난다.
+
+| 한계 | 표본 빈도 (400개) | 출처 |
+|---|---|---|
+| 인용 안의 목록, 헤딩 표식, 코드 펜스, 중첩 인용이 평평하게 보인다 | 목록 19개 파일, 헤딩 1개 | 추가 검토 9 |
+| 표 정렬과 링크 제목은 편집하면 사라진다 | 세지 않음 | 추가 검토 6 |
+| 네 칸 들여 쓴 코드 블록은 문단으로 보인다. 문단 앞 공백 네 칸은 편집하면 사라진다 | 명세 사례 | 추가 검토 6, 10 |
+| 중첩 목록 뒤 빈 줄 다음의 이미지와 문단, HTML 주석 안의 강조, 표 셀의 취소선과 코드가 겹친 것 | 4개 파일 | 추가 검토 13의 분류 |
+| frontmatter는 WYSIWYG에 보이지 않는다. 고치려면 텍스트 에디터로 연다 | | 개편 1 |
+
+앱 결함으로 남은 것 하나는 이 목록에 넣지 않는다. `[[my doc]]`처럼 이름에 공백이 든 위키링크가 `[my doc](my)`로 읽히는 것이다(추가 검토 13 결과). 별도 항목으로 고친다.
+
+#### 걸린 곳
+
+2026-09-24 HEAD `90d9917`에서 셌다.
+
+| 대상 | 걸린 곳 |
+|---|---|
+| 모드 상태와 전환 | `App.tsx`의 `isRawMode` 30곳, `toggleMode`, 모드 전환 스크롤 보존, 헤더의 WYSIWYG와 Raw 버튼 |
+| Raw 편집기 | `@uiw/react-codemirror`, `codeLanguages.ts`와 `@codemirror/lang-*` 13개, `@codemirror/legacy-modes` |
+| Git diff | `react-codemirror-merge`, 헤더의 "Toggle Git Diff View", 호스트의 `getOriginalContent`(`git show HEAD:`) |
+| 테마 | `themes.ts`의 `cmTheme`과 `@uiw/codemirror-themes-all` |
+| 설정 | `zenMarkdown.defaultMode`(`package.json`, README, 호스트 `ALLOWED_CONFIG_KEYS`와 `sendConfig`, 설정 모달) |
+| 동기화 | `useDocumentSync`와 충돌 막대의 Raw 분기(P0의 "Raw 모드에서 내 편집 유지"), 2단계의 Raw 전환 병합 |
+| 읽기 전용 | `isReadOnly`면 Raw로 강제로 여는 분기 |
+| E2E | `editor.spec.ts`, `external-conflict.spec.ts`, `frontmatter.spec.ts`, `full-features.spec.ts`, `preserve-original.spec.ts`에서 Raw를 16번 참조 |
+
+**기준선**: `vite build` 엔트리 `index-*.js` 1,732.23KB(gzip 529.55KB), `dist` 9.1MB, 파일 148개. 웹뷰 `package.json`의 CodeMirror 계열 의존성 19개.
+
+#### 설계
+
+- **지운다**: 위 표의 모드 상태와 전환, Raw 편집기, Git diff, `cmTheme`, `defaultMode` 설정, 동기화의 Raw 분기.
+  CodeMirror 계열 의존성 19개 가운데 `@codemirror/merge`를 뺀 18개를 지운다.
+- **남긴다**: `@codemirror/merge`. 2단계 병합의 `lineMerge.ts`가 이 패키지의 `diff`를 쓴다.
+  `@codemirror/merge`는 `@codemirror/state`와 `@codemirror/view`를 요구한다. 지금은 `@uiw/react-codemirror`를 거쳐 들어오므로, 지운 뒤에도 설치되는지 `npm ls`로 확인한다.
+  함께 딸려 오는 크기가 크면 `diff`만 쓰는 방법(줄 단위 diff를 직접 두기)을 리뷰에서 견준다.
+- **읽기 전용 문서는 WYSIWYG를 편집 불가로 연다.** BlockNote의 `editable={false}`를 쓴다. 지금 읽기 전용이 되는 것은 `file`, `untitled`, `vscode-vfs`가 아닌 스킴이다.
+  `git:` 스킴은 `configurationDefaults`가 이미 기본 텍스트 에디터로 보낸다.
+- **Git diff는 VS Code에 맡긴다.** 소스 제어 보기가 같은 비교를 한다. 헤더 버튼에서 `git.openChange`를 부르는 방법도 있으나, 커스텀 에디터에서 그 명령이 원하는 파일을 비교하는지 확인하지 않았다.
+  버튼을 둘지는 리뷰할 때 확인한 결과를 보고 정한다. 기본은 두지 않는다.
+- **"텍스트 에디터로 열기" 버튼은 그대로 두고 헤더에서 찾기 쉽게 한다.** Raw 버튼이 있던 자리로 옮기는 것을 권한다.
+- **사용자 설정에 남은 `zenMarkdown.defaultMode` 값**은 VS Code가 알 수 없는 설정으로 흐리게 보인다. 개편 1과 같이 따로 옮기지 않는다.
+- **vscode 상태에 저장된 `isRawMode`**가 있는 창을 다시 열어도 WYSIWYG로 열려야 한다. 상태를 읽는 곳을 지운다.
+- 커밋은 셋으로 나눈다: 동기화와 상태의 Raw 분기 제거, 화면과 설정과 Git diff 제거, 의존성 정리.
+
+#### 완료 기준
+
+- `grep -rn "isRawMode\|react-codemirror\|codemirror-themes\|getOriginalContent\|defaultMode" src webview/src package.json README.md`가 0건이다.
+- 웹뷰 `package.json`에 CodeMirror 계열이 `@codemirror/merge`와 그 요구 패키지만 남는다. `npm run build`가 통과한다.
+- 엔트리 크기와 `dist` 크기, 파일 수를 기준선과 나란히 적는다.
+- 읽기 전용 스킴 문서가 WYSIWYG로 열리고 입력이 들어가지 않는다. E2E로 둔다.
+- 예전 상태에 `isRawMode: true`가 남아 있어도 WYSIWYG로 열린다. E2E로 둔다.
+- 충돌 막대, 2단계 병합, 부분 복사, frontmatter 보존의 E2E와 단위 테스트가 모두 통과한다. Raw에만 해당하던 테스트는 지우고, 지운 목록을 적는다.
+- README의 기능 목록과 설정 표에서 Raw 모드와 Git diff를 빼고, 위 "알려진 한계" 표를 옮긴다.
+
+#### 결과
+
+2026-09-24에 code 세션이 설계대로 지웠다. 커밋은 셋으로 나눴지만 순서를 바꿨다. Diff 보기가 Raw 모드 안에서만 뜨므로 Git diff를 먼저 지웠다.
+
+| 커밋 | 내용 |
+|---|---|
+| `23163c1` | Git diff 보기와 호스트의 `getOriginalContent`(`git show HEAD:`) 제거 |
+| `1f88a33` | Raw 모드, 모드 전환, `defaultMode` 설정 제거. 읽기 전용 문서를 편집할 수 없는 WYSIWYG로 연다. README 한계 표 |
+| `c253009` | CodeMirror 계열 의존성 18개, `codeLanguages.ts`, `cmTheme` 제거 |
+| `3d3fdc8` | 버전 0.8.0. 기능을 지우는 변경이라 올렸다. `zen-markdown-0.8.0.vsix`를 빌드했다 |
+
+리뷰에서 정한 것:
+
+- **`@codemirror/merge`의 요구 패키지**: `@uiw`를 지운 뒤에도 `@codemirror/state`, `@codemirror/view`, `@codemirror/language`가 merge의 의존성으로 설치된다(`npm ls`).
+  번들에는 `diff`만 들어가고 화면 코드(`EditorView`, `cm-merge`)는 들어가지 않는다. 그래서 줄 단위 diff를 직접 두는 방법은 쓰지 않았다.
+- **Git diff 버튼**: 두지 않았다. `git.openChange`가 커스텀 에디터에서 원하는 파일을 비교하는지는 VS Code 안에서 확인해야 하는데, 이 세션에서는 확인하지 못했다. 기본값대로 소스 제어 보기에 맡긴다.
+- **텍스트 에디터로 열기**: 헤더 오른쪽 첫 버튼이라 Raw 버튼이 있던 자리와 붙어 있다. 위치는 그대로 두고 이름을 `Built-in`에서 `Text Editor`로 바꿨다.
+- **읽기 전용**: BlockNote `editable={!config.isReadOnly}`. 동기화의 `canSend`가 이미 읽기 전용이면 보내지 않는다.
+- **모드 전환만 쓰던 것**: `useDocumentSync`의 `sendNow`와 `App.tsx`의 `hasEdited`, 헤딩 위치 이어받기(`pendingHeadingRef`)를 함께 지웠다. 탭을 다시 열 때의 스크롤 위치 복원은 남겼다.
+
+| 확인 | 결과 |
+|---|---|
+| 완료 기준의 grep | 0건 |
+| 웹뷰 CodeMirror 계열 의존성 | 19개에서 `@codemirror/merge` 하나 |
+| 엔트리 `index-*.js` | 1,732.23KB에서 1,375.42KB(gzip 529.55KB에서 413.51KB) |
+| `dist` | 9.1MB, 파일 148개에서 8.0MB, 파일 134개 |
+| 읽기 전용 문서 | WYSIWYG로 열리고 `contenteditable=false`, 입력해도 글자와 `change`가 나가지 않는다(E2E 추가) |
+| 예전 상태 `isRawMode: true` | WYSIWYG로 열린다(E2E 추가) |
+| 충돌 막대, 2단계 병합, 부분 복사, frontmatter 보존 | E2E 43건과 단위 테스트 모두 통과 |
+
+지운 E2E 5건:
+
+- `editor.spec.ts`: 읽기 전용이면 Raw로 여는 테스트(WYSIWYG 편집 불가 테스트로 바꿨다)
+- `external-conflict.spec.ts`: Raw 모드에서 로컬 편집을 지키는 테스트
+- `frontmatter.spec.ts`: Raw 모드에서 고친 frontmatter 테스트
+- `full-features.spec.ts`: Pattern A 모드 전환
+- `preserve-original.spec.ts`: Raw 모드로 바꿔도 원문 서식이 남는 테스트
+
+충돌 테스트 넷은 Raw 버튼을 에디터 밖 클릭 용도로만 썼으므로 헤더의 글자 수 배지를 누르게 바꿨다. `editor`, `editing`, `full-features`의 `originalContent` 메시지도 지웠다.
+
+**검증 환경**: 작업 PC의 여유 메모리가 약 1GB여서 워커 기본값으로 E2E를 돌리면 개발 서버가 메모리 부족으로 멈췄다. 워커 2개로 돌렸다. 성능 테스트(`perf-codeblocks`)는 부하에 따라 흔들렸고, 변경 전 HEAD에서도 3번 모두 실패한 적이 있다.
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -1581,6 +1686,7 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 22 | 추가 검토 11: 목록 항목 안 블록 들여쓰기 (완료) | `fix:` |
 | 23 | 추가 검토 12: 여러 줄 목록 항목 (완료) | `fix:` |
 | 24 | 추가 검토 13: 전처리가 인라인 코드와 같은 이름의 링크를 바꾸는 결함 (완료) | `fix:` |
+| 25 | 개편 2: Raw 모드와 Git diff 제거 (완료) | `refactor:` 둘, `chore:` 하나 |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
