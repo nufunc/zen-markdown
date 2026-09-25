@@ -6,8 +6,8 @@ test.describe.configure({ mode: 'serial' });
 
 // 추가 검토 3: 여는 시간이 블록 수의 제곱으로 늘지 않아야 한다.
 // 기계 속도와 무관하게 판정하려고 8,000블록과 1,000블록의 여는 시간 배율을 본다.
-// 4,000 대 1,000은 0.51.4에서도 4.5~5.5배라 퇴행을 가르지 못했다. 8,000 대 1,000은 0.54.2에서 5.8~6.8배이고,
-// 0.51.4는 두 배마다 2.5배로 느는 추세를 외삽하면 12배를 넘는다(직접 재지 않았다).
+// 4,000 대 1,000은 0.51.4에서도 4.5~5.5배라 퇴행을 가르지 못했다. 8,000 대 1,000의 중앙값 배율은
+// 0.54.2에서 6.33~6.66, 0.51.4에서 14.89~16.01이다(2026-09-25 실측, 추가 검토 19). 기준 10배는 두 값의 기하 평균쯤이다.
 const mock = `window.acquireVsCodeApi = () => {
   if (!window.__vscode) window.__vscode = { postMessage: () => {}, getState: () => ({}), setState: () => {} };
   return window.__vscode;
@@ -23,7 +23,7 @@ const openMs = async (page: Page, sections: number) => {
   return page.evaluate((t) => performance.now() - t, t0);
 };
 
-test('8,000블록을 여는 시간이 1,000블록의 9배 아래다', async ({ browser }) => {
+test('8,000블록을 여는 시간이 1,000블록의 10배 아래다', async ({ browser }) => {
   test.setTimeout(240000);
   const measure = async (sections: number) => {
     const page = await browser.newPage();
@@ -41,5 +41,5 @@ test('8,000블록을 여는 시간이 1,000블록의 9배 아래다', async ({ b
   const small = median(smalls), large = median(larges);
   const ratio = large / small;
   console.log(`open 1000 blocks ${smalls.map(Math.round).join('/')}ms, 8000 blocks ${larges.map(Math.round).join('/')}ms, median ratio ${ratio.toFixed(2)}`);
-  expect(ratio).toBeLessThan(9);
+  expect(ratio).toBeLessThan(10);
 });
