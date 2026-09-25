@@ -94,6 +94,18 @@ test.describe('External change conflict (P0)', () => {
     await expect(bar(page)).toHaveCount(0);
   });
 
+  test('"Compare"는 로컬 편집을 담아 비교를 요청하고 막대를 그대로 둔다', async ({ page }) => {
+    await typeLocalThenExternal(page);
+    await clickOutside(page);
+    await bar(page).getByRole('button', { name: 'Compare' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__msgs.filter((m: any) => m.type === 'showDiff').length)).toBe(1);
+    const req = await page.evaluate(() => (window as any).__msgs.find((m: any) => m.type === 'showDiff'));
+    expect(req.text).toContain('LOCAL');
+    expect(req.text).not.toContain('EXTERNAL');
+    await expect(bar(page)).toBeVisible();
+    expect(await changes(page)).toEqual([]);
+  });
+
   test('막대가 떠 있는 동안 입력해도 change가 나가지 않는다', async ({ page }) => {
     await typeLocalThenExternal(page);
     await page.waitForTimeout(2500);

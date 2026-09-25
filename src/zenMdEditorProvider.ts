@@ -17,19 +17,27 @@ const ALLOWED_CONFIG_KEYS = [
     'showWordCount',
     'showFormattingToolbar'
 ];
+// 충돌 막대의 차이 보기: 외부 내용과 웹뷰의 로컬 내용을 이 스킴의 읽기 전용 가상 문서로 만들어 VS Code 비교 편집기에 띄운다
+const COMPARE_SCHEME = 'zen-markdown-compare';
+const compareTexts = new Map<string, string>();
 // openLink에서 외부로 여는 것을 허용하는 URL 스킴
 const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto', 'vscode'];
 
 export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
     public static register(context: vscode.ExtensionContext, log: DiagnosticsLog): vscode.Disposable {
         const provider = new ZenMdEditorProvider(context, log);
-        return vscode.window.registerCustomEditorProvider('zenMarkdown.mdEditor', provider, {
-            webviewOptions: {
-                enableFindWidget: false,
-                // WYSIWYG 에디터 특성상 탭 전환 시 커서/스크롤/편집 상태 보존이 중요
-                retainContextWhenHidden: true
-            }
-        });
+        return vscode.Disposable.from(
+            vscode.window.registerCustomEditorProvider('zenMarkdown.mdEditor', provider, {
+                webviewOptions: {
+                    enableFindWidget: false,
+                    // WYSIWYG 에디터 특성상 탭 전환 시 커서/스크롤/편집 상태 보존이 중요
+                    retainContextWhenHidden: true
+                }
+            }),
+            vscode.workspace.registerTextDocumentContentProvider(COMPARE_SCHEME, {
+                provideTextDocumentContent: uri => compareTexts.get(uri.query) ?? ''
+            })
+        );
     }
 
     constructor(
@@ -289,6 +297,16 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                         }
                     })();
                     return;
+                case 'showDiff': {
+                    // 충돌 중에는 문서가 이미 외부 변경을 담고 있다. 웹뷰는 아직 보내지 않은 로컬 내용을 보낸다
+                    const name = path.basename(document.uri.path);
+                    const key = Date.now().toString(36);
+                    compareTexts.set(key + '-external', document.getText());
+                    compareTexts.set(key + '-mine', String(e.text ?? ''));
+                    const side = (which: string) => vscode.Uri.from({ scheme: COMPARE_SCHEME, path: '/' + name, query: key + '-' + which });
+                    void vscode.commands.executeCommand('vscode.diff', side('external'), side('mine'), `${name}: External ↔ My edits`);
+                    return;
+                }
                 case 'undo':
                     vscode.commands.executeCommand('undo');
                     return;

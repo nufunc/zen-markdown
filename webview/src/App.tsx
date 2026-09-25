@@ -1701,6 +1701,11 @@ ${markdown}` : markdown;
             <span>This file changed outside the editor while you had unsaved edits.</span>
             <button onMouseDown={e => e.preventDefault()} onClick={() => { void resolveConflict('mine'); }}>Keep my edits</button>
             <button onMouseDown={e => e.preventDefault()} onClick={() => { void resolveConflict('external'); }}>Use external version</button>
+            <button onMouseDown={e => e.preventDefault()} onClick={async () => {
+              // 보내지 않은 로컬 내용을 VS Code 비교 편집기에서 외부 내용과 나란히 본다. 막대와 보류 상태는 그대로다
+              const text = await buildDocumentTextRef.current(true);
+              if (text !== null) vscode.postMessage({ type: 'showDiff', text });
+            }}>Compare</button>
           </div>
         )}
           <div
