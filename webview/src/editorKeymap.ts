@@ -32,6 +32,17 @@ export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockT
         editor.setTextCursorPosition(inserted, 'start');
         return;
       }
+      // 코드 블록 끝의 빈 줄 둘에서 Enter: 기본 동작은 다음 블록이 있으면 그 앞으로 커서만 옮겨 입력이 다음 문단에 붙는다.
+      // 다음 블록이 있어도 새 빈 문단을 만든다(추가 검토 30)
+      const atEnd = sel?.empty && sel.$from.parentOffset === sel.$from.parent.content.size;
+      if (block?.type === 'codeBlock' && atEnd && sel.$from.parent.textContent.endsWith('\n\n')) {
+        e.preventDefault();
+        e.stopPropagation();
+        editor.transact((tr: any) => tr.delete(sel.$from.pos - 2, sel.$from.pos));
+        const [inserted] = editor.insertBlocks([{ type: 'paragraph' }], block, 'after');
+        editor.setTextCursorPosition(inserted, 'start');
+        return;
+      }
     }
 
     // Cmd/Ctrl + Z / Y : 에디터 내장 Undo/Redo
