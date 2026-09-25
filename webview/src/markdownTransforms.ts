@@ -791,23 +791,45 @@ export function restoreBlankLines(md: string): string {
   );
 }
 
-const MD_IMAGE_RE = /(!\[[^\]]*\]\()([^)\s]+)((?:\s+"[^"]*")?\))/g;
+// 주소는 꺾쇠 주소(<my img.png>, 공백을 담을 수 있다)이거나 공백 없는 주소다(추가 검토 25)
+const MD_IMAGE_RE = /(!\[[^\]]*\]\()(<[^<>\n]+>|[^)\s]+)((?:\s+"[^"]*")?\))/g;
 
 // 상대경로 이미지를 webview URI로 바꿔 WYSIWYG에서 미리보기 가능하게 함
 export function toWebviewImageUrls(md: string, base: string): string {
   if (!base) return md;
-  return mapOutsideCodeFences(md, part => part.replace(MD_IMAGE_RE, (m, pre, url, post) => {
+  return mapOutsideCodeFences(md, part => part.replace(MD_IMAGE_RE, (m, pre, dest: string, post) => {
+    // 꺾쇠 주소는 안쪽 경로에만 문서 폴더 주소를 붙이고 꺾쇠는 남긴다
+    const angled = dest.startsWith('<');
+    const url = angled ? dest.slice(1, -1) : dest;
     if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.startsWith('//') || url.startsWith('/') || url.startsWith('#')) {
       return m;
     }
-    return `${pre}${base}/${url}${post}`;
+    return angled ? `${pre}<${base}/${url}>${post}` : `${pre}${base}/${url}${post}`;
   }));
 }
 
 // 저장 시 webview URI를 다시 상대경로로 복원 (base는 고유 URL이므로 단순 치환 안전)
+// 에디터가 연 이미지는 주소가 정규화되어 있어(file%2B → file+, 한글과 공백은 퍼센트 인코딩, ../ 해석) 문자열 치환이 걸리지 않는다.
+// 그러면 편집한 이미지 줄이 절대 주소로 저장됐다(추가 검토 25). 이미지 주소를 URL로 읽어 문서 폴더와 출처가 같으면
+// 폴더 기준 상대 경로로 되돌리고 인코딩을 푼다. 공백이 든 경로는 꺾쇠로 감싼다.
 export function fromWebviewImageUrls(md: string, base: string): string {
   if (!base) return md;
-  return md.split(`${base}/`).join('');
+  const out = md.split(`${base}/`).join('');
+  let root: URL;
+  try { root = new URL(base.replace(/\/?$/, '/')); } catch { return out; }
+  const dir = root.pathname.split('/').slice(0, -1);
+  const decode = (seg: string) => { try { return decodeURIComponent(seg); } catch { return seg; } };
+  return mapOutsideCodeFences(out, part => part.replace(MD_IMAGE_RE, (m, pre, dest: string, post) => {
+    const raw = dest.startsWith('<') ? dest.slice(1, -1) : dest;
+    let u: URL;
+    try { u = new URL(raw); } catch { return m; }
+    if (u.origin !== root.origin) return m;
+    const target = u.pathname.split('/');
+    let common = 0;
+    while (common < dir.length && common < target.length - 1 && dir[common] === target[common]) common++;
+    const rel = [...Array(dir.length - common).fill('..'), ...target.slice(common).map(decode)].join('/') + u.search + u.hash;
+    return `${pre}${/[\s()<>]/.test(rel) ? `<${rel}>` : rel}${post}`;
+  }));
 }
 
 export function extractFrontmatter(text: string): { frontmatter: string, content: string } {

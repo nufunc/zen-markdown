@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'path';
-import { sanitizeDiag, resolveLinkPath } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName } from './hostLogic';
 
 test('임의 문자열 필드는 기록하지 않고 개수만 남긴다', () => {
     const r = sanitizeDiag({ type: 'diag', ev: 'serialize_failed', message: '비밀 원고 첫 문단' });
@@ -60,4 +60,14 @@ test('openLink 경로: 공백과 폴더, 헤딩 조각, 퍼센트 인코딩을 �
     assert.equal(resolveLinkPath(dir, 'a.md#Heading Two', roots), path.join(dir, 'a.md'));
     assert.equal(resolveLinkPath(dir, 'my%20doc.md', roots), path.join(dir, 'my doc.md'));
     assert.equal(resolveLinkPath(dir, '../outside.md', roots), null);
+});
+
+test('붙여 넣은 이미지 이름: 한글과 숫자는 남기고 경로 구분자, 제어 문자, 예약 문자, 공백은 _로 바꾼다', () => {
+    assert.equal(safeImageName('화면 캡처 2026.png'), '화면_캡처_2026.png');
+    assert.equal(safeImageName('スクリーン.png'), 'スクリーン.png');
+    assert.equal(safeImageName('../../etc/passwd'), '.._.._etc_passwd');
+    assert.equal(safeImageName('a\\b/c.png'), 'a_b_c.png');
+    assert.equal(safeImageName('x<>:"|?*y.png'), 'x_y.png');
+    assert.equal(safeImageName('ctl\u0000\u001fname.png'), 'ctl_name.png');
+    assert.ok(!/[\\/]/.test(safeImageName('..\\..\\x.png')));
 });

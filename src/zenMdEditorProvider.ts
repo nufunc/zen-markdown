@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag, resolveLinkPath } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -244,7 +244,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                             }
                             const assetsDir = vscode.Uri.file(path.join(docDir, 'assets'));
                             await vscode.workspace.fs.createDirectory(assetsDir);
-                            const safeName = String(e.name || 'image.png').replace(/[^\w.-]+/g, '_');
+                            const safeName = safeImageName(String(e.name || 'image.png'));
                             const ext = path.extname(safeName) || '.png';
                             const base = path.basename(safeName, ext) || 'image';
                             const fileName = `${base}-${Date.now()}${ext}`;

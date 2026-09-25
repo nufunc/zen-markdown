@@ -64,3 +64,11 @@ export function resolveLinkPath(docDir: string, href: string, roots: string[]): 
     });
     return inScope ? targetPath : null;
 }
+
+/**
+ * 붙여 넣은 이미지의 파일 이름에서 글자(모든 언어), 숫자, '.', '_', '-' 말고는 '_'로 바꾼다.
+ * 한글 이름을 남기면서 경로 구분자, 제어 문자, Windows 예약 문자(<>:"/\|?*)와 공백은 걸러 낸다(추가 검토 25).
+ */
+export function safeImageName(name: string): string {
+    return name.replace(/[^\p{L}\p{N}._-]+/gu, '_');
+}
