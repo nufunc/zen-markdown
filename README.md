@@ -52,7 +52,7 @@ Parts you did not edit are saved exactly as in the original file. The items belo
 | --- | --- |
 | Link titles are dropped when you edit that link. When you add or remove table columns, column alignment is carried over from the left | Editing a table cell rewrites only that row |
 | Indented (four-space) code blocks are shown as paragraphs; four leading spaces in a paragraph are dropped when you edit it | |
-| Images and paragraphs after a blank line following a nested list, emphasis inside HTML comments, and strikethrough combined with code in table cells are not shown exactly | |
+| Images and paragraphs after a blank line following a nested list, emphasis inside HTML comments, and strikethrough combined with code in table cells are not shown exactly. An escaped bracket at the start of link text (`\[[표준\] 제목](url)`) moves into the link when you edit it | The visible text stays the same; only the underline grows |
 | Frontmatter is not shown in the block editor | It is kept as is; edit it in the text editor |
 | Shift+Tab on the first list item inside a blockquote moves that item out of the quote | Press Ctrl+Z to undo |
 

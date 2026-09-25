@@ -27,6 +27,8 @@ const save = (blocks: any[], c: any) => {
 const inline = (content: any[]): string => {
   const parts: { t: string; st: string }[] = [];
   for (const c of content) {
+    // 링크는 주소와 함께 글자와 스타일도 적는다(추가 검토 21: 링크 글자의 퇴행도 잡는다)
+    if (c.type === 'link') { parts.push({ t: `<link:${c.href ?? ''}|${inline(c.content ?? [])}>`, st: '' }); continue; }
     if (c.type !== 'text') { parts.push({ t: `<${c.type}:${c.href ?? ''}>`, st: '' }); continue; }
     for (const piece of c.text.split(/(\s+)/)) {
       if (!piece) continue;
@@ -66,5 +68,10 @@ check('표 칸: 이스케이프한 링크 모양', '| a |\n| --- |\n| \\[x](y) |
 check('표 칸: 이스케이프한 별표', '| a |\n| --- |\n| \\*not em* |');
 check('표 칸: 글자와 주소가 같은 링크', '| a |\n| --- |\n| [01_현황진단.md](01_현황진단.md) |');
 check('표 칸: 셀 안의 \\|는 겹쳐 이스케이프하지 않는다', '| a |\n| --- |\n| x \\| y *z* |');
+// 링크 글자와 스타일(추가 검토 21)
+check('링크 글자: 굵게가 든 링크', '앞 [**굵은** 링크](a.md) 뒤');
+check('링크 글자: 이스케이프한 별표', '[\\*별표\\*](a.md)');
+check('링크 글자: 인라인 코드가 든 링크', '[`code` 설명](a.md)');
+check('표 칸: 굵게가 든 링크', '| a |\n| --- |\n| [**굵은** 링크](a.md) |');
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
