@@ -593,14 +593,16 @@ export function compactTables(md: string, blocks: any[], tables?: Map<string, Ta
       if (!TABLE_ROW.test(lines[i]) || !OUT_DELIM_ROW.test(lines[i + 1])) continue;
       const indent = lines[i].match(/^\s*/)![0];
       const orig = origs[k++];
-      // 칸 내용이 같은 원문 행. 같은 내용의 행이 여럿이면 차례로 쓴다
+      const cols = splitTableRow(lines[i + 1]).length;
+      // 칸 내용이 같은 원문 행. 같은 내용의 행이 여럿이면 차례로 쓴다.
+      // 열 수가 바뀌었으면 칸 수가 새 열 수와 같은 행만 되돌린다. 모자란 행을 되돌리면 GFM 표가 깨진다(추가 검토 30)
       const unused = new Map<string, string[]>();
       for (const row of orig?.rows ?? []) {
+        if (orig!.cols !== cols && splitTableRow(row).length !== cols) continue;
         const list = unused.get(key(row)) ?? [];
         list.push(row);
         unused.set(key(row), list);
       }
-      const cols = splitTableRow(lines[i + 1]).length;
       let j = i;
       for (; j < lines.length && TABLE_ROW.test(lines[j]); j++) {
         if (j === i + 1) continue;

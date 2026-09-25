@@ -82,6 +82,17 @@ const reopensSame = (blocks: any[], saved: string) => JSON.stringify(cellsOf(ope
   ok('열을 빼면 앞 열의 정렬이 남는다', deleted.split('\n')[1] === '| :-: |', JSON.stringify(deleted));
   ok('열을 뺀 표를 다시 열면 같은 모델', reopensSame(del, deleted), JSON.stringify(cellsOf(open(deleted).blocks)));
 }
+// 추가 검토 30: 빈 열을 더하면(표의 열 추가 단추) 모든 행이 새 열 수만큼 칸을 갖는다. 원문 행으로 되돌리면 칸이 모자라 GFM 표가 아니다
+{
+  const md = '| A | B |\n| --- | --- |\n| 1 | 2 |';
+  const o = open(md);
+  const add = clone(o.blocks);
+  for (const r of table(add).content.rows) r.cells.push(cell(''));
+  table(add).content.columnWidths.push(null);
+  const saved = save(add, o.ctx);
+  const counts = saved.split('\n').map(l => l.replace(/^\||\|$/g, '').split('|').length);
+  ok('빈 열을 더하면 모든 행이 3칸', counts.length === 3 && counts.every(c => c === 3), JSON.stringify(saved));
+}
 
 // 셀 안의 \| 와 인라인 코드
 {
