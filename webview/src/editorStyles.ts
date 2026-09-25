@@ -19,6 +19,8 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
             font-size: ${fontSize}px;
             background-color: transparent !important;
+            /* BlockNote 고정색(#cfcfcf, #3f3f3f) 대신 테마 글자색을 쓴다(추가 검토 31) */
+            color: var(--text-color) !important;
           }
 
           /* Confluence Link Style */

@@ -1,5 +1,6 @@
 
 // 에디터 테마 팔레트 중앙 정의.
+// 본문 글자(본문, 인라인 코드, 인용, 머리 단추)는 바탕과 대비 4.5 이상이어야 한다. e2e/theme.spec.ts가 잰다(추가 검토 31).
 // 새 테마 추가 시: 여기 + package.json enum + App.tsx 설정 드롭다운 <option> 세 곳을 갱신.
 export interface ThemePalette {
   isDark: boolean;
@@ -38,7 +39,7 @@ export const THEMES: Record<string, ThemePalette> = {
     textColor: '#d4d4d4',
     headerBg: '#2d2d2d',
     codeColor: '#d4d4d4',
-    codeTextColor: '#e06c75',
+    codeTextColor: '#f28b94',
     blockNoteTheme: 'dark',
     dropdownBg: '#252526',
     dropdownBorder: '#555555',
@@ -64,7 +65,7 @@ export const THEMES: Record<string, ThemePalette> = {
     textColor: '#dcdfe4',
     headerBg: '#2c323c',
     codeColor: '#dcdfe4',
-    codeTextColor: '#e06c75',
+    codeTextColor: '#f28b94',
     blockNoteTheme: 'dark',
     dropdownBg: '#2c323c',
     dropdownBorder: '#3e4452',
@@ -74,10 +75,10 @@ export const THEMES: Record<string, ThemePalette> = {
   'solarized-dark': {
     isDark: true,
     bgColor: '#002b36',
-    textColor: '#839496',
+    textColor: '#b8c4c4',
     headerBg: '#073642',
-    codeColor: '#839496',
-    codeTextColor: '#cb4b16',
+    codeColor: '#b8c4c4',
+    codeTextColor: '#ee8350',
     blockNoteTheme: 'dark',
     dropdownBg: '#073642',
     dropdownBorder: '#586e75',
@@ -87,10 +88,10 @@ export const THEMES: Record<string, ThemePalette> = {
   vintage: {
     isDark: false,
     bgColor: '#f4ecd8',
-    textColor: '#3a3a3a',
+    textColor: '#262626',
     headerBg: '#e8dcc3',
-    codeColor: '#3a3a3a',
-    codeTextColor: '#b57614',
+    codeColor: '#262626',
+    codeTextColor: '#80510a',
     blockNoteTheme: 'light',
     dropdownBg: '#e8dcc3',
     dropdownBorder: '#d5c4a1',
@@ -113,10 +114,10 @@ export const THEMES: Record<string, ThemePalette> = {
   'tokyo-night-day': {
     isDark: false,
     bgColor: '#e1e2e7',
-    textColor: '#343b58',
+    textColor: '#1f2438',
     headerBg: '#d5d6db',
-    codeColor: '#343b58',
-    codeTextColor: '#f52a65',
+    codeColor: '#1f2438',
+    codeTextColor: '#a51545',
     blockNoteTheme: 'light',
     dropdownBg: '#d5d6db',
     dropdownBorder: '#a8aecb',
