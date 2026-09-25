@@ -1,5 +1,5 @@
-// 설정 패널. 값은 App의 config가 들고, 바꾸면 updateConfig가 호스트에 알린다. 저장 버튼은 모든 값을 사용자 설정에 쓴다.
-import { X, Palette, Type, Maximize2, RefreshCcw, Wand2, FileText, Pilcrow, List, Check, Save } from 'lucide-react';
+// 설정 패널. 값은 App의 config가 들고, 바꾸면 updateConfig가 호스트에 알린다. 호스트가 바로 사용자 설정에 쓰므로 저장 단추는 없다.
+import { X, Palette, Type, Maximize2, RefreshCcw, Wand2, FileText, Pilcrow, List } from 'lucide-react';
 
 export type EditorConfig = {
   theme: string;
@@ -16,14 +16,11 @@ export type EditorConfig = {
 
 type Colors = { bgColor: string; textColor: string; dropdownBg: string; dropdownBorder: string };
 
-export function SettingsPanel({ config, updateConfig, colors, onClose, onSave, saving, saved }: {
+export function SettingsPanel({ config, updateConfig, colors, onClose }: {
   config: EditorConfig;
   updateConfig: (key: string, value: any) => void;
   colors: Colors;
   onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-  saved: boolean;
 }) {
   const { bgColor, textColor, dropdownBg, dropdownBorder } = colors;
   return (
@@ -163,31 +160,6 @@ export function SettingsPanel({ config, updateConfig, colors, onClose, onSave, s
           <input type="checkbox" checked={config.showToc} onChange={(e) => updateConfig('showToc', e.target.checked)} />
           <span className="toggle-slider"></span>
         </label>
-      </div>
-
-      <div style={{
-        marginTop: '16px',
-        paddingTop: '12px',
-        borderTop: `1px solid ${dropdownBorder}`
-      }}>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className={`settings-save-btn ${saved ? 'saved' : ''}`}
-        >
-          {saved ? (
-            <>
-              <Check size={14} strokeWidth={2.5} />
-              <span>설정이 저장되었습니다</span>
-            </>
-          ) : (
-            <>
-              <Save size={14} />
-              <span>설정 저장</span>
-            </>
-          )}
-        </button>
       </div>
 
     </div>

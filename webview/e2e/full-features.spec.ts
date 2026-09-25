@@ -133,36 +133,23 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
     await page.waitForTimeout(200);
   });
 
-  /** PATTERN N: Settings Save Button Explicit Batch Persistence */
-  test('Pattern N: Settings Save Button Interaction and Feedback', async ({ page }) => {
+  /** PATTERN N: 설정은 바꾸는 즉시 저장하고 저장 단추는 없다(2026-09-25 사용자 결정) */
+  test('Pattern N: Settings Persist Immediately Without Save Button', async ({ page }) => {
+    await page.evaluate(() => {
+      (window as any).__posted = [];
+      window.addEventListener('vscode-post-message', (e: any) => (window as any).__posted.push(e.detail));
+    });
     const settingsTrigger = page.locator('button[data-tooltip="Settings"]');
     await settingsTrigger.click();
 
     const glassPanel = page.locator('.glass-panel');
     await expect(glassPanel).toBeVisible();
+    await expect(glassPanel.locator('.settings-save-btn')).toHaveCount(0);
 
-    const saveBtn = glassPanel.locator('.settings-save-btn');
-    await expect(saveBtn).toBeVisible();
-    await expect(saveBtn).toContainText('설정 저장');
-
-    // 저장이 실패하면 성공 표시 없이 버튼만 다시 누를 수 있어야 한다
-    await saveBtn.click();
-    await expect(saveBtn).toBeDisabled();
-    await page.waitForTimeout(400);
-    await expect(saveBtn).not.toHaveClass(/saved/);
-    await page.evaluate(() => window.postMessage({ type: 'configSaveFailed' }, '*'));
-    await expect(saveBtn).toBeEnabled();
-    await expect(saveBtn).not.toHaveClass(/saved/);
-    await expect(glassPanel).toBeVisible();
-
-    // 호스트가 저장을 확인(configSaved)한 뒤에만 성공을 표시한다
-    await saveBtn.click();
-    await page.evaluate(() => window.postMessage({ type: 'configSaved' }, '*'));
-    await expect(saveBtn).toContainText('설정이 저장되었습니다');
-    await expect(saveBtn).toHaveClass(/saved/);
-
-    // Verify panel closes automatically after feedback delay
-    await expect(glassPanel).not.toBeVisible({ timeout: 2000 });
+    await glassPanel.locator('select').filter({ has: page.locator('option[value="narrow"]') }).selectOption('narrow');
+    const posted = await page.evaluate(() => (window as any).__posted);
+    expect(posted).toContainEqual({ type: 'updateConfig', key: 'contentWidth', value: 'narrow' });
+    expect(posted.some((m: any) => m.type === 'saveAllConfig')).toBe(false);
   });
 
   /** PATTERN O: Single Bullet Left Line Removal & Multi Bullet Continuity */

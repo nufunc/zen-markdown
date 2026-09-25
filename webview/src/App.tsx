@@ -117,8 +117,6 @@ function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
   const [editor, setEditor] = useState<any>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [parsedFrontmatter, setParsedFrontmatter] = useState<string>("");
   const search = useSearchReplace(editor, () => handleWysiwygChangeRef.current());
   const {
@@ -231,17 +229,6 @@ function App() {
             showWordCount: message.showWordCount ?? true,
             showFormattingToolbar: message.showFormattingToolbar ?? true
           });
-          break;
-        case 'configSaved':
-          setSaveSuccess(true);
-          setTimeout(() => {
-            setIsSettingsOpen(false);
-            setSaveSuccess(false);
-            setIsSavingSettings(false);
-          }, 900);
-          break;
-        case 'configSaveFailed':
-          setIsSavingSettings(false);
           break;
         case 'update':
           if (documentText === "loading") {
@@ -807,11 +794,6 @@ ${markdown}` : markdown;
     vscode.postMessage({ type: 'updateConfig', key, value });
   };
 
-  const handleSaveSettings = () => {
-    setIsSavingSettings(true);
-    vscode.postMessage({ type: 'saveAllConfig', config: configRef.current });
-  };
-
   const [bodyClass, setBodyClass] = useState(document.body.className);
   
   useEffect(() => {
@@ -962,9 +944,6 @@ ${markdown}` : markdown;
               updateConfig={updateConfig}
               colors={{ bgColor, textColor, dropdownBg, dropdownBorder }}
               onClose={() => setIsSettingsOpen(false)}
-              onSave={handleSaveSettings}
-              saving={isSavingSettings}
-              saved={saveSuccess}
             />
           )}
           </div>
