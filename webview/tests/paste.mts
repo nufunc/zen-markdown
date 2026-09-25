@@ -6,6 +6,7 @@ const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { pretendToBe
 for (const key of ['window','document','navigator','HTMLElement','Element','Node','DOMParser','MutationObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']) {
   try { Object.defineProperty(globalThis, key, { value: (dom.window as any)[key] ?? (globalThis as any)[key], configurable: true, writable: true }); } catch {}
 }
+import fs from 'node:fs';
 const { BlockNoteEditor } = await import('@blocknote/core');
 const T = await import('../src/markdownTransforms.ts');
 const editor = BlockNoteEditor.create() as any;
@@ -30,6 +31,20 @@ ok('중첩 목록(level)', blocksOf(doc(`${item('위')}${item('아래', 'o', 2)}
 ok('번호 목록 안의 글머리 목록', blocksOf(doc(`${item('하나', '1.')}${item('세부', '§', 2)}${item('둘', '2.')}`)) === 'numberedListItem:하나[bulletListItem:세부], numberedListItem:둘',
   blocksOf(doc(`${item('하나', '1.')}${item('세부', '§', 2)}${item('둘', '2.')}`)));
 ok('서식은 남는다', blocksOf(doc(item('<b>굵게</b> 항목'))) === 'bulletListItem:굵게 항목', blocksOf(doc(item('<b>굵게</b> 항목'))));
+// 실제 Word(한국어판) 클립보드 자료(추가 검토 28). <style>의 @list 정의와 본문만 남겨 줄였다.
+// 번호인지는 목록 정의(mso-level-number-format:bullet인지)로 정한다. 기호 글자(①, 가), 2.1, Wingdings l)로는 가를 수 없다
+{
+  const fixture = (name: string) => fs.readFileSync(new URL(`./fixtures/word-${name}.html`, import.meta.url), 'utf8');
+  const listTree = (name: string) => tree(editor.tryParseHTMLToBlocks(T.normalizeWordLists(fixture(name))));
+  const k = listTree('korean-numbering');
+  ok('실제 Word: 원문자와 가나다는 번호 목록, Wingdings는 불릿',
+    (k.match(/numberedListItem/g) ?? []).length === 4 && (k.match(/bulletListItem/g) ?? []).length === 2 && !k.includes('①') && !k.includes('가)'), k);
+  const o = listTree('outline-nested');
+  ok('실제 Word: 개요 번호 1, 2, 2.1, 3은 번호 목록 안에 번호 한 단계 중첩',
+    /numberedListItem:[^,[]*\[numberedListItem:/.test(o) && !o.includes('bulletListItem'), o);
+  const b = listTree('bullets-flat');
+  ok('실제 Word: 불릿은 전처럼 불릿', (b.match(/bulletListItem/g) ?? []).length === 4 && !b.includes('numberedListItem'), b);
+}
 {
   const plain = '<p>웹 <b>페이지</b></p><ul><li>보통 목록</li></ul>';
   ok('mso-list가 없는 HTML은 그대로', T.normalizeWordLists(plain) === plain, T.normalizeWordLists(plain));

@@ -926,17 +926,29 @@ export const GITHUB_ALERT_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i
 const MSO_LIST_STYLE = /mso-list\s*:\s*(?!\s*ignore)[^;"']*level(\d+)/i;
 const MSO_IGNORE = /mso-list\s*:\s*ignore/i;
 const ORDERED_MARKER = /^(?:\d+|[a-z]|[ivxlcdm]+)[.)]$/i;
+// 문단의 목록 ID와 수준(mso-list:l1 level2)
+const MSO_LIST_ID = /mso-list\s*:\s*(l\d+)\s+level(\d+)/i;
+// Word 클립보드 <style>의 목록 정의. 불릿 수준만 mso-level-number-format:bullet이다(추가 검토 28)
+const MSO_LIST_DEF = /@list\s+(l\d+):level(\d+)\s*\{([^}]*)\}/g;
 
 export function normalizeWordLists(html: string): string {
   if (!/mso-list/i.test(html)) return html;
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  // 번호 목록인지는 <style>의 목록 정의로 정한다. 기호 글자(①, 가), 개요 번호 2.1, Wingdings 불릿 l)만으로는 가를 수 없다.
+  // 정의가 없는 HTML(다른 앱, 흉내 낸 HTML)은 기호 글자 규칙으로 판정한다
+  const bulletLevels = new Map<string, boolean>();
+  for (const style of [...doc.querySelectorAll('style')]) {
+    for (const m of (style.textContent ?? '').matchAll(MSO_LIST_DEF)) bulletLevels.set(`${m[1]}:${m[2]}`, /mso-level-number-format\s*:\s*bullet/i.test(m[3]));
+  }
+  const listIdOf = (el: Element) => (el.getAttribute('style') ?? '').match(MSO_LIST_ID)?.[1] ?? '';
   const isListParagraph = (el: Element | null): el is HTMLElement =>
     !!el && el.tagName === 'P' && MSO_LIST_STYLE.test(el.getAttribute('style') ?? '');
   for (const first of [...doc.body.querySelectorAll('p')]) {
-    if (!first.isConnected || !isListParagraph(first) || isListParagraph(first.previousElementSibling)) continue;
-    // first부터 이어진 목록 문단을 한 목록으로 묶는다
+    const prev = first.previousElementSibling;
+    if (!first.isConnected || !isListParagraph(first) || (isListParagraph(prev) && listIdOf(prev) === listIdOf(first))) continue;
+    // first부터 이어진, 같은 목록 ID의 문단을 한 목록으로 묶는다
     const group: HTMLElement[] = [];
-    for (let el: Element | null = first; isListParagraph(el); el = el.nextElementSibling) group.push(el);
+    for (let el: Element | null = first; isListParagraph(el) && listIdOf(el) === listIdOf(first); el = el.nextElementSibling) group.push(el);
     const stack: { level: number; list: HTMLElement }[] = [];
     for (const p of group) {
       const level = Number((p.getAttribute('style') ?? '').match(MSO_LIST_STYLE)![1]);
@@ -945,7 +957,8 @@ export function normalizeWordLists(html: string): string {
       ignore?.remove();
       while (stack.length && stack[stack.length - 1].level > level) stack.pop();
       if (!stack.length || stack[stack.length - 1].level < level) {
-        const list = doc.createElement(ORDERED_MARKER.test(marker) ? 'ol' : 'ul');
+        const bullet = bulletLevels.get(`${listIdOf(p)}:${level}`);
+        const list = doc.createElement((bullet === undefined ? ORDERED_MARKER.test(marker) : !bullet) ? 'ol' : 'ul');
         const parentLi = stack.length ? stack[stack.length - 1].list.lastElementChild : null;
         if (parentLi) parentLi.appendChild(list);
         else p.before(list);
