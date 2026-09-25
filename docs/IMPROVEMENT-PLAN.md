@@ -2365,6 +2365,83 @@ Word는 글머리 목록과 번호 목록을 `<ul>`, `<ol>`이 아니라 `mso-li
 
 실제 Word에서 복사한 자료로 확인하려면, Word 목록을 복사해 붙여 넣고 목록 블록이 되는지 보면 된다. 문단 모양이 흉내 낸 것과 다르면(예: `mso-list` 스타일이 `class`로만 오는 경우) 이 처리는 걸리지 않고 기존처럼 글자 문단이 된다.
 
+### 추가 검토 24. 에디터를 클릭하기 전에는 바꾸기가 아무 일도 하지 않는다
+
+2026-09-25 마무리 정기 검토의 둘째 영역(찾기와 바꾸기)에서 더했다.
+
+#### 문제
+
+문서를 열고 에디터를 한 번도 클릭하지 않은 채 `Ctrl+H`로 바꾸기를 하면, 하이라이트와 "1 of 2"는 보이는데 `Replace`와 `Replace All`이 아무것도 바꾸지 않는다. 오류나 알림도 없다.
+에디터를 한 번 클릭한 뒤에는 제대로 바뀐다.
+
+원인은 두 상태 객체가 어긋나는 데 있다. 바꾸기 코드(`useSearchReplace.ts`)는 `tiptap.editorState || tiptap.state`를 읽는다. 에디터를 클릭하기 전에는 이 `editorState`가 뷰의 실제 상태(`view.state`)와 다른, 낡은 객체다.
+검색어는 뷰 상태의 검색 플러그인에 들어가 하이라이트가 그려지지만, 바꾸기가 읽는 낡은 상태의 검색 플러그인은 검색어가 비어 있고 일치가 0개다. 그래서 바꾸기가 조용히 돌아간다.
+
+어긋남의 출처는 `App.tsx`의 `clearUndoHistory`로 추정한다. 문서를 연 직후 `view.updateState(...)`로 새 상태를 넣는데, 이 호출은 tiptap을 거치지 않아 tiptap의 `editorState`가 따라오지 않는다. 이 추정은 확인하지 않았다.
+
+같은 `tiptap.editorState || tiptap.state` 패턴이 `useSearchReplace.ts` 다섯 곳과 `App.tsx` 여섯 곳(`clearUndoHistory`, 검색 플러그인 등록, 실행 취소와 다시 실행 가능 여부, 실행 취소, 다시 실행)에 있다.
+낡은 상태로 만든 트랜잭션을 뷰에 보내면, 낡은 상태의 위치가 지금 문서와 다를 때 엉뚱한 자리를 바꿀 수 있다. 이 경우는 재현하지 않았다.
+
+#### 근거
+
+2026-09-25, HEAD `430edca`, Playwright Chromium, 포트 5174. 문서는 `hello **world** end\n\nsecond world`, 찾기 `world`, 바꾸기 `earth`다.
+
+| 조건 | `Replace All` 버튼 | 바꾸기 입력창 `Enter` |
+|---|---|---|
+| 에디터를 클릭하지 않음 (3회) | 3회 모두 바뀌지 않음, 전송 없음 | 3회 모두 바뀌지 않음 |
+| 에디터를 먼저 클릭 (3회) | 3회 모두 `hello **earth** end\n\nsecond earth`, "Replaced 2 occurrences." | 3회 모두 첫 일치만 바뀜 |
+
+에디터를 클릭하지 않은 경우의 상태를 직접 봤다.
+
+| 값 | 클릭하지 않음 | 클릭함 |
+|---|---|---|
+| `tiptap.editorState === view.state` | `false` | `true` |
+| 뷰 상태 검색 플러그인의 검색어와 일치 수 | `world`, 2 | `world`, 2 |
+| `editorState` 검색 플러그인의 검색어와 일치 수 | 빈 문자열, 0 | `world`, 2 |
+| 화면 하이라이트와 표시 | 2개, "1 of 2" | 2개, "1 of 2" |
+
+**함께 본 것 (결함 아님)**
+- 에디터를 클릭하고 바꾸면 굵게가 유지된다(`**earth**`). 코드, 표 칸, 인용, 목록, 헤딩, 링크 글자, 코드 펜스 안의 일치도 모두 찾는다(9개 문서에서 "1 of 9").
+- 굵게 경계를 넘는 구절(`hell` + 굵게 `o wo` + `rld`)도 찾는다(`o wo` 3개).
+- 빈 문자열에 일치하는 정규식은 건너뛰도록 되어 있다(`searchPlugin.ts`).
+- 문서를 연 직후 `Ctrl+Z`는 문서를 비우지 않았다. 에디터를 클릭하지 않은 경우와 클릭한 경우 모두 그랬고, 입력한 글자는 제대로 되돌아갔다(각 2회). 실행 취소도 같은 낡은 상태를 읽지만, 되돌릴 것이 없다고 판단해 VS Code 실행 취소로 넘기는 것으로 보인다.
+- README는 "Use the native VS Code find widget (`Ctrl/Cmd + F`)"라고 적지만, 호스트는 `enableFindWidget: false`이고 `Ctrl+F`와 `Ctrl+H`는 앱의 자체 위젯을 연다. 문서가 사실과 다르다.
+
+측정 스크립트는 `C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\find`에 있다.
+`find.spec.ts`는 영역 측정, `dbg2.spec.ts`는 바꾸기 네 경로, `dbg3.spec.ts`는 클릭 여부 비교(`CLICK` 환경변수), `dbg4.spec.ts`는 상태 비교, `undo.spec.ts`는 실행 취소다.
+
+#### 설계
+
+- ProseMirror 상태를 읽는 곳을 한 함수로 모은다. `getPmState(editor)`가 언제나 `(tiptap.editorView || tiptap.view).state`를 돌려준다. 위 열한 곳을 모두 이 함수로 바꾼다.
+  트랜잭션은 언제나 지금 뷰 상태에서 만들어 `view.dispatch`로 보낸다.
+- `clearUndoHistory`가 `view.updateState`를 쓴 뒤에도 tiptap과 어긋나지 않는지 본다. tiptap이 상태 교체 API를 주면 그것을 쓰고, 없으면 위 함수로 모든 읽기를 뷰 상태로 돌리는 것으로 충분하다.
+- README의 찾기 설명을 사실대로 고친다. 자체 찾기 위젯이 `Ctrl/Cmd + F`와 `Ctrl/Cmd + H`로 열린다고 적는다.
+
+#### 완료 기준
+
+- 에디터를 클릭하지 않은 채 `Ctrl+H`로 `Replace`와 `Replace All`을 하면 바뀌고 저장된다. E2E로 두고, 고치기 전 코드에서 실패하는 것을 확인한다.
+- 에디터를 클릭한 경우의 결과(굵게 유지, 첫 일치만 또는 전부)가 그대로다.
+- 문서를 연 직후 `Ctrl+Z`가 문서를 비우지 않는다. 입력 뒤 `Ctrl+Z`가 그 입력만 되돌린다. E2E로 둔다.
+- `grep -n "editorState ||" webview/src`가 0건이다.
+- README 찾기 설명이 고쳐진다.
+
+#### 결과
+
+2026-09-25에 code 세션이 고쳤다(`634dfb3`). 출처를 확인했다. tiptap의 `state` getter는 읽을 때마다 `editorView.state`로 맞춘 값을 돌려주지만, `editorState`는 그 getter가 채우는 날것의 필드다.
+연 직후 `clearUndoHistory`가 `view.updateState`로 상태를 바꾸면 이 필드가 낡은 채 남는다. 앱은 `tiptap.editorState || tiptap.state`로 필드를 먼저 읽어 낡은 상태(빈 검색어, 일치 0개)를 보고 바꾸기를 끝냈다.
+tiptap의 `dispatchTransaction`은 getter(`this.state`)를 쓰므로, 설계의 `getPmState` 도우미를 두지 않고 열한 곳을 `tiptap.state`로 바꿨다. `clearUndoHistory`도 그대로 두되 getter로 읽는다. 에디터를 클릭하면 트랜잭션이 필드를 다시 채워서 그동안 가려졌다.
+
+| 확인 | 결과 |
+|---|---|
+| `e2e/find.spec.ts` 클릭 없이 모두 바꾸기 | 고치기 전 코드에서 실패(`change` 없음), 고친 뒤 `hello **earth** end\n\nsay earth now` |
+| 클릭한 뒤 모두 바꾸기 | 전과 같이 바뀐다 |
+| 연 직후 Ctrl+Z | 문서를 비우지 않고 `change`도 없다 |
+| `grep "editorState"` (src) | 0건 |
+| 기획 세션 측정(`find.spec.ts`, `undo.spec.ts`) | 클릭 없이 일치 9개를 모두 바꾸고(코드, 표 칸, 인용, 목록, 헤딩, 링크 글자, 펜스), 굵게 경계를 넘는 구절과 정규식 캡처도 전과 같다. Ctrl+Z 세 경우도 전과 같다 |
+| 게이트 | 루트 10, 빌드, 린트 오류 0, 단위 전부, E2E 55 통과 |
+
+README 기능 목록의 찾기 설명을 "VS Code 찾기 위젯"에서 에디터 자체 찾기 패널(Ctrl+F, Ctrl+H는 바꾸기와 함께, 대소문자와 단어 단위와 정규식, 코드와 표와 인용과 링크 안도 찾는다)로 고쳤다.
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -2408,6 +2485,7 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 33 | 추가 검토 21: 재열기 판정에 링크 글자 넣기, README에 `[표준]` 한계 (완료) | `test:`, `docs:` |
 | 34 | 추가 검토 22: 구분선 단축키 고치기, 밑줄과 형광펜과 색 끄기 (완료) | `fix:`, `refactor:` |
 | 35 | 추가 검토 23: Word 목록 붙여 넣기 (완료) | `fix:` |
+| 36 | 추가 검토 24: 낡은 tiptap 상태 대신 뷰 상태 읽기, README 찾기 설명 (완료) | `fix:` |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
