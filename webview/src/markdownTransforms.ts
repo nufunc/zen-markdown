@@ -626,8 +626,16 @@ export function restoreQuoteJoins(md: string): string {
  * 다시 열 때는 부드러운 줄바꿈도 줄바꿈으로 읽으므로(preserveMarkdownLineBreaks) 모양이 같다.
  */
 export function alertMarkerLines(md: string): string {
-  return mapOutsideCodeFences(md, part =>
-    part.replace(/^( {0,3}(?:> ?)+\[![A-Za-z][\w-]*\][+-]?(?:[ \t][^\n]*)?)\\$/gm, '$1'));
+  // 인용의 첫 줄(앞 줄이 > 줄이 아님)일 때만 표식이다. 줄 끝 백슬래시가 홀수 개일 때만 마지막 하나가 강제 줄바꿈이다(추가 검토 29)
+  return mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^ {0,3}(?:> ?)+\[![A-Za-z][\w-]*\][+-]?(?:[ \t].*)?\\$/.test(lines[i])) continue;
+      if (i > 0 && /^ {0,3}>/.test(lines[i - 1])) continue;
+      if (lines[i].match(/\\+$/)![0].length % 2 === 1) lines[i] = lines[i].slice(0, -1);
+    }
+    return lines.join('\n');
+  });
 }
 
 export function restoreLinkText(md: string): string {

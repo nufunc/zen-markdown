@@ -115,6 +115,10 @@ alertSame('목록이 든 알림(구조 인용)', '> [!CAUTION]\n> - 하나\n> - 
   const s = saveS(edited, ctx);
   check('알림 본문을 고쳐도 표식 줄은 그대로', s === '> [!NOTE]\n> 참고 고침', JSON.stringify(s));
 }
+// 추가 검토 29: 표식은 인용 첫 줄일 때만, 줄 끝 백슬래시가 홀수 개일 때만 하나를 뗀다
+alertSame('인용 중간 줄의 [!NOTE]는 알림 표식이 아니다', '> first\\\n> [!NOTE]\\\n> more');
+alertSame('표식 줄 끝의 C:\\\\는 그대로(둘째 줄 있음)', '> [!NOTE] C:\\\\\n> 본문');
+alertSame('표식 줄 끝의 C:\\\\는 그대로(한 줄)', '> [!NOTE] C:\\\\');
 // 알림이 아닌 인용의 강제 줄바꿈은 그대로 둔다
 alertSame('알림이 아닌 인용의 줄바꿈', '> 첫 줄\\\n> 둘째 줄');
 
