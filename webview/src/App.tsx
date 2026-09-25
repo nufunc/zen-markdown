@@ -133,7 +133,9 @@ function App() {
   useEffect(() => { if (typeof documentText === 'string') setStatsText(documentText); }, [documentText]);
   const stats = useMemo(() => docStats(statsText), [statsText]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
-  const showToc = config.showToc;
+  // 목차는 이 편집기에서만 켜고 끈다. 사용자 설정(showToc)은 기본값이고 그 값이 바뀔 때만 따른다(사용자 결정, 추가 검토 31)
+  const [showToc, setShowToc] = useState(config.showToc);
+  useEffect(() => setShowToc(config.showToc), [config.showToc]);
   
   const settingsRef = useRef<HTMLDivElement>(null);
   const lastEditTimeRef = useRef(0);
@@ -903,7 +905,7 @@ ${markdown}` : markdown;
               )}
 
               <button 
-                  onClick={() => updateConfig('showToc', !showToc)} 
+                  onClick={() => setShowToc(v => !v)}
                   className={`tb-btn action-icon-btn ${showToc ? 'tb-btn-active' : ''}`}
                   style={showToc ? { background: textColor, color: bgColor, fontWeight: 'bold' } : {}}
                   data-tooltip="Toggle Table of Contents"
@@ -1053,7 +1055,7 @@ ${markdown}` : markdown;
 
         {/* 좌측 사이드바 TOC 패널 (Orca 스타일) */}
         {showToc && headings.length > 0 && (
-          <TocPanel headings={headings} colors={{ headerBg, dropdownBorder }} onClose={() => updateConfig('showToc', false)} />
+          <TocPanel headings={headings} colors={{ headerBg, dropdownBorder }} onClose={() => setShowToc(false)} />
         )}
 
         {/* 메인 에디터 영역 (오른쪽 패널) */}

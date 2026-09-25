@@ -30,3 +30,21 @@ test('31-6 단어 수는 편집에 따라 바뀌고 마크다운 기호를 세�
   await expect(badge).toContainText('4 words');
   await expect(badge).toContainText('21 chars');
 });
+
+// 사용자 결정(2026-09-25): 머리 막대의 TOC 단추는 이 편집기에서만 켜고 끈다. 사용자 설정을 바꾸지 않는다
+test('31 TOC 단추는 사용자 설정을 바꾸지 않고 이 편집기의 목차만 켜고 끈다', async ({ page }) => {
+  await load(page, '# One\n\n## Two\n\nbody\n');
+  await config(page, { showToc: false });
+  await page.locator('[data-tooltip="Toggle Table of Contents"]').click();
+  await expect(page.locator('[data-tooltip="Close TOC"]')).toBeVisible();
+  await page.locator('[data-tooltip="Close TOC"]').click();
+  await expect(page.locator('[data-tooltip="Close TOC"]')).toHaveCount(0);
+  await page.locator('[data-tooltip="Toggle Table of Contents"]').click();
+  await expect(page.locator('[data-tooltip="Close TOC"]')).toBeVisible();
+  const updates = await page.evaluate(() => (window as any).__msgs.filter((m: any) => m.type === 'updateConfig'));
+  expect(updates).toEqual([]);
+  // 설정의 기본값이 바뀌면 그 값을 따른다
+  await page.locator('[data-tooltip="Close TOC"]').click();
+  await config(page, { showToc: true });
+  await expect(page.locator('[data-tooltip="Close TOC"]')).toBeVisible();
+});
