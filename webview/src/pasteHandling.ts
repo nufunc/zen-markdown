@@ -23,9 +23,21 @@ export const wrapBarePre = (html: string) =>
  * wordLists는 Word 목록 HTML을 ul/ol로 바꾸는 함수다.
  */
 export function handlePaste(ed: any, data: DataTransfer, wordLists: (html: string) => string): boolean {
-  // 에디터 안에서 복사한 블록, 파일, VS Code 편집기 자료, 마크다운 형식은 BlockNote가 처리한다
-  if (['blocknote/html', 'Files', 'vscode-editor-data', 'text/markdown'].some(t => data.types.includes(t))) return false;
+  // 에디터 안에서 복사한 블록, 파일, 마크다운 형식은 BlockNote가 처리한다
+  if (['blocknote/html', 'Files', 'text/markdown'].some(t => data.types.includes(t))) return false;
   const plain = data.getData('text/plain');
+  // VS Code 텍스트 편집기에서 복사한 것. BlockNote는 한 낱말도 코드 블록으로 넣어 문장이 갈렸다(추가 검토 30).
+  // 한 줄이면 언어와 상관없이 글자로, 여러 줄이면 markdown은 마크다운으로 읽고 그 밖은 BlockNote가 코드 블록으로 넣는다
+  if (data.types.includes('vscode-editor-data')) {
+    const text = normalizeEol(plain).replace(/\n$/, '');
+    if (!text) return false;
+    if (!text.includes('\n')) { ed.pasteText(text); return true; }
+    let mode = '';
+    try { mode = JSON.parse(data.getData('vscode-editor-data'))?.mode ?? ''; } catch { /* 모양이 다르면 코드 블록으로 둔다 */ }
+    if (mode !== 'markdown') return false;
+    pastePlainText(ed, text);
+    return true;
+  }
   const html = data.getData('text/html');
   // TSV는 HTML보다 먼저 본다. Excel은 머리 행(<th>) 없는 HTML 표를 함께 넣어 빈 머리 행이 생긴다
   if (html && !inCodeBlock(ed) && !parseTableFromClipboardText(normalizeEol(plain))) {

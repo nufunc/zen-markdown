@@ -65,3 +65,29 @@ test('30-7 <code> 없는 <pre>는 코드 블록으로 들어간다', async ({ pa
   expect(r.types).toContain('codeBlock');
   expect(r.saved).toContain('def f():\n    return 1');
 });
+
+// VS Code 텍스트 편집기에서 복사하면 vscode-editor-data(JSON, mode는 언어)가 함께 온다. VS Code에서 재현한 모양을 합성했다
+const vscodeData = (mode: string) => JSON.stringify({ version: 1, isFromEmptySelection: false, multicursorText: null, mode });
+for (const mode of ['typescript', 'markdown']) {
+  test(`30-6 VS Code에서 복사한 한 줄(${mode})은 문장 안에 글자로 들어간다`, async ({ page }) => {
+    await load(page, 'front back\n');
+    // 방향키는 부하가 걸리면 어긋나므로 커서를 'back' 앞에 직접 놓는다
+    await page.evaluate(() => {
+      const tt = (window as any).__editor._tiptapEditor;
+      let pos = 0;
+      tt.state.doc.descendants((n: any, p: number) => { if (n.isText && n.text.includes('front back')) pos = p + n.text.indexOf('back'); });
+      tt.commands.setTextSelection(pos);
+      tt.view.focus();
+    });
+    await paste(page, { 'text/plain': 'computeValue', 'vscode-editor-data': vscodeData(mode) });
+    await expect.poll(() => lastChange(page)).toBe('front computeValueback\n');
+  });
+}
+
+test('30-6 VS Code에서 복사한 여러 줄은 markdown이면 마크다운으로, 그 밖은 코드 블록으로 들어간다', async ({ browser }) => {
+  const md = await pasteIntoEmpty(await browser.newPage(), { 'text/plain': '- a\r\n- b', 'vscode-editor-data': vscodeData('markdown') });
+  expect(md.types).toEqual(['paragraph', 'bulletListItem', 'bulletListItem', 'paragraph']);
+  const ts = await pasteIntoEmpty(await browser.newPage(), { 'text/plain': 'const a = 1;\r\nconst b = 2;', 'vscode-editor-data': vscodeData('typescript') });
+  expect(ts.types).toContain('codeBlock');
+  expect(ts.saved).toContain('```typescript\nconst a = 1;\nconst b = 2;\n```');
+});
