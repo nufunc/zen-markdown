@@ -38,3 +38,16 @@ test('이미지 블록을 편집해 저장해도 상대 경로로 돌아온다',
   await expect.poll(() => lastChange(page)).toContain('aX');
   expect(await lastChange(page)).toBe('intro\n\n![aX](img.png)\n\n![bX](<my img.png>)\n\n![dX](../up.png)\n\n![fX](assets/화면.png)\n\nend\n');
 });
+
+// 추가 검토 31: PDF로 보낼 HTML의 이미지 주소는 브라우저가 읽는 file:/// 주소다. DOM의 웹뷰 주소는 file%2B가 아니라 file+로 시작한다
+test('PDF 내보내기의 이미지 주소는 file:/// 주소다', async ({ page }) => {
+  await page.locator('[data-tooltip="Export Document as PDF"]').click();
+  const html: string = await page.evaluate(() => (window as any).__msgs.find((m: any) => m.type === 'exportPdf')?.html ?? '');
+  const srcs = [...html.matchAll(/<img[^>]*\ssrc="([^"]*)"/g)].map(m => m[1]);
+  expect(srcs).toEqual([
+    'file:///D:/docs/img.png',
+    'file:///D:/docs/my%20img.png',
+    'file:///D:/up.png',
+    'file:///D:/docs/assets/%ED%99%94%EB%A9%B4.png',
+  ]);
+});

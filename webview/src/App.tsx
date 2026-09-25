@@ -919,10 +919,9 @@ ${markdown}` : markdown;
                   const fullPath = folderUri.startsWith('file://') ? `${folderUri}/${relPath}` : `file:///${folderUri.replace(/^[a-zA-Z]:/, (m) => m.toUpperCase())}/${relPath}`;
                   return `src="${fullPath}"`;
                 });
-                html = html.replace(/src=["']https:\/\/file%2B[^/]+\/([^"']+)["']/g, (_, pathPart) => {
-                  const decoded = decodeURIComponent(pathPart);
-                  return `src="file:///${decoded}"`;
-                });
+                // 웹뷰 주소(https://file+.vscode-resource.../d%3A/...)를 file:///D:/...로 바꾼다. DOM에서는 file%2B가 file+로 정규화돼 있다
+                html = html.replace(/src=["']https:\/\/file(?:%2B|\+)[^/]+\/([^"']+)["']/gi, (_, pathPart: string) =>
+                  `src="file:///${pathPart.replace(/^([a-zA-Z])%3A/i, (_m, d: string) => `${d.toUpperCase()}:`)}"`);
               }
 
               const styles = Array.from(document.querySelectorAll('style')).map(s => s.textContent || s.innerHTML).join('\n');
