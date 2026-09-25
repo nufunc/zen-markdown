@@ -812,7 +812,8 @@ ${markdown}` : markdown;
   }, []);
 
   // Resolve 'auto' to 'light' or 'dark' based on body class (VS Code sets vscode-light, vscode-dark, etc)
-  const isVscodeDark = bodyClass.includes('vscode-dark') || bodyClass.includes('vscode-high-contrast');
+  // 고대비 밝은 테마에도 vscode-high-contrast가 함께 붙으므로 vscode-high-contrast-light를 먼저 본다(추가 검토 31)
+  const isVscodeDark = !bodyClass.includes('vscode-high-contrast-light') && (bodyClass.includes('vscode-dark') || bodyClass.includes('vscode-high-contrast'));
   const activeTheme = config.theme === 'auto' ? (isVscodeDark ? 'dark' : 'light') : config.theme;
   
   // 테마 팔레트는 themes.ts에 중앙 정의 (THEMES 레코드에서 조회)
