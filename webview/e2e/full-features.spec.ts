@@ -166,38 +166,31 @@ test.describe('Zen Markdown Editor - Expanded Pattern Suite (Pattern A - M)', ()
   });
 
   /** PATTERN O: Single Bullet Left Line Removal & Multi Bullet Continuity */
-  test('Pattern O: Single Bullet Left Line Removal and Multi Bullet Guide Line', async ({ page }) => {
+  test('Pattern O: Nested list guide line is hidden for one child and for several', async ({ page }) => {
     const editor = page.locator('.bn-editor');
     await editor.click();
     await page.keyboard.press('Control+End');
     await page.keyboard.press('Enter');
 
-    // Create a bullet item
     await page.keyboard.type('- Parent item');
     await page.keyboard.press('Enter');
     await page.keyboard.press('Tab');
     await page.keyboard.type('Single child item');
     await page.waitForTimeout(300);
 
-    // With only one nested child, the left line should be hidden
-    const singleChildBorder = await page.evaluate(() => {
-      const nestedOuter = document.querySelector('.bn-block-group .bn-block-group > .bn-block-outer:only-child');
-      if (!nestedOuter) return null;
-      return window.getComputedStyle(nestedOuter, '::before').borderLeft;
-    });
-    expect(singleChildBorder).toMatch(/0px|none/);
+    // 중첩 안내선(자식 묶음 왼쪽의 | 선)은 자식 수와 상관없이 보이지 않는다
+    const guides = () => page.evaluate(() => Array.from(document.querySelectorAll('.bn-block-group .bn-block-group > .bn-block-outer'))
+      .map(el => { const cs = window.getComputedStyle(el, '::before'); return cs.display === 'none' || /^0px|none/.test(cs.borderLeft); }));
+    const one = await guides();
+    expect(one.length).toBe(1);
+    expect(one.every(Boolean)).toBe(true);
 
-    // Add a second nested child -> now two items, left line should appear
     await page.keyboard.press('Enter');
     await page.keyboard.type('Second child item');
     await page.waitForTimeout(300);
-
-    const multiChildBorder = await page.evaluate(() => {
-      const nestedOuters = Array.from(document.querySelectorAll('.bn-block-group .bn-block-group > .bn-block-outer'));
-      if (nestedOuters.length < 2) return null;
-      return window.getComputedStyle(nestedOuters[0], '::before').borderLeft;
-    });
-    expect(multiChildBorder).toContain('1px solid');
+    const two = await guides();
+    expect(two.length).toBe(2);
+    expect(two.every(Boolean)).toBe(true);
   });
 });
 

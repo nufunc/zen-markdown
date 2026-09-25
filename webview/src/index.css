@@ -17,12 +17,6 @@ body.vscode-body {
   box-sizing: inherit;
 }
 
-/* When a nested bullet/list group has only a single child, hide the left indent guide line */
-.bn-block-group .bn-block-group > .bn-block-outer:only-child::before {
-  border-left: none !important;
-  display: none !important;
-}
-
 /* Notion-style nested list indent */
 .bn-editor [data-content-type="bulletListItem"],
 .bn-editor [data-content-type="numberedListItem"] {

@@ -246,8 +246,8 @@ export function buildEditorStyles(t: ThemePalette, fontSize: number): string {
             transform: translateY(0.1em);
           }
 
-          /* Single Bullet/Item: Hide left indent guide line if it's the only child */
-          .bn-block-group .bn-block-group > .bn-block-outer:only-child::before {
+          /* 중첩 안내선(자식 묶음 왼쪽의 | 선)은 자식 수와 상관없이 숨긴다(2026-09-25 사용자 요청). 들여쓰기는 그대로다 */
+          .bn-block-group .bn-block-group > .bn-block-outer::before {
             border-left: none !important;
             display: none !important;
           }
