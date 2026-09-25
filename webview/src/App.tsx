@@ -11,6 +11,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { TocPanel } from './TocPanel';
 import { EditorContextMenu } from './EditorContextMenu';
 import { handlePaste, pastePlainText } from './pasteHandling';
+import { docStats } from './docStats';
 import { customSlashMenuItems } from './slashMenuItems';
 import { useCodeBlockButtons } from './useCodeBlockButtons';
 import type { EditorConfig } from './SettingsPanel';
@@ -127,6 +128,10 @@ function App() {
     syncMatchesFromPlugin,
   } = search;
 
+  // 단어 수는 연 텍스트와 보낸 텍스트에서 센다. 입력마다가 아니라 전송 debounce에 맞춘다(추가 검토 31)
+  const [statsText, setStatsText] = useState('');
+  useEffect(() => { if (typeof documentText === 'string') setStatsText(documentText); }, [documentText]);
+  const stats = useMemo(() => docStats(statsText), [statsText]);
   const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
   const showToc = config.showToc;
   
@@ -159,6 +164,7 @@ function App() {
     needsFinalSerialize: () => unverifiedRef.current,
     applyExternalText: (text) => setDocumentText(text),
     isReadOnly: () => configRef.current.isReadOnly,
+    onSent: (text) => setStatsText(text),
   });
   const wikilinkNamesRef = useRef<Set<string>>(new Set());
   // 연 문서의 [x](x.md) 모양 링크 차례. 저장할 때 원문이 [[x]]였던 차례의 링크만 되돌린다
@@ -887,11 +893,11 @@ ${markdown}` : markdown;
               {config.showWordCount && (
                 <div className="quick-stats-badge" style={{ marginLeft: '6px', marginRight: '6px' }}>
                   <span className="quick-stat-item">
-                    {typeof documentText === 'string' && documentText.trim() ? documentText.trim().split(/\s+/).length : 0} words
+                    {stats.words} words
                   </span>
                   <span>•</span>
                   <span className="quick-stat-item">
-                    {typeof documentText === 'string' ? documentText.length : 0} chars
+                    {stats.chars} chars
                   </span>
                 </div>
               )}

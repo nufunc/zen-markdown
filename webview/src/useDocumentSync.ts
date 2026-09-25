@@ -32,6 +32,8 @@ export interface DocumentSyncDeps {
   applyExternalText: (text: string) => void;
   /** 읽기 전용 문서인가 */
   isReadOnly: () => boolean;
+  /** 호스트로 텍스트를 보낸 뒤 호출된다(머리 막대 단어 수) */
+  onSent?: (text: string) => void;
 }
 
 export function useDocumentSync(deps: DocumentSyncDeps) {
@@ -59,6 +61,7 @@ export function useDocumentSync(deps: DocumentSyncDeps) {
     lastSentTextRef.current = text;
     unsentRef.current = false;
     vscode.postMessage({ type: 'change', text });
+    depsRef.current.onSent?.(text);
   };
 
   // 매 키입력마다 전체 문서를 교체하지 않도록 300ms 디바운스
