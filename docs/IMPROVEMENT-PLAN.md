@@ -2738,6 +2738,101 @@ README 기능 목록의 찾기 설명을 "VS Code 찾기 위젯"에서 에디터
 **게이트**: 루트 19, 빌드, 린트 0, 단위 전부(수식 14 포함), E2E 60 통과, 명세 279 그대로.
 **작업 중 실수 하나**: 수식 커밋을 처음 만들 때 웹뷰 빌드가 타입 오류(쓰지 않는 매개변수)로 실패한 상태였다. 게이트 스크립트가 실패해도 종료 코드를 내지 않는데 커밋을 뒤에 이어 붙였다. 푸시 전에 알아채 오류를 고치고 같은 커밋에 합친 뒤 게이트를 다시 통과시켰다.
 
+### 추가 검토 28. VS Code 실사용 점검: Compare가 Zen 편집기로 열리고, Word 번호 목록이 불릿이 된다
+
+2026-09-25에 사용자가 "직접 테스트까지 진행하자"고 했다. v0.9.2 vsix를 격리한 VS Code(`--user-data-dir`, `--extensions-dir`)에 설치하고 화면 자동화로 눌러 봤다. 브라우저 E2E가 볼 수 없는 VS Code 쪽 동작이 대상이다.
+
+#### 통과한 것
+
+| 항목 | 결과 |
+|---|---|
+| CRLF 문서 한 줄 편집 후 저장 | diff 한 줄, CRLF 유지 |
+| Ctrl+1/2, Ctrl+Shift+S, Ctrl+Shift+K | 헤딩, 취소선, 인라인 코드. VS Code의 다른 이름 저장과 줄 삭제가 끼어들지 않는다 |
+| Ctrl+Z(헤딩 바꾼 뒤), Ctrl+D | 되돌리기, 블록 복제 모두 정상 |
+| `[아래로](#두-번째-절)` Ctrl+클릭 | 그 헤딩으로 스크롤, 문서가 수정 상태가 되지 않는다 |
+| `[다른 문서](<my doc.md>)` Ctrl+클릭 | 공백 든 파일이 Zen 편집기로 열린다 |
+| `img.png`, `<my img.png>`, `assets/화면.png` | 셋 다 보이고, 다른 문단을 고쳐 저장해도 경로가 그대로다 |
+| PDF 버튼 | Edge 인쇄 미리보기에서 불릿 정렬, 중첩 들여쓰기, 안내선 없음, 체크박스 표시 |
+| 편집 중 디스크 변경 | 충돌 막대가 뜬다. "Keep my edits"를 누르면 내 편집이 남고 외부 변경은 버려진다 |
+| Word 붙여 넣기(제목, 굵게, 두 단계 불릿) | 헤딩, 굵게, 중첩 불릿이 된다 |
+
+처음에는 Ctrl+D와 Ctrl+Z가 안 되는 것으로 보였다. 웹뷰에 키 로그를 붙여 보니 자동화 도구가 `Control+D`의 대문자 때문에 Shift를 함께 눌러 Ctrl+Shift+D(실행 및 디버그)가 들어간 것이었다. 소문자로 다시 눌러 통과를 확인했다. 앱 결함이 아니다.
+
+#### 결함 1. Compare가 텍스트 비교가 아니라 Zen 편집기 두 개로 열린다
+
+충돌 막대의 Compare를 누르면 `vscode.diff`가 `zen-markdown-compare:/images.md?...` 두 URI를 연다. 경로가 `.md`로 끝나 `package.json`의 `customEditors` 선택자(`filenamePattern: "*.md"`, `priority: "default"`)에 걸린다. 그래서 VS Code가 비교 편집기 양쪽을 Zen 웹뷰로 그린다.
+
+- 줄 단위 차이 표시가 없다. 두 문서를 렌더링한 화면을 나란히 볼 뿐이라 무엇이 다른지 눈으로 찾아야 한다.
+- 가상 문서라 문서 폴더가 없어 이미지가 모두 깨진다.
+- 양쪽 머리에 `document.md`, Text Editor, PDF, 설정 단추가 붙는다.
+
+설계:
+
+- 비교 URI가 Zen 편집기에 걸리지 않게 한다. 가장 작은 방법은 경로를 `.md`로 끝내지 않는 것이다(예: `/images.md.external`, `/images.md.mine`). 언어 모드가 plaintext가 되면 `vscode.languages.setTextDocumentLanguage`로 markdown을 걸 수 있는지 본다.
+- 다른 방법: `resolveCustomTextEditor`에서 비교 스킴이면 텍스트 편집기로 넘기는 것은 API가 없다. `workbench.editorAssociations`는 사용자 설정이라 쓰지 않는다.
+- 탭 제목(`images.md: External ↔ My edits`)은 그대로 둔다.
+
+완료 기준: Compare를 누르면 VS Code 기본 텍스트 비교 편집기가 열리고, 바뀐 줄이 강조된다. 막대와 보류 상태는 지금처럼 남는다. 호스트 단위 테스트로 비교 URI 경로가 `*.md` 글롭에 걸리지 않음을 확인한다.
+
+#### 결함 2. Word의 한국식 번호 목록과 개요 번호가 불릿 목록이 된다
+
+`normalizeWordLists`는 `mso-list:Ignore` span의 글자가 `ORDERED_MARKER`(`1.`, `a)`, `iv.`처럼 끝에 `.`이나 `)`)에 맞을 때만 `<ol>`로 만든다. 실제 Word(한국어판) 클립보드에서 번호 모양별로 이 글자를 떠 봤다.
+
+| Word 번호 모양 | 기호 글자 | 지금 결과 |
+|---|---|---|
+| 기본 번호(`ApplyNumberDefault`) | `1.` | 번호 목록 |
+| `I.`, `A.` | `I.`, `A.` | 번호 목록 |
+| 원문자 | `①` | **불릿** |
+| 가나다 | `가)` | **불릿** |
+| 괄호 자모 | `(ㄱ)` | **불릿** |
+| 개요 번호 | `1`, `2.1` | **불릿** |
+| 전각 숫자 | `１` | **불릿** |
+| 불릿(Symbol, Wingdings) | `·`, `l` | 불릿 |
+
+Wingdings 불릿의 기호 글자가 영문 `l`이라, 기호 글자만으로는 번호와 불릿을 가르기 어렵다. 대신 Word는 클립보드 HTML의 `<style>`에 목록 정의를 넣는다. 불릿 수준에는 `@list l0:level1 {mso-level-number-format:bullet; ...}`이 있고 번호 수준에는 이 줄이 없다(`mso-level-text:%1` 등).
+
+설계:
+
+- `normalizeWordLists`가 `<style>` 글자에서 `@list lN:levelM { ... }` 블록을 읽어 `mso-level-number-format:bullet`이면 `ul`, 아니면 `ol`로 정한다. 문단의 `mso-list:lN levelM`으로 찾는다.
+- 정의가 없는 HTML(흉내 낸 HTML, 다른 앱)은 지금의 기호 글자 규칙으로 판정한다.
+- 번호 모양(①, 가))은 마크다운에 담을 수 없으므로 `1.`로 저장된다. 이것은 결함이 아니다.
+
+테스트 자료: 실제 Word 클립보드 HTML 세 개를 떠 두었다. 경로는 `C:\Users\Administrator\AppData\Local\Temp\claude\D--git-my-md-editor\e8e7b238-ec9a-4e03-8e37-6f6529d68193\scratchpad\word-paste`다.
+
+- `bullets-flat.html`: 헤딩 1, 불릿 넷(한 단계), 굵은 문단.
+- `outline-nested.html`: 개요 번호 `1`, `2`, `2.1`, `3`, `4`, `5`. `2.1`은 `level2`다.
+- `korean-numbering.html`: `①②` 목록, 사이 문단, `가)나)` 목록, 사이 문단, Wingdings 불릿 둘(기호 `l`).
+
+각 파일은 약 47KB이고 대부분 `<style>`이다. 테스트 자료로 넣을 때 목록 정의와 본문만 남기고 줄여도 된다.
+
+완료 기준: 세 자료를 붙여 넣으면 `korean-numbering`은 번호 목록 둘과 불릿 목록 하나, `outline-nested`는 번호 목록 안에 번호 한 단계 중첩, `bullets-flat`은 지금처럼 불릿이 된다. 기존 추가 검토 23의 E2E가 그대로 통과한다.
+
+#### 결함 아닌 관찰
+
+- Edge 인쇄 미리보기에서 인라인 코드 배경이 빠진다. Edge의 "배경 그래픽" 기본값이 꺼져 있어서다.
+- 새로 붙여 넣은 중첩 불릿은 하위 기호가 `*`로 저장된다. 기존 규칙(짝수 수준 `-`, 홀수 수준 `*`)이다.
+
+#### 결과
+
+2026-09-25에 code 세션이 결함마다 커밋 하나로 고쳤다.
+
+**결함 1(`ea95743`)**: 설계의 첫째 방법대로 비교 가상 문서 경로를 `.md.external`, `.md.mine`으로 끝낸다(`hostLogic.comparePath`). 경로가 `.md`로 끝나지 않아 언어가 plaintext가 되므로, `vscode.diff`를 열기 전에 두 문서를 열어 `setTextDocumentLanguage(doc, 'markdown')`로 마크다운 강조를 건다. 언어를 걸지 못하면 평문으로 비교한다. 탭 제목은 그대로다.
+호스트 테스트는 비교 경로가 `*.md`와 `*.llm.md`에 걸리지 않음을 본다. `path.matchesGlob`은 루트의 `@types/node`에 없어 정규식으로 봤다.
+**확인하지 못한 것**: VS Code 안에서 텍스트 비교 편집기가 열리고 바뀐 줄이 강조되는지는 이 세션에서 보지 않았다.
+
+**결함 2(`70e456c`)**: `normalizeWordLists`가 Word 클립보드 `<style>`의 `@list lN:levelM { … }`를 읽어, `mso-level-number-format:bullet`인 수준은 글머리, 그 밖(정의가 있고 bullet이 아님)은 번호 목록으로 정한다. 문단은 `mso-list:lN levelM`으로 정의를 찾는다. 정의가 없으면 예전처럼 기호 글자 규칙(`1.`, `a)`, `iv.`)으로 판정한다.
+함께 고친 것: 목록 ID가 다른 문단이 바로 붙어 있으면(예: `l0` 목록 바로 뒤 `l1` 목록) 한 목록으로 묶던 것을 따로 묶게 했다.
+
+| 실제 Word 자료(`tests/fixtures/word-*.html`, 목록 정의와 본문만 남겨 2~5KB로 줄임) | 결과 |
+|---|---|
+| `korean-numbering` | `①②` 번호 목록, `가)나)` 번호 목록, Wingdings(`l`) 불릿 목록. 기호 글자는 지워진다 |
+| `outline-nested` | 번호 목록 안에 번호 한 단계 중첩(`2.1`은 `level2`) |
+| `bullets-flat` | 전처럼 불릿 넷 |
+
+`tests/paste.mts`에 3건을 더해 9건이다. 고치기 전 코드에서 `korean-numbering`과 `outline-nested` 2건이 실패했다. 추가 검토 23의 흉내 낸 HTML 사례와 E2E는 그대로 통과한다.
+
+**게이트**: 루트 20, 빌드, 린트 0, 단위 전부, E2E 60 통과.
+
 ## 이번 계획에 넣지 않은 것
 
 HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 다음 단계 목록에 있다. P0과 P1을 마친 뒤 다시 정한다.
@@ -2785,6 +2880,7 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 37 | 추가 검토 25: 꺾쇠 주소 이미지 미리 보기, 붙여 넣은 이미지의 한글 이름 (완료) | `fix:` |
 | 38 | 추가 검토 26: 인쇄 HTML에 번들 CSS 넣기 (완료) | `fix:` |
 | 39 | 추가 검토 27: 수식 보호, GitHub 알림 보존, 문서 안 헤딩 링크 이동 (완료) | `fix:` 셋 |
+| 40 | 추가 검토 28: Compare를 텍스트 비교로 열기, Word 번호 목록을 목록 정의로 판정 (완료) | `fix:` 둘 |
 
 추가 검토 1의 1단계는 데이터 손실 부류이고, 인용 입력은 저장할 때마다 문서가 커진다. 그래서 기능 추가인 차이 보기보다 앞인 3번으로 당겼다.
 원인 셋(파서의 줄바꿈 공백, HTML 줄의 `\`, 같은 텍스트 링크)이 서로 얽혀 기대 출력이 함께 정해지므로 커밋 하나로 묶었다.
