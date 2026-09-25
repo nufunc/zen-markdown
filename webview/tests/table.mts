@@ -124,5 +124,15 @@ const reopensSame = (blocks: any[], saved: string) => JSON.stringify(cellsOf(ope
   ok('표 여럿과 펜스: 편집 없이 원문 그대로', save(blocks, ctx) === md, JSON.stringify(save(blocks, ctx)));
 }
 
+// 추가 검토 30: 칸 안 줄바꿈은 <br>로 저장하고 열 때 줄바꿈으로 읽는다
+{
+  const md = '| a | b |\n| --- | --- |\n| 1<br>2 | 3 |';
+  const o = open(md);
+  ok('칸 안 <br>은 줄바꿈으로 읽는다', table(o.blocks).content.rows[1].cells[0].content.map((c: any) => c.text).join('') === '1\n2', JSON.stringify(cellsOf(o.blocks)));
+  ok('칸 안 <br>이 든 표는 원문 그대로 저장', save(o.blocks, o.ctx) === md, JSON.stringify(save(o.blocks, o.ctx)));
+  const e = clone(o.blocks);
+  table(e).content.rows[1].cells[1].content[0].text = '3 고침';
+  ok('칸 안 줄바꿈이 든 행을 고쳐도 한 줄', save(e, o.ctx) === '| a | b |\n| --- | --- |\n| 1<br>2 | 3 고침 |', JSON.stringify(save(e, o.ctx)));
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

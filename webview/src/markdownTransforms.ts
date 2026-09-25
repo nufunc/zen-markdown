@@ -649,8 +649,19 @@ export function restoreLinkText(md: string): string {
   );
 }
 
+const TABLE_BREAK_MARK = '\uE001';
+/** 칸 안 줄바꿈 표식을 <br>로 쓴다. 표 행이 한 줄로 남고 GitHub도 칸 안 줄바꿈으로 보인다 */
+export const restoreTableBreaks = (md: string) => md.replaceAll(TABLE_BREAK_MARK, '<br>');
+/** protectHtml이 보호한 칸 안 <br>(<\u200Bbr>)을 줄바꿈으로 읽는다 */
+const tableCellBreaks = (content: any[]) => content.map((t: any) =>
+  t.type === 'text' ? { ...t, text: t.text.replace(/<\u200Bbr\s*\/?>/gi, '\n') } : t);
+
 export const processBlocksFromMarkdown = (blocks: any[]): any[] => {
   return blocks.map((b: any) => {
+    if (b.type === 'table' && Array.isArray(b.content?.rows)) {
+      b = { ...b, content: { ...b.content, rows: b.content.rows.map((r: any) => ({ ...r, cells: r.cells.map((c: any) =>
+        Array.isArray(c?.content) ? { ...c, content: tableCellBreaks(c.content) } : Array.isArray(c) ? tableCellBreaks(c) : c) })) } };
+    }
     if (b.type !== "codeBlock" && Array.isArray(b.content)) {
       b = { ...b, content: stripBreakSpace(b.content) };
     }
@@ -724,8 +735,11 @@ export const processBlocksToMarkdown = (blocks: any[], quoteJoins?: Set<string>)
       newB.content = prepareInline(newB.content, newB.type === 'paragraph');
     } else if (newB.type === 'table' && Array.isArray(newB.content?.rows)) {
       // 표 내용은 { rows: [{ cells }] } 객체라 위 조건을 지나치지 않게 칸마다 건다. 칸은 줄 머리가 아니다(| 뒤)
+      // 칸 안 줄바꿈은 표식으로 바꿔 두고 restoreTableBreaks가 <br>로 쓴다. 그대로 두면 표 행이 둘로 쪼개진다(추가 검토 30)
+      const cellInline = (content: any[]) => prepareInline(content, false).map((t: any) =>
+        t.type === 'text' ? { ...t, text: t.text.replaceAll('\n', TABLE_BREAK_MARK) } : t);
       newB.content = { ...newB.content, rows: newB.content.rows.map((r: any) => ({ ...r, cells: r.cells.map((c: any) =>
-        Array.isArray(c?.content) ? { ...c, content: prepareInline(c.content, false) } : Array.isArray(c) ? prepareInline(c, false) : c) })) };
+        Array.isArray(c?.content) ? { ...c, content: cellInline(c.content) } : Array.isArray(c) ? cellInline(c) : c) })) };
     }
     if (newB.type === 'quote' && quoteJoins?.has(newB.id) && blocks[i - 1]?.type === 'quote' && Array.isArray(newB.content)) {
       newB.content = [{ type: 'text', text: QUOTE_JOIN_MARK, styles: {} }, ...newB.content];
