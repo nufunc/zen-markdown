@@ -135,6 +135,8 @@ function App() {
   const lastUndoTimeRef = useRef(0);
   const isInitializing = useRef(false);
   const docBaseUriRef = useRef<string>("");
+  // 머리 막대에 보일 파일 이름(추가 검토 31). 호스트가 config로 보낸다
+  const fileNameRef = useRef<string>("");
   // parseWikilinks가 실제로 변환한 문서명 — 저장 시 그것만 [[..]]로 되돌린다
   // 동기화 계층이 부를 최신 직렬화 함수 (선언 순서 역전 회피)
   const buildDocumentTextRef = useRef<(final: boolean) => Promise<string | null>>(async () => null);
@@ -208,6 +210,7 @@ function App() {
       switch (message.type) {
         case 'config':
           docBaseUriRef.current = message.docBaseUri || "";
+          fileNameRef.current = message.fileName || "";
           setConfig({
             theme: message.theme,
             fontSize: message.fontSize,
@@ -861,9 +864,9 @@ ${markdown}` : markdown;
             flex: 1,
             marginRight: '12px'
           }}
-          title={formatDocPath(docBaseUriRef.current)}
+          title={fileNameRef.current ? `${formatDocPath(docBaseUriRef.current)}/${fileNameRef.current}` : formatDocPath(docBaseUriRef.current)}
         >
-          {formatDocPath(docBaseUriRef.current)}
+          {fileNameRef.current || 'document.md'}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>

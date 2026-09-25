@@ -96,6 +96,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             const docBaseUri = docDir
                 ? webviewPanel.webview.asWebviewUri(vscode.Uri.file(docDir)).toString()
                 : '';
+            // 머리 막대에 보일 파일 이름. 제목 없는 문서는 비워 두고 웹뷰가 document.md로 보인다
+            const fileName = document.uri.scheme === 'untitled' ? '' : path.posix.basename(document.uri.path);
 
             webviewPanel.webview.postMessage({
                 type: 'config',
@@ -109,7 +111,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                 showFormattingToolbar,
                 isReadOnly,
                 defaultCodeLanguage,
-                docBaseUri
+                docBaseUri,
+                fileName
             });
         }
 
