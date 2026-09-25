@@ -119,7 +119,8 @@ const clearUndoHistory = (editorInstance: any) => {
   try {
     const tiptap = editorInstance?._tiptapEditor;
     const view = tiptap?.editorView || tiptap?.view;
-    const state = tiptap?.editorState || tiptap?.state;
+    // tiptap.editorState 필드는 아래 view.updateState 뒤 낡은 채 남는다. state getter는 읽을 때 뷰 상태로 맞춘다(추가 검토 24)
+    const state = tiptap?.state;
     if (!view || !state) return;
     // EditorState를 같은 doc/plugins로 다시 만들면 history 플러그인 상태가 초기화된다.
     // prosemirror-history는 히스토리를 비우는 명령을 노출하지 않아 이 방식을 쓴다.
@@ -612,7 +613,7 @@ function App() {
           try {
             const tiptap = (newEditor as any)._tiptapEditor;
             if (tiptap) {
-              const state = tiptap.editorState || tiptap.state;
+              const state = tiptap.state;
               const view = tiptap.editorView || tiptap.view;
               if (typeof tiptap.registerPlugin === 'function') {
                 tiptap.registerPlugin(createSearchPlugin());
@@ -963,14 +964,14 @@ ${markdown}` : markdown;
   const getCanUndo = () => {
     if (!editor) return false;
     const tiptap = (editor as any)?._tiptapEditor;
-    const state = tiptap?.editorState || tiptap?.state;
+    const state = tiptap?.state;
     return state ? undoDepth(state) > 0 : false;
   };
 
   const getCanRedo = () => {
     if (!editor) return false;
     const tiptap = (editor as any)?._tiptapEditor;
-    const state = tiptap?.editorState || tiptap?.state;
+    const state = tiptap?.state;
     return state ? redoDepth(state) > 0 : false;
   };
 
@@ -980,7 +981,7 @@ ${markdown}` : markdown;
     const tiptap = (editor as any)?._tiptapEditor;
     if (tiptap) {
       const view = tiptap.editorView || tiptap.view;
-      const state = tiptap.editorState || tiptap.state;
+      const state = tiptap.state;
       if (view && state) {
         const didUndo = pmUndo(state, view.dispatch);
         if (didUndo) {
@@ -998,7 +999,7 @@ ${markdown}` : markdown;
     const tiptap = (editor as any)?._tiptapEditor;
     if (tiptap) {
       const view = tiptap.editorView || tiptap.view;
-      const state = tiptap.editorState || tiptap.state;
+      const state = tiptap.state;
       if (view && state) {
         const didRedo = pmRedo(state, view.dispatch);
         if (didRedo) {

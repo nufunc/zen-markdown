@@ -48,7 +48,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
     if (!editor) return;
     const tiptap = (editor as any)._tiptapEditor;
     if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
+    const state = tiptap.state;
     const view = tiptap.editorView || tiptap.view;
     if (!state || !view) return;
 
@@ -64,7 +64,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
     }
 
     try {
-      const currentState = tiptap.editorState || tiptap.state;
+      const currentState = tiptap.state;
       const currentView = tiptap.editorView || tiptap.view;
       const tr = currentState.tr.setMeta(searchPluginKey, {
         query: searchQuery,
@@ -111,7 +111,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
     if (!editor || !searchQuery || matchCount === 0) return;
     const tiptap = (editor as any)?._tiptapEditor;
     if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
+    const state = tiptap.state;
     const view = tiptap.editorView || tiptap.view;
     if (state && view) {
       const searchState = searchPluginKey.getState(state);
@@ -145,7 +145,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
     if (!editor || !searchQuery) return;
     const tiptap = (editor as any)?._tiptapEditor;
     if (!tiptap) return;
-    const state = tiptap.editorState || tiptap.state;
+    const state = tiptap.state;
     const view = tiptap.editorView || tiptap.view;
     if (state && view) {
       const searchState = searchPluginKey.getState(state);
@@ -186,7 +186,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
     if (!showSearchReplace || !searchQuery || !editor) return;
     try {
       const tiptap = (editor as any)?._tiptapEditor;
-      const searchState = tiptap && searchPluginKey.getState(tiptap.editorState || tiptap.state);
+      const searchState = tiptap && searchPluginKey.getState(tiptap.state);
       if (searchState) {
         setMatchCount(searchState.matches.length);
         setActiveIndex(searchState.activeIndex ?? 0);
