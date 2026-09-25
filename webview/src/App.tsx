@@ -833,10 +833,6 @@ ${markdown}` : markdown;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: bgColor, color: textColor }}>
-      
-      {showSearchReplace && (
-        <FindReplaceWidget search={search} onClose={() => { setShowSearchReplace(false); editor?.focus?.(); }} />
-      )}
 
       {/* TOC is rendered as Orca Left Sidebar Panel below */}
 
@@ -1026,9 +1022,13 @@ ${markdown}` : markdown;
       )}
       
       <div 
-        style={{ flex: 1, display: 'flex', flexDirection: 'row', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden' }}
+        style={{ flex: 1, display: 'flex', flexDirection: 'row', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden', position: 'relative' }}
         onKeyDownCapture={handleKeyDownCapture}
       >
+        {/* 찾기 창은 편집 영역 위쪽 오른편에 둔다. 머리 막대의 단추를 가리지 않는다(추가 검토 31) */}
+        {showSearchReplace && (
+          <FindReplaceWidget search={search} onClose={() => { setShowSearchReplace(false); editor?.focus?.(); }} />
+        )}
         <style>{editorCss}</style>
         {quoteJoinCss && <style>{quoteJoinCss}</style>}
 

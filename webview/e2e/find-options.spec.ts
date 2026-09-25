@@ -1,7 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { load, lastChange } from './harness';
 
-// 추가 검토 31: 유니코드 단어 단위, 정규식 바꾸기
+// 추가 검토 31: 찾기 창 위치, 유니코드 단어 단위, 정규식 바꾸기
 const find = (page: Page) => page.locator('input[placeholder="Find"]');
 const count = (page: Page) => page.locator('.find-count-label');
 const option = (page: Page, label: string) => page.locator(`[aria-label="${label}"]`);
@@ -9,6 +9,17 @@ const openReplace = async (page: Page) => {
   await page.keyboard.press('Control+h');
   await expect(page.locator('input[placeholder="Replace"]')).toBeFocused();
 };
+
+test('31-4 찾기 창은 머리 막대의 단추를 가리지 않는다', async ({ page }) => {
+  await load(page, 'alpha\n');
+  await page.keyboard.press('Control+f');
+  const widget = (await page.locator('.vscode-find-widget').boundingBox())!;
+  for (const tip of ['Toggle Table of Contents', 'Export Document as PDF', 'Settings']) {
+    const b = (await page.locator(`[data-tooltip="${tip}"]`).boundingBox())!;
+    const overlap = widget.x < b.x + b.width && b.x < widget.x + widget.width && widget.y < b.y + b.height && b.y < widget.y + widget.height;
+    expect(overlap, tip).toBe(false);
+  }
+});
 
 test('31-4b 단어 단위는 한글 같은 유니코드 글자 경계로 판정한다', async ({ page }) => {
   await load(page, '편집기 편집 기능 편집\n\nfoo food foo_bar foo\n');

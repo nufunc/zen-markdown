@@ -265,7 +265,7 @@ input:checked + .toggle-slider:before {
 
 /* VS Code Find & Replace Widget Styles */
 .vscode-find-widget {
-  position: fixed;
+  position: absolute;
   top: 0;
   right: 18px;
   z-index: 1000;
