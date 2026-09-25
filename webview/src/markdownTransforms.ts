@@ -1018,12 +1018,18 @@ export function normalizeWordLists(html: string): string {
  * 같은 슬러그가 다시 나오면 GitHub처럼 -1, -2를 붙인다. [아래로](#두-번째-절) 같은 문서 안 링크를 따라갈 때 쓴다(추가 검토 27).
  */
 export function headingSlugs(texts: readonly string[]): string[] {
-  const seen = new Map<string, number>();
+  // github-slugger와 같다: 결합 문자(\p{M})와 연결 문장부호(\p{Pc})를 남기고, 만든 슬러그도 기억해 겹치면 번호를 더 올린다(추가 검토 29)
+  const occurrences = new Map<string, number>();
   return texts.map(text => {
-    const base = text.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
-    const n = seen.get(base) ?? 0;
-    seen.set(base, n + 1);
-    return n === 0 ? base : `${base}-${n}`;
+    const base = text.trim().toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc}\s-]/gu, '').replace(/\s/g, '-');
+    let slug = base;
+    while (occurrences.has(slug)) {
+      const n = occurrences.get(base)! + 1;
+      occurrences.set(base, n);
+      slug = `${base}-${n}`;
+    }
+    occurrences.set(slug, 0);
+    return slug;
   });
 }
 

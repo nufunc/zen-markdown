@@ -103,5 +103,13 @@ for (const [md, href, text] of [
   ok('헤딩 슬러그: 소문자, 문장부호 제거, 공백은 -, 같은 이름은 -1', JSON.stringify(got) === JSON.stringify(want), JSON.stringify(got));
 }
 
+// 추가 검토 29: 결합 문자(데바나가리 모음 기호 등)를 남기고, 만든 슬러그와 겹치면 번호를 더 올린다(github-slugger)
+{
+  const hindi = T.headingSlugs(['हिन्दी भाषा']);
+  ok('헤딩 슬러그: 결합 문자를 남긴다', hindi[0] === 'हिन्दी-भाषा', JSON.stringify(hindi));
+  const dup = T.headingSlugs(['a', 'a', 'a-1']);
+  ok('헤딩 슬러그: 만든 슬러그와 겹치면 번호를 더 올린다', JSON.stringify(dup) === JSON.stringify(['a', 'a-1', 'a-1-1']), JSON.stringify(dup));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
