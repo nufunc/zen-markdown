@@ -24,6 +24,8 @@ test.beforeEach(async ({ page }) => {
 
 const replaceAll = async (page: Page) => {
   await page.keyboard.press('Control+h');
+  // Ctrl+H는 50ms 뒤 바꾸기 칸으로 포커스를 옮긴다. 그 전에 채우면 글자가 바꾸기 칸으로 들어간다
+  await expect(page.locator('input[placeholder="Replace"]')).toBeFocused();
   await page.locator('input[placeholder="Find"]').fill('world');
   await expect(page.locator('.search-highlight')).toHaveCount(2);
   await page.locator('input[placeholder="Replace"]').fill('earth');
