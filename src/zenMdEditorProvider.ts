@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag, resolveLinkPath, safeImageName, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml, comparePath } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -303,8 +303,14 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                     const key = Date.now().toString(36);
                     compareTexts.set(key + '-external', document.getText());
                     compareTexts.set(key + '-mine', String(e.text ?? ''));
-                    const side = (which: string) => vscode.Uri.from({ scheme: COMPARE_SCHEME, path: '/' + name, query: key + '-' + which });
-                    void vscode.commands.executeCommand('vscode.diff', side('external'), side('mine'), `${name}: External ↔ My edits`);
+                    const side = (which: 'external' | 'mine') => vscode.Uri.from({ scheme: COMPARE_SCHEME, path: comparePath(name, which), query: key + '-' + which });
+                    void (async () => {
+                        // 경로가 .md로 끝나지 않아 언어가 plaintext가 되므로 markdown을 걸어 강조를 살린다
+                        for (const which of ['external', 'mine'] as const) {
+                            try { await vscode.languages.setTextDocumentLanguage(await vscode.workspace.openTextDocument(side(which)), 'markdown'); } catch { /* 언어를 못 걸면 평문으로 비교한다 */ }
+                        }
+                        await vscode.commands.executeCommand('vscode.diff', side('external'), side('mine'), `${name}: External ↔ My edits`);
+                    })();
                     return;
                 }
                 case 'undo':

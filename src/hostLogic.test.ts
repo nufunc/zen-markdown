@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'path';
-import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml, comparePath } from './hostLogic';
 
 test('임의 문자열 필드는 기록하지 않고 개수만 남긴다', () => {
     const r = sanitizeDiag({ type: 'diag', ev: 'serialize_failed', message: '비밀 원고 첫 문단' });
@@ -179,4 +179,13 @@ test('인쇄 HTML: 번들 CSS를 웹뷰 스타일보다 먼저 넣고 제목을 
     const bundleAt = html.indexOf('{BUNDLE}'), capturedAt = html.indexOf('{CAPTURED}'), printAt = html.indexOf('@media print');
     assert.ok(bundleAt > 0 && bundleAt < capturedAt && capturedAt < printAt, '번들 → 웹뷰 스타일 → 인쇄 규칙 차례');
     assert.ok(html.includes('<div class="bn-editor">본문</div>'));
+});
+
+test('Compare 가상 문서 경로는 *.md 선택자에 걸리지 않는다(추가 검토 28)', () => {
+    for (const side of ['external', 'mine'] as const) {
+        const p = comparePath('images.md', side);
+        assert.equal(p, '/images.md.' + side);
+        assert.ok(!/\.md$/i.test(p) && !/\.llm\.md$/i.test(p), p);
+    }
+    assert.ok(!/\.md$/i.test(comparePath('notes.llm.md', 'mine')));
 });

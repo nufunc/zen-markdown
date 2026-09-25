@@ -200,3 +200,11 @@ window.onload = function() { window.print(); };
 </body>
 </html>`;
 }
+
+/**
+ * 충돌 막대 Compare의 가상 문서 경로. .md로 끝나면 customEditors 선택자(*.md)에 걸려 Zen 편집기 두 개로 열리므로
+ * .md.external, .md.mine으로 끝낸다(추가 검토 28). 언어는 호출한 쪽이 markdown으로 건다.
+ */
+export function comparePath(fileName: string, side: 'external' | 'mine'): string {
+    return '/' + fileName + '.' + side;
+}
