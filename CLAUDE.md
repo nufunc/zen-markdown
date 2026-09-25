@@ -19,4 +19,5 @@
 
 E2E와 개발 서버의 기본 포트는 5174다. Windows가 이 포트를 예약 범위(`netsh interface ipv4 show excludedportrange protocol=tcp`)로 잡은 PC에서는 개발 서버가 뜨지 않는다.
 그런 PC에서는 저장소를 고치지 않고 사용자 환경변수 `ZEN_DEV_PORT`로 포트를 바꾼다. `playwright.config.ts`가 이 값을 읽는다.
-2026-09-24부터 이 작업 PC는 `ZEN_DEV_PORT=4174`를 쓴다.
+2026-09-24부터 이 작업 PC는 `ZEN_DEV_PORT=4174`를 썼으나, 2026-09-25에 Windows가 4094~4393을 예약해 4174가 막혔다. 환경변수를 지우고 기본 5174로 돌아왔다.
+예약 범위는 재부팅이나 WinNAT 재시작 때 바뀐다. 개발 서버가 `EACCES`로 뜨지 않으면 위 명령으로 범위를 보고 비어 있는 포트를 고른다.
