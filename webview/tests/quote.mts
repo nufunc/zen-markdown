@@ -95,5 +95,28 @@ structured('구조 없는 여러 문단 인용은 추가 검토 9 그대로', '>
   check('인용 안에 항목을 더하면 인용 안에 남는다', s2 === '앞\n\n> 설명\n> - 첫째\n> - 둘째\n> - 셋째\n\n뒤', JSON.stringify(s2));
 }
 
+// GitHub 알림과 Obsidian 콜아웃(추가 검토 27): 표식 줄 끝에 \를 붙이지 않고, 편집한 뒤에도 원문 모양으로 저장한다
+const alertSame = (name: string, md: string) => {
+  const { ctx, blocks } = openS(md);
+  const s1 = saveS(blocks, ctx);
+  const o2 = openS(s1);
+  check(name, s1 === md && saveS(o2.blocks, o2.ctx) === s1 && treeOf(o2.blocks) === treeOf(blocks), JSON.stringify(s1));
+};
+alertSame('GitHub 알림', '> [!NOTE]\n> 참고할 내용');
+alertSame('Obsidian 콜아웃 제목', '> [!warning] 주의\n> 본문');
+alertSame('접는 콜아웃', '> [!tip]- 펼치기\n> 숨긴 내용');
+alertSame('여러 문단 알림(인용 이어짐)', '> [!IMPORTANT]\n> 첫 문단\n>\n> 둘째 문단');
+alertSame('목록이 든 알림(구조 인용)', '> [!CAUTION]\n> - 하나\n> - 둘');
+{
+  // 알림 본문을 고쳐도 표식 줄은 그대로다
+  const { ctx, blocks } = openS('> [!NOTE]\n> 참고');
+  const edited = JSON.parse(JSON.stringify(blocks));
+  edited[0].content = edited[0].content.map((c: any) => (c.type === 'text' ? { ...c, text: c.text.replace('참고', '참고 고침') } : c));
+  const s = saveS(edited, ctx);
+  check('알림 본문을 고쳐도 표식 줄은 그대로', s === '> [!NOTE]\n> 참고 고침', JSON.stringify(s));
+}
+// 알림이 아닌 인용의 강제 줄바꿈은 그대로 둔다
+alertSame('알림이 아닌 인용의 줄바꿈', '> 첫 줄\\\n> 둘째 줄');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -27,6 +27,7 @@ import {
   quotePlaceholderIndex,
   restoreQuoteStructures,
   dividersAsDashes,
+  alertMarkerLines,
   quoteJoinIds,
 } from './markdownTransforms';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
@@ -97,7 +98,7 @@ export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): stri
   return serializeWikilinks(
     restoreLinkText(restoreHtml(
       restoreBlankLines(
-        fromWebviewImageUrls(restoreQuoteJoins(markdown), ctx.docBaseUri)
+        fromWebviewImageUrls(alertMarkerLines(restoreQuoteJoins(markdown)), ctx.docBaseUri)
       )
     )),
     ctx.wikilinkNames,

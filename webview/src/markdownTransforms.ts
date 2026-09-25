@@ -526,6 +526,16 @@ export function restoreQuoteJoins(md: string): string {
     .replaceAll(QUOTE_JOIN_MARK, '');
 }
 
+/**
+ * GitHub 알림(> [!NOTE])과 Obsidian 콜아웃(> [!warning]+ 제목)의 첫 줄 끝에 붙은 강제 줄바꿈 \를 뗀다.
+ * 그 줄은 표식 줄이라 다음 줄과 이어지지 않는다. \가 붙으면 GitHub이 알림으로 알아보지 못할 수 있다(추가 검토 27).
+ * 다시 열 때는 부드러운 줄바꿈도 줄바꿈으로 읽으므로(preserveMarkdownLineBreaks) 모양이 같다.
+ */
+export function alertMarkerLines(md: string): string {
+  return mapOutsideCodeFences(md, part =>
+    part.replace(/^( {0,3}(?:> ?)+\[![A-Za-z][\w-]*\][+-]?(?:[ \t][^\n]*)?)\\$/gm, '$1'));
+}
+
 export function restoreLinkText(md: string): string {
   return mapOutsideCodeFences(md.replaceAll(LINK_TEXT_MARK + '](', ']('), part =>
     // BlockNote는 공백이 든 주소를 꺾쇠 없이 내보내 링크가 깨진다([a](<my file.md>) → [a](my file.md)).
