@@ -7,6 +7,8 @@ import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMa
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, expandQuoteStructures, markdownToBlocks } from './markdownPipeline';
 import type { PipelineContext } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
+import { SettingsPanel } from './SettingsPanel';
+import type { EditorConfig } from './SettingsPanel';
 import { FindReplaceWidget } from './FindReplaceWidget';
 import { isEditorElement, isPlainInputTarget } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
@@ -103,7 +105,7 @@ const insertCalloutItem = (editor: any) => ({
 
 import { BlockNoteView } from '@blocknote/mantine';
 import { SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react';
-import { Settings, X, ChevronDown, List, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Pilcrow, Printer, Palette, Type, Wand2, RefreshCcw, FileText, Maximize2, Undo2, Redo2, Scissors, Copy, Clipboard, Search, Check, Save } from 'lucide-react';
+import { Settings, X, ChevronDown, List, ExternalLink, Bold, Italic, Strikethrough, ListOrdered, CheckSquare, Quote, Link, Image as ImageIcon, Pilcrow, Printer, Undo2, Redo2, Scissors, Copy, Clipboard, Search } from 'lucide-react';
 import { undo as pmUndo, redo as pmRedo, undoDepth, redoDepth } from 'prosemirror-history';
 import '@blocknote/mantine/style.css';
 import { vscode } from './vscode';
@@ -153,18 +155,7 @@ function formatDocPath(rawUri: string): string {
 
 function App() {
   const [documentText, setDocumentText] = useState<string | "loading">("loading");
-  const [config, setConfig] = useState<{
-    theme: string,
-    fontSize: number,
-    autoRefresh: boolean,
-    showToc: boolean,
-    isReadOnly: boolean,
-    defaultCodeLanguage: string,
-    spellCheck: boolean,
-    contentWidth: string,
-    showWordCount: boolean,
-    showFormattingToolbar: boolean
-  }>({
+  const [config, setConfig] = useState<EditorConfig>({
     theme: "auto",
     fontSize: 16,
     autoRefresh: true,
@@ -1144,170 +1135,15 @@ ${markdown}` : markdown;
             </button>
 
           {isSettingsOpen && (
-            <div className="glass-panel" style={{
-              position: 'absolute',
-              top: '100%',
-              right: 0,
-              marginTop: '4px',
-              backgroundColor: dropdownBg,
-              border: `1px solid ${dropdownBorder}`,
-              borderRadius: '8px',
-              padding: '16px',
-              zIndex: 1000,
-              minWidth: '350px',
-              color: textColor,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Editor Settings</h3>
-                <X size={16} cursor="pointer" onClick={() => setIsSettingsOpen(false)} style={{ opacity: 0.7 }} />
-              </div>
-
-              <div className="settings-group-title">Appearance</div>
-              
-              <div className="settings-item">
-                <div className="settings-item-label">
-                  <Palette size={14} opacity={0.7} />
-                  <span>Theme</span>
-                </div>
-                <select
-                  className="settings-select"
-                  value={config.theme}
-                  onChange={(e) => updateConfig('theme', e.target.value)}
-                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
-                >
-                  <option value="auto">Auto (VS Code)</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="nord">Nord</option>
-                  <option value="one-half-dark">One Half Dark</option>
-                  <option value="solarized-dark">Solarized</option>
-                  <option value="vintage">Vintage</option>
-                  <option value="gruvbox-dark">Gruvbox</option>
-                  <option value="tokyo-night-day">Tokyo Night</option>
-                  <option value="orca">Orca</option>
-                </select>
-              </div>
-
-              <div className="settings-item">
-                <div className="settings-item-label">
-                  <Type size={14} opacity={0.7} />
-                  <span>Font Size</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button 
-                    onClick={() => updateConfig('fontSize', Math.max(10, config.fontSize - 1))}
-                    style={{ padding: '2px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
-                  >-</button>
-                  <span style={{ fontSize: '12px', minWidth: '24px', textAlign: 'center' }}>{config.fontSize}</span>
-                  <button 
-                    onClick={() => updateConfig('fontSize', Math.min(32, config.fontSize + 1))}
-                    style={{ padding: '2px 8px', borderRadius: '4px', border: `1px solid ${dropdownBorder}`, background: bgColor, color: textColor, cursor: 'pointer' }}
-                  >+</button>
-                </div>
-              </div>
-
-              <div className="settings-item">
-                <div className="settings-item-label">
-                  <Maximize2 size={14} opacity={0.7} />
-                  <span>Content Width</span>
-                </div>
-                <select
-                  className="settings-select"
-                  value={config.contentWidth}
-                  onChange={(e) => updateConfig('contentWidth', e.target.value)}
-                  style={{ fontSize: '12px', padding: '4px', borderRadius: '4px', background: bgColor, color: textColor, border: `1px solid ${dropdownBorder}` }}
-                >
-                  <option value="narrow">Narrow</option>
-                  <option value="standard">Standard</option>
-                  <option value="full">Full Width</option>
-                </select>
-              </div>
-
-              <div className="settings-group-title">Behavior</div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <RefreshCcw size={14} opacity={0.7} />
-                  <span>Auto Refresh File</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.autoRefresh} onChange={(e) => updateConfig('autoRefresh', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <Wand2 size={14} opacity={0.7} />
-                  <span>Spell Check</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.spellCheck} onChange={(e) => updateConfig('spellCheck', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <FileText size={14} opacity={0.7} />
-                  <span>Show Word Count</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.showWordCount} onChange={(e) => updateConfig('showWordCount', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <Pilcrow size={14} opacity={0.7} />
-                  <span>Formatting Toolbar</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.showFormattingToolbar} onChange={(e) => updateConfig('showFormattingToolbar', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div className="settings-group-title">Document</div>
-
-              <div className="settings-item">
-                <label className="settings-item-label">
-                  <List size={14} opacity={0.7} />
-                  <span>Show Table of Contents</span>
-                </label>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={config.showToc} onChange={(e) => updateConfig('showToc', e.target.checked)} />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div style={{
-                marginTop: '16px',
-                paddingTop: '12px',
-                borderTop: `1px solid ${dropdownBorder}`
-              }}>
-                <button
-                  type="button"
-                  onClick={handleSaveSettings}
-                  disabled={isSavingSettings}
-                  className={`settings-save-btn ${saveSuccess ? 'saved' : ''}`}
-                >
-                  {saveSuccess ? (
-                    <>
-                      <Check size={14} strokeWidth={2.5} />
-                      <span>설정이 저장되었습니다</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save size={14} />
-                      <span>설정 저장</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-            </div>
+            <SettingsPanel
+              config={config}
+              updateConfig={updateConfig}
+              colors={{ bgColor, textColor, dropdownBg, dropdownBorder }}
+              onClose={() => setIsSettingsOpen(false)}
+              onSave={handleSaveSettings}
+              saving={isSavingSettings}
+              saved={saveSuccess}
+            />
           )}
           </div>
         </div>
