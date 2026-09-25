@@ -981,11 +981,14 @@ export function normalizeWordLists(html: string): string {
   const isListParagraph = (el: Element | null): el is HTMLElement =>
     !!el && el.tagName === 'P' && MSO_LIST_STYLE.test(el.getAttribute('style') ?? '');
   for (const first of [...doc.body.querySelectorAll('p')]) {
-    const prev = first.previousElementSibling;
-    if (!first.isConnected || !isListParagraph(first) || (isListParagraph(prev) && listIdOf(prev) === listIdOf(first))) continue;
-    // first부터 이어진, 같은 목록 ID의 문단을 한 목록으로 묶는다
+    // 앞 묶음에 들어간 문단은 이미 빠졌으므로, 남아 있는 목록 문단이 새 묶음의 첫 문단이다
+    if (!first.isConnected || !isListParagraph(first)) continue;
+    // first부터 이어진 목록 문단을 한 목록으로 묶는다. 첫 문단보다 깊은 수준은 목록 ID가 달라도 중첩으로 넣고,
+    // 같은 수준 이하에서 목록 ID가 바뀔 때만 끊는다(추가 검토 29: 번호 목록 안의 불릿 하위 항목)
+    const levelOf = (el: Element) => Number((el.getAttribute('style') ?? '').match(MSO_LIST_STYLE)![1]);
+    const firstLevel = levelOf(first);
     const group: HTMLElement[] = [];
-    for (let el: Element | null = first; isListParagraph(el) && listIdOf(el) === listIdOf(first); el = el.nextElementSibling) group.push(el);
+    for (let el: Element | null = first; isListParagraph(el) && (listIdOf(el) === listIdOf(first) || levelOf(el) > firstLevel); el = el.nextElementSibling) group.push(el);
     const stack: { level: number; list: HTMLElement }[] = [];
     for (const p of group) {
       const level = Number((p.getAttribute('style') ?? '').match(MSO_LIST_STYLE)![1]);

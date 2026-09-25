@@ -45,6 +45,11 @@ ok('서식은 남는다', blocksOf(doc(item('<b>굵게</b> 항목'))) === 'bulle
   const b = listTree('bullets-flat');
   ok('실제 Word: 불릿은 전처럼 불릿', (b.match(/bulletListItem/g) ?? []).length === 4 && !b.includes('numberedListItem'), b);
 }
+// 추가 검토 29: 하위 수준은 목록 ID가 달라도 같은 목록에 중첩한다(수준 1에서 ID가 바뀔 때만 끊는다)
+ok('목록 ID가 다른 하위 수준도 중첩', blocksOf(doc(`${item('one', '1.', 1, 'l1')}${item('sub', 'o', 2, 'l0')}${item('two', '2.', 1, 'l1')}`))
+  === 'numberedListItem:one[bulletListItem:sub], numberedListItem:two', blocksOf(doc(`${item('one', '1.', 1, 'l1')}${item('sub', 'o', 2, 'l0')}${item('two', '2.', 1, 'l1')}`)));
+ok('수준 1에서 목록 ID가 바뀌면 따로 묶는다', blocksOf(doc(`${item('a', '1.', 1, 'l0')}${item('b', '·', 1, 'l1')}`))
+  === 'numberedListItem:a, bulletListItem:b', blocksOf(doc(`${item('a', '1.', 1, 'l0')}${item('b', '·', 1, 'l1')}`)));
 {
   const plain = '<p>웹 <b>페이지</b></p><ul><li>보통 목록</li></ul>';
   ok('mso-list가 없는 HTML은 그대로', T.normalizeWordLists(plain) === plain, T.normalizeWordLists(plain));
