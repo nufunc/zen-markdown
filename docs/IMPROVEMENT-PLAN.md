@@ -2818,7 +2818,7 @@ Wingdings 불릿의 기호 글자가 영문 `l`이라, 기호 글자만으로는
 
 **결함 1(`ea95743`)**: 설계의 첫째 방법대로 비교 가상 문서 경로를 `.md.external`, `.md.mine`으로 끝낸다(`hostLogic.comparePath`). 경로가 `.md`로 끝나지 않아 언어가 plaintext가 되므로, `vscode.diff`를 열기 전에 두 문서를 열어 `setTextDocumentLanguage(doc, 'markdown')`로 마크다운 강조를 건다. 언어를 걸지 못하면 평문으로 비교한다. 탭 제목은 그대로다.
 호스트 테스트는 비교 경로가 `*.md`와 `*.llm.md`에 걸리지 않음을 본다. `path.matchesGlob`은 루트의 `@types/node`에 없어 정규식으로 봤다.
-**확인하지 못한 것**: VS Code 안에서 텍스트 비교 편집기가 열리고 바뀐 줄이 강조되는지는 이 세션에서 보지 않았다.
+VS Code 안의 확인은 아래 "VS Code 확인"에 적었다.
 
 **결함 2(`70e456c`)**: `normalizeWordLists`가 Word 클립보드 `<style>`의 `@list lN:levelM { … }`를 읽어, `mso-level-number-format:bullet`인 수준은 글머리, 그 밖(정의가 있고 bullet이 아님)은 번호 목록으로 정한다. 문단은 `mso-list:lN levelM`으로 정의를 찾는다. 정의가 없으면 예전처럼 기호 글자 규칙(`1.`, `a)`, `iv.`)으로 판정한다.
 함께 고친 것: 목록 ID가 다른 문단이 바로 붙어 있으면(예: `l0` 목록 바로 뒤 `l1` 목록) 한 목록으로 묶던 것을 따로 묶게 했다.
@@ -2832,6 +2832,14 @@ Wingdings 불릿의 기호 글자가 영문 `l`이라, 기호 글자만으로는
 `tests/paste.mts`에 3건을 더해 9건이다. 고치기 전 코드에서 `korean-numbering`과 `outline-nested` 2건이 실패했다. 추가 검토 23의 흉내 낸 HTML 사례와 E2E는 그대로 통과한다.
 
 **게이트**: 루트 20, 빌드, 린트 0, 단위 전부, E2E 60 통과.
+
+**VS Code 확인(2026-09-25, 기획 세션)**: HEAD `57fa31d`로 vsix를 스크래치 폴더에 빌드해(`vsce package --out`) 격리한 VS Code(`--user-data-dir`, `--extensions-dir`)에 설치해 봤다. 저장소 루트 vsix는 건드리지 않았다. 두 수정 모두 통과했다.
+
+- **Compare**: 텍스트 비교 편집기로 열린다.
+  - 탭 제목은 `images.md: External ↔ My edits`, 두 파일은 `images.md.external ↔ images.md.mine`, 언어 모드는 Markdown이다.
+  - 바뀐 줄이 강조된다(내 편집 줄 1, 외부 추가 줄 13). 비교 탭을 닫아도 충돌 막대가 남는다.
+  - 막대의 "Use external version"을 누르면 외부 줄이 반영되고 내 입력은 버려지며, 저장한 파일이 화면과 같다. "Keep my edits"는 먼저 한 점검에서 통과했다.
+- **Word 한국식 번호**: 실제 Word 클립보드(`①②` 목록, 사이 문단, `가)나)` 목록)를 붙여 넣으면 번호 목록 둘과 문단 하나가 된다. 저장 결과는 `1. 원문자 하나` / `2. 원문자 둘` / `사이 문단` / `1. 가나 하나` / `2. 가나 둘`이다.
 
 ## 이번 계획에 넣지 않은 것
 
