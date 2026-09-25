@@ -149,3 +149,51 @@ export function findEchoIndex(pending: readonly string[], documentText: string):
     const current = normalizeMd(documentText);
     return pending.findIndex(t => normalizeMd(t) === current);
 }
+
+/** webview/dist/assets의 파일 목록에서 해시가 붙은 엔트리 스크립트와 스타일을 찾는다. 없으면 해시 없는 이름 */
+export function findEntryAssets(files: readonly string[]): { script: string; style: string } {
+    return {
+        script: files.find(f => /^index-[\w-]+\.js$/.test(f)) ?? 'index.js',
+        style: files.find(f => /^index-[\w-]+\.css$/.test(f)) ?? 'index.css',
+    };
+}
+
+/**
+ * PDF 내보내기용 HTML. bundleCss는 빌드된 index-*.css 내용이고, capturedStyles는 웹뷰가 보낸 <style> 내용이다.
+ * 빌드본은 BlockNote와 Mantine 스타일을 <link>로 불러오는 index-*.css에 담으므로, 웹뷰의 <style>만 모으면
+ * 목록 들여쓰기, 불릿, 번호, 체크박스 배치가 빠진다(추가 검토 26). 번들 CSS를 먼저 넣고 웹뷰 스타일과 인쇄용 규칙을 뒤에 둔다.
+ */
+export function buildPrintHtml(o: { title: string; bundleCss: string; capturedStyles: string; bodyHtml: string }): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(o.title)}</title>
+<style>
+${o.bundleCss}
+</style>
+<style>
+${o.capturedStyles}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; background: #ffffff; }
+.bn-container, .bn-editor { background: transparent !important; color: inherit !important; font-size: inherit; }
+pre, code { background: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; }
+th { background: #f8f9fa; font-weight: 600; }
+img { max-width: 100%; height: auto; }
+@media print {
+    body { padding: 0; max-width: 100%; color: #000; }
+    @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
+    pre, table, blockquote, img, .bn-block-content, .bn-file-block { break-inside: avoid; page-break-inside: avoid; }
+    h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
+}
+</style>
+</head>
+<body class="bn-container">
+${o.bodyHtml}
+<script>
+window.onload = function() { window.print(); };
+</script>
+</body>
+</html>`;
+}

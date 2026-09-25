@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -360,37 +360,13 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                             const docName = document.uri.scheme === 'file' ? path.basename(document.uri.fsPath, '.md') : 'document';
                             const tmpDir = os.tmpdir();
                             const tmpHtmlPath = path.join(tmpDir, `zen_md_pdf_${Date.now()}_${docName}.html`);
-                            const bodyHtml = String(e.html || '');
-                            const capturedStyles = String(e.styles || '');
-                            const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>${escapeHtml(docName)}</title>
-<style>
-${capturedStyles}
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; background: #ffffff; }
-.bn-container, .bn-editor { background: transparent !important; color: inherit !important; font-size: inherit; }
-pre, code { background: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-th, td { border: 1px solid #ddd; padding: 8px 12px; }
-th { background: #f8f9fa; font-weight: 600; }
-img { max-width: 100%; height: auto; }
-@media print {
-    body { padding: 0; max-width: 100%; color: #000; }
-    @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
-    pre, table, blockquote, img, .bn-block-content, .bn-file-block { break-inside: avoid; page-break-inside: avoid; }
-    h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
-}
-</style>
-</head>
-<body class="bn-container">
-${bodyHtml}
-<script>
-window.onload = function() { window.print(); };
-</script>
-</body>
-</html>`;
+                            // 빌드된 번들 CSS(BlockNote, Mantine)를 읽어 넣는다. 웹뷰의 <style>에는 들어 있지 않다
+                            let bundleCss = '';
+                            try {
+                                const assetsDir = path.join(this.context.extensionPath, 'webview', 'dist', 'assets');
+                                bundleCss = fs.readFileSync(path.join(assetsDir, findEntryAssets(fs.readdirSync(assetsDir)).style), 'utf8');
+                            } catch { /* dist가 없으면 웹뷰 스타일만 쓴다 */ }
+                            const fullHtml = buildPrintHtml({ title: docName, bundleCss, capturedStyles: String(e.styles || ''), bodyHtml: String(e.html || '') });
                             await vscode.workspace.fs.writeFile(vscode.Uri.file(tmpHtmlPath), Buffer.from(fullHtml, 'utf8'));
                             
                             // 셸 문자열 조립 없이 VS Code가 기본 브라우저로 연다.
@@ -420,9 +396,7 @@ window.onload = function() { window.print(); };
         let scriptFile = 'index.js';
         let styleFile = 'index.css';
         try {
-            const files = fs.readdirSync(path.join(this.context.extensionPath, 'webview', 'dist', 'assets'));
-            scriptFile = files.find(f => /^index-[\w-]+\.js$/.test(f)) ?? scriptFile;
-            styleFile = files.find(f => /^index-[\w-]+\.css$/.test(f)) ?? styleFile;
+            ({ script: scriptFile, style: styleFile } = findEntryAssets(fs.readdirSync(path.join(this.context.extensionPath, 'webview', 'dist', 'assets'))));
         } catch { /* dist 미존재 시 해시 없는 파일명 폴백 */ }
 
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', scriptFile)).toString();

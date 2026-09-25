@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'path';
-import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex, findEntryAssets, buildPrintHtml } from './hostLogic';
 
 test('임의 문자열 필드는 기록하지 않고 개수만 남긴다', () => {
     const r = sanitizeDiag({ type: 'diag', ev: 'serialize_failed', message: '비밀 원고 첫 문단' });
@@ -163,4 +163,17 @@ test('에코 판별: 줄 끝과 끝 공백을 무시하고, 중간 항목과 일
     assert.equal(findEchoIndex([], 'x'), -1);
     // CRLF로 맞춰 넣은 문서도 웹뷰가 보낸 LF 텍스트와 에코로 판별된다
     assert.equal(findEchoIndex(['# T\n\nbody\n'], toDocumentEol('# T\n\nbody\n', '\r\n')), 0);
+});
+
+test('엔트리 파일 찾기: 해시가 붙은 index 스크립트와 스타일, 없으면 해시 없는 이름', () => {
+    assert.deepEqual(findEntryAssets(['cpp-1a.js', 'index-Ab_9.js', 'index-Zz-1.css', 'x.css']), { script: 'index-Ab_9.js', style: 'index-Zz-1.css' });
+    assert.deepEqual(findEntryAssets([]), { script: 'index.js', style: 'index.css' });
+});
+
+test('인쇄 HTML: 번들 CSS를 웹뷰 스타일보다 먼저 넣고 제목을 이스케이프한다', () => {
+    const html = buildPrintHtml({ title: '<b>문서</b>', bundleCss: '.bn-block-outer{BUNDLE}', capturedStyles: '.x{CAPTURED}', bodyHtml: '<div class="bn-editor">본문</div>' });
+    assert.ok(html.includes('<title>&lt;b&gt;문서&lt;/b&gt;</title>'));
+    const bundleAt = html.indexOf('{BUNDLE}'), capturedAt = html.indexOf('{CAPTURED}'), printAt = html.indexOf('@media print');
+    assert.ok(bundleAt > 0 && bundleAt < capturedAt && capturedAt < printAt, '번들 → 웹뷰 스타일 → 인쇄 규칙 차례');
+    assert.ok(html.includes('<div class="bn-editor">본문</div>'));
 });
