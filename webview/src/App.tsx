@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
+import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
@@ -17,6 +17,9 @@ import { buildEditorStyles } from './editorStyles';
 import { CodeBlockMenu } from './CodeBlockMenu';
 import { createSearchPlugin, searchPluginKey, SearchHighlightExtension } from './searchPlugin';
 
+// 마크다운으로 저장되지 않는 인라인 스타일(밑줄, 글자색, 배경색)은 스키마에서 뺀다. 단축키(Ctrl+U)와 붙여 넣기로도 들어오지 않는다(추가 검토 22)
+const { underline: _underline, textColor: _textColor, backgroundColor: _backgroundColor, ...markdownStyleSpecs } = defaultStyleSpecs;
+
 // 기본 코드 언어 설정(neatMdEditor.defaultCodeLanguage)을 반영하기 위해
 // 스키마는 모듈 상수가 아니라 에디터 생성 시점에 만든다
 const buildSchema = (defaultCodeLanguage: string) => BlockNoteSchema.create({
@@ -30,6 +33,7 @@ const buildSchema = (defaultCodeLanguage: string) => BlockNoteSchema.create({
     }),
     mermaid: MermaidBlock(),
   },
+  styleSpecs: markdownStyleSpecs,
 });
 
 const insertDateItem = (editor: any) => ({

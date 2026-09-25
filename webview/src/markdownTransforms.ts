@@ -392,6 +392,11 @@ export function quotePlaceholderIndex(block: any): number | null {
 /** 자식이 있는 인용(구조 인용)인가 */
 export const isStructuredQuote = (block: any): boolean => block?.type === 'quote' && (block.children?.length ?? 0) > 0;
 
+/** BlockNote는 구분선을 `***`로 쓴다. 원문 대부분이 쓰는 `---`로 바꾼다. 평문 `***`는 이스케이프되어 이 모양이 아니다(추가 검토 22) */
+export function dividersAsDashes(md: string): string {
+  return mapOutsideCodeFences(md, part => part.replace(/^( *)\*\*\*$/gm, '$1---'));
+}
+
 /** 직렬화 결과에서 표식을 붙인 목록 항목을 `> ` 인용으로 되돌린다. 항목 글자가 인용 첫 문단이고 들여 쓴 자식이 나머지다 */
 export function restoreQuoteStructures(md: string): string {
   if (!md.includes(QUOTE_STRUCT_MARK)) return md;

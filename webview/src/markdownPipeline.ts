@@ -26,6 +26,7 @@ import {
   extractQuoteStructures,
   quotePlaceholderIndex,
   restoreQuoteStructures,
+  dividersAsDashes,
   quoteJoinIds,
 } from './markdownTransforms';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
@@ -120,5 +121,5 @@ export function makeLiteralVerifier(parse: (markdown: string) => any[]) {
  *  toMarkdown은 에디터의 blocksToMarkdownLossy다. 목록 항목 안의 목록 아닌 자식은 들여 써서 항목 안에 남긴다.
  *  표는 칸을 채우지 않고 쓰며, tables(블록 ID별 원문 표)가 있으면 바뀌지 않은 행과 구분 행을 원문대로 쓴다. */
 export function blocksToMarkdown(blocks: any[], toMarkdown: (blocks: any[]) => string, quoteJoins?: Set<string>, tables?: Map<string, TableOriginal>): string {
-  return compactTables(restoreQuoteStructures(serializeKeepingListChildren(processBlocksToMarkdown(blocks, quoteJoins), toMarkdown)), blocks, tables);
+  return compactTables(restoreQuoteStructures(dividersAsDashes(serializeKeepingListChildren(processBlocksToMarkdown(blocks, quoteJoins), toMarkdown))), blocks, tables);
 }

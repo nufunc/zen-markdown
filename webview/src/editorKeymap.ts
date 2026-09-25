@@ -162,14 +162,14 @@ export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockT
       return;
     }
 
-    // Cmd/Ctrl + Shift + M : Divider (inserted as '---' paragraph)
+    // Cmd/Ctrl + Shift + M : Divider. 구분선 블록을 넣는다(글자 '---' 문단은 저장하면 \---가 되어 구분선이 아니었다)
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'm') {
       e.preventDefault();
       e.stopPropagation();
       try {
         const cursor = editor.getTextCursorPosition();
         if (cursor) {
-          editor.insertBlocks([{ type: 'paragraph', content: '---' }], cursor.block, 'after');
+          editor.insertBlocks([{ type: 'divider' }], cursor.block, 'after');
         }
       } catch {}
       return;
@@ -188,21 +188,6 @@ export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockT
       e.preventDefault();
       e.stopPropagation();
       try { editor.toggleStyles({ strike: true }); } catch {}
-      return;
-    }
-
-    // Cmd/Ctrl + Shift + H : Highlight
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h') {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const active = editor.getActiveStyles();
-        if (active.backgroundColor === 'yellow') {
-          editor.removeStyles({ backgroundColor: 'yellow' });
-        } else {
-          editor.addStyles({ backgroundColor: 'yellow' });
-        }
-      } catch {}
       return;
     }
 
