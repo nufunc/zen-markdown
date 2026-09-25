@@ -99,3 +99,53 @@ window.addEventListener('unhandledrejection', function (event) {
     window.__zenShowError('UNHANDLED PROMISE REJECTION:', String(event.reason));
 });
 `;
+
+/** 문서의 [start, end) 구간을 text로 바꾸는 치환 하나 */
+export interface TextEdit { start: number; end: number; text: string }
+
+const isHighSurrogate = (c: number) => c >= 0xd800 && c <= 0xdbff;
+const isLowSurrogate = (c: number) => c >= 0xdc00 && c <= 0xdfff;
+
+/**
+ * oldText를 newText로 만드는 치환 하나를 앞뒤 공통 부분을 떼고 계산한다. 같으면 null.
+ * 서로게이트 쌍(이모지 등) 가운데에서 자르지 않는다. 전체 치환 대신 이 범위만 바꾸면
+ * 실행 취소 한 번이 편집 한 번이고, 같은 파일을 연 텍스트 에디터의 커서도 튀지 않는다.
+ */
+export function minimalEdit(oldText: string, newText: string): TextEdit | null {
+    if (oldText === newText) return null;
+    let start = 0;
+    const maxStart = Math.min(oldText.length, newText.length);
+    while (start < maxStart && oldText.charCodeAt(start) === newText.charCodeAt(start)) start++;
+    if (start > 0 && isHighSurrogate(oldText.charCodeAt(start - 1))) start--;
+    let oldEnd = oldText.length;
+    let newEnd = newText.length;
+    while (oldEnd > start && newEnd > start && oldText.charCodeAt(oldEnd - 1) === newText.charCodeAt(newEnd - 1)) {
+        oldEnd--;
+        newEnd--;
+    }
+    if (oldEnd < oldText.length && isLowSurrogate(oldText.charCodeAt(oldEnd)) && oldEnd > start) {
+        oldEnd++;
+        newEnd++;
+    }
+    return { start, end: oldEnd, text: newText.slice(start, newEnd) };
+}
+
+/**
+ * 웹뷰는 줄 끝을 LF로 보낸다. 문서가 CRLF면 치환 범위를 계산하기 전에 CRLF로 맞춘다.
+ * 그러지 않으면 첫 줄 끝부터 두 텍스트가 달라져 편집할 때마다 문서 전체가 치환된다(P1-3).
+ */
+export function toDocumentEol(text: string, eol: '\n' | '\r\n'): string {
+    return eol === '\r\n' ? text.replace(/\r?\n/g, '\r\n') : text;
+}
+
+/** 줄 끝과 앞뒤 공백을 무시하고 견준다. 에코 판별과 웹뷰의 같은 이름 함수가 같은 규칙을 쓴다 */
+export const normalizeMd = (s: string) => s.replace(/\r\n/g, '\n').trim();
+
+/**
+ * 문서 변경이 웹뷰가 보낸 텍스트의 반영(에코)인지 본다. 보낸 텍스트 목록에서 지금 문서와 같은 항목의 위치를 돌려주고,
+ * 없으면 -1이다. applyEdit이 비동기라 연속 편집이 쌓이므로, 호출한 쪽은 찾은 위치까지 소비한다.
+ */
+export function findEchoIndex(pending: readonly string[], documentText: string): number {
+    const current = normalizeMd(documentText);
+    return pending.findIndex(t => normalizeMd(t) === current);
+}

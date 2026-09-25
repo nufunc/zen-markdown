@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT, minimalEdit, toDocumentEol, findEchoIndex } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -126,9 +126,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
             if (e.document.uri.toString() !== document.uri.toString()) {
                 return;
             }
-            const normalizeMd = (s: string) => s.replace(/\r\n/g, '\n').trim();
-            const currentText = normalizeMd(document.getText());
-            const echoIdx = pendingWebviewTexts.findIndex(t => normalizeMd(t) === currentText);
+            const echoIdx = findEchoIndex(pendingWebviewTexts, document.getText());
             if (echoIdx !== -1) {
                 // 웹뷰 편집이 문서에 반영된 echo — 해당 지점까지 소비하고 되쏘지 않음
                 pendingWebviewTexts.splice(0, echoIdx + 1);
@@ -459,26 +457,17 @@ window.onload = function() { window.print(); };
     // 전체 치환 대신 공통 앞/뒤를 제외한 최소 범위만 교체해
     // undo 단위와 대용량 문서 성능을 개선함. 적용 성공 여부를 반환.
     private updateTextDocument(document: vscode.TextDocument, newContent: string): Thenable<boolean> {
-        const oldContent = document.getText();
-        if (oldContent === newContent) {
+        // 웹뷰의 LF 텍스트를 문서의 줄 끝에 맞춘 뒤 범위를 계산한다(CRLF 문서에서 바뀐 줄만 치환)
+        const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+        const change = minimalEdit(document.getText(), toDocumentEol(newContent, eol));
+        if (!change) {
             return Promise.resolve(true);
-        }
-        let start = 0;
-        const maxStart = Math.min(oldContent.length, newContent.length);
-        while (start < maxStart && oldContent.charCodeAt(start) === newContent.charCodeAt(start)) {
-            start++;
-        }
-        let oldEnd = oldContent.length;
-        let newEnd = newContent.length;
-        while (oldEnd > start && newEnd > start && oldContent.charCodeAt(oldEnd - 1) === newContent.charCodeAt(newEnd - 1)) {
-            oldEnd--;
-            newEnd--;
         }
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
             document.uri,
-            new vscode.Range(document.positionAt(start), document.positionAt(oldEnd)),
-            newContent.slice(start, newEnd)
+            new vscode.Range(document.positionAt(change.start), document.positionAt(change.end)),
+            change.text
         );
         return vscode.workspace.applyEdit(edit);
     }
