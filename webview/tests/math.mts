@@ -78,5 +78,40 @@ same('math 펜스는 그대로', String.raw`$$ 없이
   ok('다른 곳을 고쳐도 수식은 그대로, 수식 밖은 이스케이프', s === String.raw`질량 $a\_b + \{x\}$ 끝\*별\*`, JSON.stringify(s));
 }
 
+// 추가 검토 29: 수식 처리가 링크 주소, 이미지, 위키링크, 다른 펜스, 인용, 들여쓴 코드를 건드리지 않는다
+same('링크 주소 안의 $는 수식이 아니다', String.raw`[users](https://graph.microsoft.com/v1.0/users?$select=display_name&$top=5)`);
+{
+  const { blocks } = open(String.raw`[users](https://graph.microsoft.com/v1.0/users?$select=display_name&$top=5)`);
+  const href = blocks[0].content.find((c: any) => c.type === 'link')?.href;
+  ok('링크 주소 모델이 원문 그대로', href === 'https://graph.microsoft.com/v1.0/users?$select=display_name&$top=5', JSON.stringify(href));
+}
+same('이미지 주소 안의 $', String.raw`![a](https://x.com/i.png?$w=1_2&$h=3)`);
+same('이미지 대체 텍스트 안의 수식', String.raw`![$a_b$](i.png)`);
+same('위키링크 안의 수식 모양', String.raw`[[$a_b$]]`);
+{
+  // 물결 펜스 안의 ```$$ 예시는 코드 내용 그대로다. 펜스가 백틱 넷으로 바뀌는 것은 BlockNote 직렬화의 기존 표기 차이다
+  const md = '~~~md\n```$$\nx\n```\n~~~';
+  const { ctx, blocks } = open(md);
+  const s1 = save(blocks, ctx);
+  ok('다른 펜스 안의 $$ 펜스 예시', texts(blocks) === 'codeBlock:```$$\nx\n```' && s1.includes('```$$\nx\n```') && texts(open(s1).blocks) === texts(blocks), JSON.stringify({ saved: s1, model: texts(blocks) }));
+}
+same('블록 수식 안의 링크 모양과 부등호', '$$\na < b, [x](y z)\n$$');
+same('인용 안 블록 수식', String.raw`> $$
+> a_1 \\ b
+> $$`);
+{
+  // 네 칸 들여쓴 $$는 수식이 아니라 들여쓴 코드다. BlockNote가 들여쓴 코드를 문단으로 읽는 것은 README의 기존 한계다
+  const md = '문단\n\n    $$\n    x_1\n    $$\n\n다음\n\n\t$$\n\ty\n\t$$';
+  const { ctx, blocks } = open(md);
+  const s1 = save(blocks, ctx);
+  // 예전에는 들여쓴 ```$$ 펜스가 인라인 코드 한 줄로 뭉개졌다
+  ok('공백 넷이나 탭으로 들여쓴 $$는 수식 블록이 되지 않는다', !texts(blocks).includes('codeBlock') && !s1.includes('`'), JSON.stringify({ saved: s1, model: texts(blocks) }));
+}
+same('목록 안의 블록 수식', String.raw`- 항목
+
+  $$
+  x_1
+  $$`);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

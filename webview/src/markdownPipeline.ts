@@ -97,15 +97,16 @@ export function markdownToBlocks(markdown: string, ctx: PipelineContext, parse: 
 
 /** 에디터가 내놓은 마크다운 -> 디스크에 쓸 마크다운 (위 체인의 역순) */
 export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): string {
-  return serializeWikilinks(
+  // 수식 되돌리기와 알림 표식은 가장 바깥에 건다. 안쪽 변환(링크 꺾쇠 등)이 수식 본문을 건드리지 않게 한다(추가 검토 29)
+  return alertMarkerLines(restoreMathBlocks(serializeWikilinks(
     restoreLinkText(restoreHtml(
       restoreBlankLines(
-        fromWebviewImageUrls(alertMarkerLines(restoreMathBlocks(restoreQuoteJoins(markdown))), ctx.docBaseUri)
+        fromWebviewImageUrls(restoreQuoteJoins(markdown), ctx.docBaseUri)
       )
     )),
     ctx.wikilinkNames,
     ctx.wikilinkOrder
-  );
+  )));
 }
 
 /** 평문 이스케이프 판정기(setLiteralVerifier에 넘긴다): 마크다운 한 문단을 앱과 같은 체인으로 다시 열어

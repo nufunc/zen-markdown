@@ -169,17 +169,32 @@ const escapeLiteralText = (text: string, atLineStart: boolean, atBlockEnd = true
 };
 
 /** blockStart: 블록 첫머리를 줄 머리로 볼지. 목록 항목과 헤딩의 첫머리는 이미 그 블록의 표식 뒤라 문단만 해당한다. */
-// --- 수식(추가 검토 27) ---
+// --- 수식(추가 검토 27, 29) ---
 // 인라인 수식은 평문으로 두되 안쪽 글자를 원문 그대로 지킨다. 파싱 전에 안쪽 ASCII 문장부호를 이스케이프해 마크다운이
 // \_를 _로, \{를 {로 풀지 않게 하고, 저장할 때는 평문 이스케이프가 수식 구간을 건너뛴다. 표식 문자를 쓰지 않는다.
 // 블록 수식($$ 줄로 감싼 것)은 언어 이름이 $$인 코드 블록으로 읽고 저장할 때 $$ 줄로 되돌린다(줄 끝 \와 이스케이프가 붙지 않는다).
 // 여는 $ 뒤와 닫는 $ 앞은 공백이 아니고, 닫는 $ 뒤는 숫자가 아니다($5 and $10은 수식이 아니다). \$는 여는 $가 아니다.
 const INLINE_MATH = /(?<![\\$])\$\$(?=\S)([^$\n]*?\S)\$\$|(?<![\\$])\$(?=[^\s$])([^$\n]*?[^\s$\\]|[^\s$\\])\$(?![\d$])/g;
-const MATH_BLOCK_EDGE = /^(\s*)\$\$\s*$/;
-const MATH_FENCE_OPEN = /^(\s*)```\$\$\s*$/;
-const MATH_FENCE_CLOSE = /^\s*```\s*$/;
+// 수식 이스케이프를 걸지 않는 구간: 이미지 전체, 링크 주소, 위키링크. 주소와 파일 이름의 $는 수식이 아니다(추가 검토 29)
+const NOT_MATH_SPANS = /!\[[^\]\n]*\]\((?:<[^<>\n]*>|[^()\s]*)[^)\n]*\)|\]\((?:<[^<>\n]*>|[^()\s]*)|\[\[[^\]\n]*\]\]/g;
+// 인용 접두(> )와 들여쓰기를 받는다
+const MATH_BLOCK_EDGE = /^((?: {0,3}> ?)*)([ \t]*)\$\$[ \t]*$/;
+const FENCE_LINE = /^((?: {0,3}> ?)*[ \t]*)(`{3,}|~{3,})(.*)$/;
+const LIST_ITEM_START = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]/;
 // BlockNote 파서가 이스케이프로 푸는 문장부호만 이스케이프한다. ^ $ , : ; = ? @ 같은 것 앞의 \는 파서가 글자로 남긴다(실측)
 const escapeMathBody = (body: string) => body.replace(/[\\!#()*+\-.>[\]_`{|}~]/g, '\\$&');
+const indentWidth = (ws: string) => [...ws].reduce((n, c) => n + (c === '\t' ? 4 - (n % 4) : 1), 0);
+
+/** 들여쓴 $$ 줄이 수식인가: 세 칸까지는 수식이고, 더 깊으면 목록 항목 아래일 때만 수식이다(그 밖은 들여쓴 코드) */
+const mathEdgeAllowed = (lines: string[], i: number, quote: string, indent: number): boolean => {
+  if (indent <= 3) return true;
+  for (let k = i - 1; k >= 0; k--) {
+    const m = lines[k].match(/^((?: {0,3}> ?)*)([ \t]*)(.*)$/)!;
+    if (m[1] !== quote || !m[3].trim()) continue;
+    if (indentWidth(m[2]) < indent) return LIST_ITEM_START.test(m[2] + m[3]);
+  }
+  return false;
+};
 
 /** 파싱 전: $$ 블록을 ```$$ 코드 블록으로, 인라인 수식 안쪽 문장부호를 이스케이프한다 */
 export function protectMath(md: string): string {
@@ -188,32 +203,46 @@ export function protectMath(md: string): string {
     const lines = part.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const open = lines[i].match(MATH_BLOCK_EDGE);
-      if (!open) continue;
+      if (!open || !mathEdgeAllowed(lines, i, open[1], indentWidth(open[2]))) continue;
       let j = i + 1;
-      while (j < lines.length && !MATH_BLOCK_EDGE.test(lines[j])) j++;
+      while (j < lines.length && lines[j].match(MATH_BLOCK_EDGE)?.[1] !== open[1]) j++;
       if (j >= lines.length) break;
-      lines[i] = open[1] + '```$$';
-      lines[j] = lines[j].match(MATH_BLOCK_EDGE)![1] + '```';
+      lines[i] = open[1] + open[2] + '```$$';
+      lines[j] = lines[j].match(MATH_BLOCK_EDGE)![1] + lines[j].match(MATH_BLOCK_EDGE)![2] + '```';
       i = j;
     }
     return lines.join('\n');
   });
-  return mapOutsideCode(blocks, part => part.replace(INLINE_MATH, (_m, display: string | undefined, inline: string | undefined) =>
-    display !== undefined ? `$$${escapeMathBody(display)}$$` : `$${escapeMathBody(inline!)}$`));
+  const escapeInline = (text: string) => text.replace(INLINE_MATH, (_m, display: string | undefined, inline: string | undefined) =>
+    display !== undefined ? `$$${escapeMathBody(display)}$$` : `$${escapeMathBody(inline!)}$`);
+  return mapOutsideCode(blocks, part => {
+    let out = '', last = 0;
+    for (const m of part.matchAll(NOT_MATH_SPANS)) {
+      out += escapeInline(part.slice(last, m.index)) + m[0];
+      last = m.index! + m[0].length;
+    }
+    return out + escapeInline(part.slice(last));
+  });
 }
 
-/** 저장 뒤: ```$$ 코드 블록을 $$ 줄로 되돌린다 */
+/** 저장 뒤: ```$$ 코드 블록을 $$ 줄로 되돌린다. 다른 펜스(백틱, 물결)가 열린 동안에는 찾지 않는다 */
 export function restoreMathBlocks(md: string): string {
   if (!md.includes('```$$')) return md;
   const lines = md.split('\n');
+  let other: { ch: string; len: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
-    const open = lines[i].match(MATH_FENCE_OPEN);
-    if (!open) continue;
+    const f = lines[i].match(FENCE_LINE);
+    if (!f) continue;
+    if (other) {
+      if (f[2][0] === other.ch && f[2].length >= other.len && !f[3].trim()) other = null;
+      continue;
+    }
+    if (f[2] !== '```' || f[3].trim() !== '$$') { other = { ch: f[2][0], len: f[2].length }; continue; }
     let j = i + 1;
-    while (j < lines.length && !MATH_FENCE_CLOSE.test(lines[j])) j++;
+    while (j < lines.length && !/^\s*```\s*$/.test(lines[j].replace(/^(?: {0,3}> ?)*/, ''))) j++;
     if (j >= lines.length) break;
-    lines[i] = open[1] + '$$';
-    lines[j] = open[1] + '$$';
+    lines[i] = f[1] + '$$';
+    lines[j] = f[1] + '$$';
     i = j;
   }
   return lines.join('\n');
