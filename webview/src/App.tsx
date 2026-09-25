@@ -3,7 +3,7 @@ import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs,
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
-import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeWordLists, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeWordLists, headingSlugs, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, expandQuoteStructures, markdownToBlocks } from './markdownPipeline';
 import type { PipelineContext } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
@@ -179,6 +179,20 @@ function App() {
       if (!href) return;
       e.preventDefault();
       e.stopPropagation();
+      // #으로 시작하는 링크는 같은 문서의 헤딩으로 스크롤한다(GitHub 방식 슬러그). 없으면 아무것도 하지 않는다
+      if (href.startsWith('#')) {
+        let want = href.slice(1);
+        try { want = decodeURIComponent(want); } catch { /* 그대로 견준다 */ }
+        const heads: { id: string; text: string }[] = [];
+        (window as any).__editor?.forEachBlock((b: any) => {
+          if (b.type === 'heading') heads.push({ id: b.id, text: (b.content ?? []).map((c: any) => c.text ?? (c.content ?? []).map((cc: any) => cc.text).join('')).join('') });
+          return true;
+        });
+        const slugs = headingSlugs(heads.map(h => h.text));
+        const hit = heads[slugs.indexOf(want.toLowerCase())];
+        if (hit) document.querySelector(`[data-id="${hit.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       const base = docBaseUriRef.current;
       const rel = base && href.startsWith(base + '/') ? href.slice(base.length + 1) : href;
       vscode.postMessage({ type: 'openLink', href: rel });

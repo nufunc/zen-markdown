@@ -885,6 +885,20 @@ export function normalizeWordLists(html: string): string {
   return doc.body.innerHTML;
 }
 
+/**
+ * GitHub 방식 헤딩 슬러그: 소문자로 바꾸고 글자, 숫자, 공백, '_', '-'만 남긴 뒤 공백을 '-'로 바꾼다.
+ * 같은 슬러그가 다시 나오면 GitHub처럼 -1, -2를 붙인다. [아래로](#두-번째-절) 같은 문서 안 링크를 따라갈 때 쓴다(추가 검토 27).
+ */
+export function headingSlugs(texts: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return texts.map(text => {
+    const base = text.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}-${n}`;
+  });
+}
+
 export function parseTableFromClipboardText(text: string): string | null {
   if (!text || !text.includes('\n')) return null;
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);

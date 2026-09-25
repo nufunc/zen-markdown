@@ -277,6 +277,8 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
                                 return;
                             }
                             if (!docDir) return;
+                            // #헤딩처럼 파일 경로가 없는 링크는 여기서 할 일이 없다(웹뷰가 같은 문서 안에서 스크롤한다)
+                            if (!href.split('#')[0]) return;
                             // 문서 폴더 또는 워크스페이스 내부만 허용 (../ 탈출 차단)
                             const roots = [docDir, ...(vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath)];
                             const targetPath = resolveLinkPath(docDir, href, roots);

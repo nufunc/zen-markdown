@@ -96,5 +96,12 @@ for (const [md, href, text] of [
   ok('위키링크로 만들 수 없는 글자면 일반 링크로', !bad.includes('[[') && bad.includes('(<my doc.md>)'), JSON.stringify(bad));
 }
 
+// GitHub 방식 헤딩 슬러그(추가 검토 27): 같은 문서 안 #헤딩 링크를 따라갈 때 쓴다
+{
+  const got = T.headingSlugs(['두 번째 절', 'Hello, World!', 'API v2.0 (beta)', '두 번째 절', '  앞뒤 공백  ', 'snake_case-이름']);
+  const want = ['두-번째-절', 'hello-world', 'api-v20-beta', '두-번째-절-1', '앞뒤-공백', 'snake_case-이름'];
+  ok('헤딩 슬러그: 소문자, 문장부호 제거, 공백은 -, 같은 이름은 -1', JSON.stringify(got) === JSON.stringify(want), JSON.stringify(got));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

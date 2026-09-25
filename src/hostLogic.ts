@@ -57,7 +57,10 @@ export function sanitizeDiag(msg: Record<string, unknown>): SanitizedDiag | null
  * roots(문서 폴더와 워크스페이스 폴더) 밖이면 null. ../로 빠져나가는 링크를 막는다.
  */
 export function resolveLinkPath(docDir: string, href: string, roots: string[]): string | null {
-    const targetPath = path.resolve(docDir, decodeURIComponent(href.split('#')[0]));
+    // #헤딩처럼 경로가 비면 파일이 아니다(같은 문서 안 링크는 웹뷰가 처리한다). 예전에는 문서 폴더로 풀려 폴더가 열렸다
+    const filePart = href.split('#')[0];
+    if (!filePart) return null;
+    const targetPath = path.resolve(docDir, decodeURIComponent(filePart));
     const inScope = roots.some(root => {
         const rel = path.relative(root, targetPath);
         return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));

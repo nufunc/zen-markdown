@@ -60,6 +60,9 @@ test('openLink 경로: 공백과 폴더, 헤딩 조각, 퍼센트 인코딩을 �
     assert.equal(resolveLinkPath(dir, 'a.md#Heading Two', roots), path.join(dir, 'a.md'));
     assert.equal(resolveLinkPath(dir, 'my%20doc.md', roots), path.join(dir, 'my doc.md'));
     assert.equal(resolveLinkPath(dir, '../outside.md', roots), null);
+    // 같은 문서 안 헤딩 링크는 파일이 아니다(추가 검토 27)
+    assert.equal(resolveLinkPath(dir, '#두-번째-절', roots), null);
+    assert.equal(resolveLinkPath(dir, '', roots), null);
     // 인코딩한 ../와 문서 폴더 밖의 절대 경로도 막는다(P1-3)
     assert.equal(resolveLinkPath(dir, '%2e%2e/outside.md', roots), null);
     assert.equal(resolveLinkPath(dir, '%2E%2E%2Foutside.md', roots), null);
