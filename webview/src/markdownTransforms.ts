@@ -823,6 +823,46 @@ export function extractFrontmatter(text: string): { frontmatter: string, content
 export const GITHUB_ALERT_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
 
 // 엑셀, TSV, CSV 등 구분자 텍스트를 마크다운 표 문자열로 파싱해준다.
+// Word는 목록을 ul/ol이 아니라 mso-list 스타일이 붙은 문단으로 내보낸다(`<p style="mso-list:l0 level1 lfo1">` 안에
+// 글머리 기호나 번호를 `<span style="mso-list:Ignore">`로 넣는다). 그대로 넘기면 `·  항목` 글자 문단이 된다(추가 검토 23).
+// 이어진 mso-list 문단을 level대로 중첩한 ul/ol로 묶고 기호 span을 지운다. mso-list가 없는 HTML은 그대로 돌려준다.
+const MSO_LIST_STYLE = /mso-list\s*:\s*(?!\s*ignore)[^;"']*level(\d+)/i;
+const MSO_IGNORE = /mso-list\s*:\s*ignore/i;
+const ORDERED_MARKER = /^(?:\d+|[a-z]|[ivxlcdm]+)[.)]$/i;
+
+export function normalizeWordLists(html: string): string {
+  if (!/mso-list/i.test(html)) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const isListParagraph = (el: Element | null): el is HTMLElement =>
+    !!el && el.tagName === 'P' && MSO_LIST_STYLE.test(el.getAttribute('style') ?? '');
+  for (const first of [...doc.body.querySelectorAll('p')]) {
+    if (!first.isConnected || !isListParagraph(first) || isListParagraph(first.previousElementSibling)) continue;
+    // first부터 이어진 목록 문단을 한 목록으로 묶는다
+    const group: HTMLElement[] = [];
+    for (let el: Element | null = first; isListParagraph(el); el = el.nextElementSibling) group.push(el);
+    const stack: { level: number; list: HTMLElement }[] = [];
+    for (const p of group) {
+      const level = Number((p.getAttribute('style') ?? '').match(MSO_LIST_STYLE)![1]);
+      const ignore = [...p.querySelectorAll('span')].find(s => MSO_IGNORE.test(s.getAttribute('style') ?? ''));
+      const marker = (ignore?.textContent ?? '').replace(/[\s ]+/g, '');
+      ignore?.remove();
+      while (stack.length && stack[stack.length - 1].level > level) stack.pop();
+      if (!stack.length || stack[stack.length - 1].level < level) {
+        const list = doc.createElement(ORDERED_MARKER.test(marker) ? 'ol' : 'ul');
+        const parentLi = stack.length ? stack[stack.length - 1].list.lastElementChild : null;
+        if (parentLi) parentLi.appendChild(list);
+        else p.before(list);
+        stack.push({ level, list });
+      }
+      const li = doc.createElement('li');
+      while (p.firstChild) li.appendChild(p.firstChild);
+      stack[stack.length - 1].list.appendChild(li);
+      p.remove();
+    }
+  }
+  return doc.body.innerHTML;
+}
+
 export function parseTableFromClipboardText(text: string): string | null {
   if (!text || !text.includes('\n')) return null;
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);

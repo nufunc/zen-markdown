@@ -3,7 +3,7 @@ import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs,
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
-import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeWordLists, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, expandQuoteStructures, markdownToBlocks } from './markdownPipeline';
 import type { PipelineContext } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
@@ -580,7 +580,13 @@ function App() {
             _tiptapOptions: {
               extensions: [SearchHighlightExtension],
             },
-            pasteHandler: ({ defaultPasteHandler }) => {
+            pasteHandler: ({ event, editor: ed, defaultPasteHandler }) => {
+              // Word 목록(mso-list 문단)은 ul/ol로 묶어 넘긴다
+              const html = event.clipboardData?.getData('text/html');
+              if (html && /mso-list/i.test(html)) {
+                ed.pasteHTML(normalizeWordLists(html));
+                return true;
+              }
               return defaultPasteHandler({
                 plainTextAsMarkdown: true,
                 prioritizeMarkdownOverHTML: false
