@@ -2947,6 +2947,8 @@ VS Code 안의 확인은 아래 "VS Code 확인"에 적었다.
 - **테스트**: E2E 9건(69건), `tests/table.mts` 4건(20건).
 - **게이트**: 커밋마다 루트 20, 빌드, 린트 0, 단위 전부, E2E 통과.
 
+**VS Code 확인(2026-09-25, plan 세션)**: HEAD `ead7df2`로 빌드한 vsix를 격리한 VS Code에 설치해 6을 확인했다. sample.ts에서 복사한 `computeValue`를 문장 가운데에 붙이면 `앞 문장 computeValue뒤 문장`이 되고, .md에서 복사한 낱말도 코드 블록 없이 글자로 들어간다.
+
 ### 추가 검토 31. 화면, 설정, VS Code 연동
 
 | # | 재현 | 지금 | 기대 | 위치 |
@@ -3011,9 +3013,16 @@ VS Code 안의 확인은 아래 "VS Code 확인"에 적었다.
 
 - **기대와 다르게 둔 것**: 4b의 기대 "1건"은 2건으로 고쳤다. `편집기 편집 기능 편집`에서 단어 `편집`은 둘째와 넷째 두 곳이다.
 - **테마 색**: Solarized 글자 `#b8c4c4`와 인라인 코드 `#ee8350`, Vintage 글자 `#262626`와 코드 `#80510a`, Tokyo Night Day 글자 `#1f2438`와 코드 `#a51545`, Dark와 One Half Dark 코드 `#f28b94`. 아홉 테마 모두 본문, 인라인 코드, 인용, 표, 머리 단추의 대비가 4.5 이상이다(최저 Solarized 머리 단추 4.76).
-- **VS Code 확인 필요**: 1, 2, 3은 plan 세션이 VS Code 안에서 다시 확인한다.
 - **테스트**: E2E 21건 추가(`link-input`, `find-options`, `header`, `theme`, `image`), `tests/stats.mts` 7건.
 - **게이트**: 커밋마다 루트 20, 빌드, 린트 0, 단위 전부, E2E 통과(마지막 96).
+
+**VS Code 확인(2026-09-25, plan 세션)**: HEAD `ead7df2`로 빌드한 vsix를 격리한 VS Code에 설치해 1, 1b, 2, 3, 5, 6을 확인했다. 새 결함은 나오지 않았다.
+
+- **1, 1b**: 선택한 글자에 링크 단추를 누르면 "Enter link URL" 입력창이 뜨고, 주소를 넣고 Enter를 누르면 `[문장](https://example.com)`으로 저장된다. 선택 없이 줄 끝에서 Ctrl+K를 누르면 같은 입력창이 뜨고 `[https://zen.test/a](https://zen.test/a)`로 저장된다.
+- **2**: PDF 임시 HTML의 이미지 주소 셋이 모두 `file:///C:/...` 주소이고, Edge 인쇄 미리보기에 이미지 셋이 나온다.
+- **3**: VS Code 테마를 Default High Contrast Light로 두고 auto로 열면 밝은 테마다.
+- **5**: 머리 막대에 `paste.md`처럼 파일 이름이 보인다.
+- **6**: 링크를 넣은 뒤 단어 수가 `5 words • 27 chars`에서 `6 words • 46 chars`로 바뀐다.
 
 ## 이번 계획에 넣지 않은 것
 
