@@ -169,6 +169,71 @@ const escapeLiteralText = (text: string, atLineStart: boolean, atBlockEnd = true
 };
 
 /** blockStart: 블록 첫머리를 줄 머리로 볼지. 목록 항목과 헤딩의 첫머리는 이미 그 블록의 표식 뒤라 문단만 해당한다. */
+// --- 수식(추가 검토 27) ---
+// 인라인 수식은 평문으로 두되 안쪽 글자를 원문 그대로 지킨다. 파싱 전에 안쪽 ASCII 문장부호를 이스케이프해 마크다운이
+// \_를 _로, \{를 {로 풀지 않게 하고, 저장할 때는 평문 이스케이프가 수식 구간을 건너뛴다. 표식 문자를 쓰지 않는다.
+// 블록 수식($$ 줄로 감싼 것)은 언어 이름이 $$인 코드 블록으로 읽고 저장할 때 $$ 줄로 되돌린다(줄 끝 \와 이스케이프가 붙지 않는다).
+// 여는 $ 뒤와 닫는 $ 앞은 공백이 아니고, 닫는 $ 뒤는 숫자가 아니다($5 and $10은 수식이 아니다). \$는 여는 $가 아니다.
+const INLINE_MATH = /(?<![\\$])\$\$(?=\S)([^$\n]*?\S)\$\$|(?<![\\$])\$(?=[^\s$])([^$\n]*?[^\s$\\]|[^\s$\\])\$(?![\d$])/g;
+const MATH_BLOCK_EDGE = /^(\s*)\$\$\s*$/;
+const MATH_FENCE_OPEN = /^(\s*)```\$\$\s*$/;
+const MATH_FENCE_CLOSE = /^\s*```\s*$/;
+// BlockNote 파서가 이스케이프로 푸는 문장부호만 이스케이프한다. ^ $ , : ; = ? @ 같은 것 앞의 \는 파서가 글자로 남긴다(실측)
+const escapeMathBody = (body: string) => body.replace(/[\\!#()*+\-.>[\]_`{|}~]/g, '\\$&');
+
+/** 파싱 전: $$ 블록을 ```$$ 코드 블록으로, 인라인 수식 안쪽 문장부호를 이스케이프한다 */
+export function protectMath(md: string): string {
+  if (!md.includes('$')) return md;
+  const blocks = mapOutsideCodeFences(md, part => {
+    const lines = part.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const open = lines[i].match(MATH_BLOCK_EDGE);
+      if (!open) continue;
+      let j = i + 1;
+      while (j < lines.length && !MATH_BLOCK_EDGE.test(lines[j])) j++;
+      if (j >= lines.length) break;
+      lines[i] = open[1] + '```$$';
+      lines[j] = lines[j].match(MATH_BLOCK_EDGE)![1] + '```';
+      i = j;
+    }
+    return lines.join('\n');
+  });
+  return mapOutsideCode(blocks, part => part.replace(INLINE_MATH, (_m, display: string | undefined, inline: string | undefined) =>
+    display !== undefined ? `$$${escapeMathBody(display)}$$` : `$${escapeMathBody(inline!)}$`));
+}
+
+/** 저장 뒤: ```$$ 코드 블록을 $$ 줄로 되돌린다 */
+export function restoreMathBlocks(md: string): string {
+  if (!md.includes('```$$')) return md;
+  const lines = md.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const open = lines[i].match(MATH_FENCE_OPEN);
+    if (!open) continue;
+    let j = i + 1;
+    while (j < lines.length && !MATH_FENCE_CLOSE.test(lines[j])) j++;
+    if (j >= lines.length) break;
+    lines[i] = open[1] + '$$';
+    lines[j] = open[1] + '$$';
+    i = j;
+  }
+  return lines.join('\n');
+}
+
+/** 평문 이스케이프를 수식 구간 밖에만 건다. 수식 안쪽은 원문 글자 그대로 쓴다 */
+const escapeOutsideMath = (text: string, atLineStart: boolean, isLast: boolean): string => {
+  if (!text.includes('$')) return escapeLiteralText(text, atLineStart, isLast);
+  let out = '', last = 0;
+  for (const m of text.matchAll(INLINE_MATH)) {
+    const gap = text.slice(last, m.index);
+    if (gap) out += escapeLiteralText(gap, atLineStart && last === 0, false);
+    out += m[0];
+    last = m.index! + m[0].length;
+  }
+  if (last === 0) return escapeLiteralText(text, atLineStart, isLast);
+  const tail = text.slice(last);
+  return out + (tail ? escapeLiteralText(tail, false, isLast) : '');
+};
+
 const escapeLiteralMarkdown = (content: any[], blockStart = false): any[] => {
   let atLineStart = blockStart;
   return content.map((c: any, i: number) => {
@@ -180,7 +245,7 @@ const escapeLiteralMarkdown = (content: any[], blockStart = false): any[] => {
       atLineStart = c.text.endsWith('\n');
       return c;
     }
-    const text = escapeLiteralText(c.text, atLineStart, i === content.length - 1);
+    const text = escapeOutsideMath(c.text, atLineStart, i === content.length - 1);
     atLineStart = c.text.endsWith('\n');
     return { ...c, text };
   });

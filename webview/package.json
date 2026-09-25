@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 5174",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node test-blanklines.mjs && tsx test-transforms.mts && tsx test-roundtrip.mts && tsx test-roundtripcheck.mts && tsx tests/spec-roundtrip.mts && tsx tests/line-merge.mts && tsx tests/reopen.mts && tsx tests/quote.mts && tsx tests/literal.mts && tsx tests/list.mts && tsx tests/wikilink.mts && tsx tests/table.mts && tsx tests/paste.mts",
+    "test": "node test-blanklines.mjs && tsx test-transforms.mts && tsx test-roundtrip.mts && tsx test-roundtripcheck.mts && tsx tests/spec-roundtrip.mts && tsx tests/line-merge.mts && tsx tests/reopen.mts && tsx tests/quote.mts && tsx tests/literal.mts && tsx tests/list.mts && tsx tests/wikilink.mts && tsx tests/table.mts && tsx tests/paste.mts && tsx tests/math.mts",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },

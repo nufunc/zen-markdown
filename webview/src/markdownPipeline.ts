@@ -28,6 +28,8 @@ import {
   restoreQuoteStructures,
   dividersAsDashes,
   alertMarkerLines,
+  protectMath,
+  restoreMathBlocks,
   quoteJoinIds,
 } from './markdownTransforms';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
@@ -51,7 +53,7 @@ export interface PipelineContext {
 
 /** 디스크의 마크다운 -> 에디터가 파싱할 마크다운 */
 export function toEditorMarkdown(markdown: string, ctx: PipelineContext): string {
-  const normalized = joinListItemLines(splitQuoteParagraphs(extractQuoteStructures(markdown.replace(/\r\n/g, '\n'), ctx.quoteInners ??= []), ctx.quoteJoins ??= []));
+  const normalized = joinListItemLines(splitQuoteParagraphs(extractQuoteStructures(protectMath(markdown.replace(/\r\n/g, '\n')), ctx.quoteInners ??= []), ctx.quoteJoins ??= []));
   recordTables(normalized, ctx.tables ??= []);
   return parseWikilinks(
     preserveMarkdownLineBreaks(
@@ -98,7 +100,7 @@ export function fromEditorMarkdown(markdown: string, ctx: PipelineContext): stri
   return serializeWikilinks(
     restoreLinkText(restoreHtml(
       restoreBlankLines(
-        fromWebviewImageUrls(alertMarkerLines(restoreQuoteJoins(markdown)), ctx.docBaseUri)
+        fromWebviewImageUrls(alertMarkerLines(restoreMathBlocks(restoreQuoteJoins(markdown))), ctx.docBaseUri)
       )
     )),
     ctx.wikilinkNames,
