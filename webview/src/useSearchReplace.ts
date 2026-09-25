@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { searchPluginKey } from './searchPlugin';
+import { searchPluginKey, buildSearchRegex, regexReplacement } from './searchPlugin';
 import { vscode } from './vscode';
 
 // 치환 시 원래 자리의 인라인 서식(굵게, 링크 등)을 이어받는다.
@@ -120,15 +120,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
         let replacement = replaceQuery;
         if (isRegex) {
           try {
-            const flags = matchCase ? '' : 'i';
-            let pattern = searchQuery;
-            if (wholeWord) {
-              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
-              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
-              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
-            }
-            const regex = new RegExp(pattern, flags);
-            replacement = curMatch.matchText.replace(regex, replaceQuery);
+            replacement = regexReplacement(buildSearchRegex(searchState.query.normalize('NFC'), searchState), curMatch, replaceQuery);
           } catch {}
         }
         const tr = replaceRange(state.tr, state, curMatch.from, curMatch.to, replacement);
@@ -152,17 +144,10 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
       if (searchState && searchState.matches.length > 0) {
         const matches = [...searchState.matches].reverse();
         let tr = state.tr;
-        const flags = matchCase ? '' : 'i';
         let regex: RegExp | null = null;
         if (isRegex) {
           try {
-            let pattern = searchQuery;
-            if (wholeWord) {
-              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
-              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
-              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
-            }
-            regex = new RegExp(pattern, flags);
+            regex = buildSearchRegex(searchState.query.normalize('NFC'), searchState);
           } catch {}
         }
 
@@ -170,7 +155,7 @@ export function useSearchReplace(editor: any, onDocumentChanged: () => void) {
           let replacement = replaceQuery;
           if (regex && m.matchText) {
             try {
-              replacement = m.matchText.replace(regex, replaceQuery);
+              replacement = regexReplacement(regex, m, replaceQuery);
             } catch {}
           }
           tr = replaceRange(tr, state, m.from, m.to, replacement);

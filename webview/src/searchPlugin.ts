@@ -9,7 +9,36 @@ export interface SearchState {
   isRegex: boolean;
   regexError: string | null;
   activeIndex: number;
-  matches: { from: number; to: number; matchText: string }[];
+  /** text와 index는 찾은 블록의 글자와 그 안의 위치다. 정규식 바꾸기가 같은 실행 결과로 바꾼 글자를 만든다 */
+  matches: SearchMatch[];
+}
+
+export type SearchMatch = { from: number; to: number; matchText: string; text: string; index: number };
+
+// 단어 단위는 유니코드 글자 경계로 판정한다. \b는 ASCII만 보아 한글 단어 안에서도 걸렸다(추가 검토 31)
+const WORD_CHAR = '[\\p{L}\\p{N}_]';
+const STARTS_WORD = new RegExp('^' + WORD_CHAR, 'u');
+const ENDS_WORD = new RegExp(WORD_CHAR + '$', 'u');
+
+/** 찾기 정규식. 찾기와 바꾸기가 같은 것을 쓴다. 잘못된 정규식이면 예외를 던진다 */
+export function buildSearchRegex(query: string, o: { matchCase: boolean; wholeWord: boolean; isRegex: boolean }): RegExp {
+  let pattern = o.isRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let flags = o.matchCase ? 'g' : 'gi';
+  if (o.wholeWord) {
+    const left = STARTS_WORD.test(query) ? `(?<!${WORD_CHAR})` : '';
+    const right = ENDS_WORD.test(query) ? `(?!${WORD_CHAR})` : '';
+    pattern = `${left}${pattern}${right}`;
+    flags += 'u';
+  }
+  return new RegExp(pattern, flags);
+}
+
+/** 찾은 자리에서 정규식을 다시 실행해 바꾼 글자를 만든다. 뒤보기와 ^ 같은 앞뒤 문맥, $1 캡처가 찾을 때와 같다 */
+export function regexReplacement(regex: RegExp, m: SearchMatch, replaceQuery: string): string {
+  const sticky = new RegExp(regex.source, regex.flags.replace('g', '') + 'y');
+  sticky.lastIndex = m.index;
+  const replaced = m.text.replace(sticky, replaceQuery);
+  return replaced.slice(m.index, replaced.length - (m.text.length - m.index - m.matchText.length));
 }
 
 export const searchPluginKey = new PluginKey<SearchState>('searchHighlightPlugin');
@@ -69,21 +98,11 @@ export function createSearchPlugin(): Plugin<SearchState> {
 
         // 문서 내용이 변경되었거나 검색 메타데이터가 변경된 경우 매칭 재계산
         if (metaChanged || tr.docChanged) {
-          const matches: { from: number; to: number; matchText: string }[] = [];
-          const flags = matchCase ? 'g' : 'gi';
+          const matches: SearchMatch[] = [];
           let regex: RegExp;
 
           try {
-            let pattern = normalizedQuery;
-            if (!isRegex) {
-              pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            }
-            if (wholeWord) {
-              const boundaryLeft = /^\w/.test(pattern) ? '\\b' : '';
-              const boundaryRight = /\w$/.test(pattern) ? '\\b' : '';
-              pattern = `${boundaryLeft}${pattern}${boundaryRight}`;
-            }
-            regex = new RegExp(pattern, flags);
+            regex = buildSearchRegex(normalizedQuery, { matchCase, wholeWord, isRegex });
           } catch (err: any) {
             return {
               query,
@@ -133,7 +152,7 @@ export function createSearchPlugin(): Plugin<SearchState> {
                 const lastIdx = match.index + match[0].length - 1;
                 const to = charPos[lastIdx] + 1;
                 if (from !== undefined && to !== undefined) {
-                  matches.push({ from, to, matchText: match[0] });
+                  matches.push({ from, to, matchText: match[0], text, index: match.index });
                 }
               }
             }

@@ -1,0 +1,43 @@
+import { test, expect, Page } from '@playwright/test';
+import { load, lastChange } from './harness';
+
+// 추가 검토 31: 유니코드 단어 단위, 정규식 바꾸기
+const find = (page: Page) => page.locator('input[placeholder="Find"]');
+const count = (page: Page) => page.locator('.find-count-label');
+const option = (page: Page, label: string) => page.locator(`[aria-label="${label}"]`);
+const openReplace = async (page: Page) => {
+  await page.keyboard.press('Control+h');
+  await expect(page.locator('input[placeholder="Replace"]')).toBeFocused();
+};
+
+test('31-4b 단어 단위는 한글 같은 유니코드 글자 경계로 판정한다', async ({ page }) => {
+  await load(page, '편집기 편집 기능 편집\n\nfoo food foo_bar foo\n');
+  await page.keyboard.press('Control+f');
+  await option(page, 'Match Whole Word').click();
+  await find(page).fill('편집');
+  await expect(page.locator('.search-highlight')).toHaveCount(2);
+  await find(page).fill('foo');
+  await expect(page.locator('.search-highlight')).toHaveCount(2);
+});
+
+test('31-4c 정규식 뒤보기(lookbehind)로 모두 바꾸기', async ({ page }) => {
+  await load(page, 'price $10 and $20\n');
+  await openReplace(page);
+  await option(page, 'Use Regular Expression').click();
+  await find(page).fill(String.raw`(?<=\$)\d+`);
+  await page.locator('input[placeholder="Replace"]').fill('99');
+  await expect(page.locator('.search-highlight')).toHaveCount(2);
+  await page.locator('[title^="Replace All"]').click();
+  await expect.poll(() => lastChange(page)).toBe('price $99 and $99\n');
+});
+
+test('31-4c 정규식 캡처와 한 건 바꾸기', async ({ page }) => {
+  await load(page, 'date 2024-01-15\n');
+  await openReplace(page);
+  await option(page, 'Use Regular Expression').click();
+  await find(page).fill(String.raw`(\d{4})-(\d{2})-(\d{2})`);
+  await page.locator('input[placeholder="Replace"]').fill('$3/$2/$1');
+  await expect(count(page)).toContainText('1');
+  await page.locator('[title="Replace (Enter)"]').click();
+  await expect.poll(() => lastChange(page)).toBe('date 15/01/2024\n');
+});
