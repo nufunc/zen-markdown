@@ -125,6 +125,18 @@ Raw 버튼 대신 에디터 밖 아무 곳이나 눌러도 같은 경로를 탄�
 
 **완료 기준**: 단계마다 `npm run build`, `npm run lint`, `npm test`, E2E가 모두 통과한다. 마지막에 `App.tsx`가 1,500줄 아래이고 oxlint 경고가 0건이다.
 
+**결과(2026-09-25)**: 네 단계를 네 커밋으로 나눴다. 위 순서는 Raw 모드와 속성 패널을 지우기 전에 정한 것이라, 지금 구조에서 스스로 닫힌 덩어리 순서로 다시 골랐다. 동작은 바꾸지 않았고 단계마다 게이트(루트, 빌드, 린트, 단위, E2E 57)를 통과했다.
+
+| 단계 | 커밋 | 옮긴 것 | App.tsx |
+|---|---|---|---|
+| 1 | `e7cd20b` | 찾기와 바꾸기 위젯과 아이콘 → `FindReplaceWidget.tsx` | 1,950 → 1,744 |
+| 2 | `1b30d65` | 설정 패널 → `SettingsPanel.tsx`(설정 타입 `EditorConfig`도 여기) | 1,744 → 1,580 |
+| 3 | `3636965` | 목차 패널 → `TocPanel.tsx`, 오른쪽 클릭 메뉴 → `EditorContextMenu.tsx` | 1,580 → 1,390 |
+| 4 | `6c63b2c` | 코드 블록 떠 있는 버튼 효과 → `useCodeBlockButtons.ts`, 슬래시 메뉴 항목 → `slashMenuItems.tsx` | 1,390 → 1,226 |
+
+oxlint 경고 2건(두 useEffect의 의존성 배열)은 1단계에서 없앴다. 훅이 돌려주는 ref와 setter를 배열에 더했고, 렌더 사이에 바뀌지 않는 값이라 동작은 같다. 지금 경고는 0건이다.
+메뉴는 본문에서만 열리므로 3단계에서 에디터가 있을 때만 그리게 했다(붙여넣기 항목의 editor 검사를 이 조건으로 옮김).
+
 ### P1-3. 확장 호스트에 테스트를 붙인다
 
 호스트 쪽에서 틀리면 파일이 망가지거나 워크스페이스 밖이 열리는 로직이 셋이다. 셋을 순수 함수로 떼어 `src/hostLogic.ts`에 두고
@@ -154,6 +166,32 @@ Raw 버튼 대신 에디터 밖 아무 곳이나 눌러도 같은 경로를 탄�
 Raw 모드에서만 쓰는 CodeMirror 언어 패키지들이다. 잰 결과를 보고 줄일지 정한다.
 
 **완료 기준**: 구성 측정 결과를 이 문서에 표로 남긴다. 줄이는 작업은 그 결과를 보고 따로 정한다.
+
+**결과(2026-09-25, HEAD `6c63b2c`)**: `vite build --sourcemap`을 임시 폴더에 만들고, 소스맵(`source-map-js`, 이미 설치됨)으로 엔트리의 바이트를 원본 패키지별로 나눴다. 엔트리는 1,384.76KB(gzip 417.62KB)이고 소스맵 기준 합계는 1,352KB다.
+
+| 원본 | KB | 비율 |
+|---|---|---|
+| @blocknote/core | 236.3 | 17.5% |
+| react-dom | 174.6 | 12.9% |
+| @mantine/core | 135.6 | 10.0% |
+| 앱 코드(webview/src) | 111.0 | 8.2% |
+| @blocknote/react | 103.3 | 7.6% |
+| prosemirror-view | 95.9 | 7.1% |
+| @tiptap/core | 80.1 | 5.9% |
+| prosemirror-model | 43.6 | 3.2% |
+| @shikijs/vscode-textmate | 41.1 | 3.0% |
+| @floating-ui/react | 33.4 | 2.5% |
+| prosemirror-tables | 32.9 | 2.4% |
+| prosemirror-transform | 30.5 | 2.3% |
+| @shikijs/core | 20.3 | 1.5% |
+| @blocknote/mantine | 18.5 | 1.4% |
+| @lezer/common | 18.2 | 1.3% |
+| 나머지 48개 | 177.1 | 13.1% |
+
+- **앱 코드 111KB의 큰 파일**: `editorStyles.ts` 25.7KB, `App.tsx` 22.2KB, `markdownTransforms.ts` 17.4KB, `SettingsPanel.tsx` 5.7KB, `FindReplaceWidget.tsx` 5.5KB.
+- **CodeMirror 계열 28.8KB**: `@lezer/common` 18.2, `@lezer/highlight` 4.8, `@codemirror/merge` 4.4, `w3c-keyname` 1.5. `@lezer/common`과 `@lezer/highlight`는 `prosemirror-highlight`(BlockNote 의존성)와 `@codemirror/merge`가 함께 쓴다. 어느 쪽이 엔트리에 끌어왔는지는 가르지 않았다.
+- **엔트리 밖 청크**: 129개, 합계 6,265KB. 큰 것은 Shiki 언어 문법(cpp 817KB, ruby 287KB 등)과 Mermaid(cytoscape 425KB 등)이고, 해당 코드 블록이나 다이어그램이 있을 때만 불러온다.
+- 엔트리의 약 64%가 BlockNote, React, Mantine, ProseMirror, tiptap 같은 에디터 바탕이다. 줄이는 작업은 이 결과를 보고 따로 정한다.
 
 ## P2. 문서와 정리
 
@@ -2555,8 +2593,8 @@ HTML 내보내기와 위키링크(`[[문서]]`) 자동완성은 `MEMORY.md`의 �
 | 5 | P1-1 `saveToHost` 정리 (완료: 개편 1의 6번에서 함수가 빠져 해소됨, 따로 커밋하지 않음) | |
 | 6 | P2 문서와 이스케이프 (완료, `a609135`) | `docs:`, `fix:` |
 | 7 | P1-3 호스트 테스트 | `test:` |
-| 8 | P1-2 App.tsx 분리 네 단계 | `refactor:` 네 개 |
-| 9 | P1-5 번들 측정 | `docs:` |
+| 8 | P1-2 App.tsx 분리 네 단계 (완료, `e7cd20b` `1b30d65` `3636965` `6c63b2c`) | `refactor:` 네 개 |
+| 9 | P1-5 번들 측정 (완료) | `docs:` |
 | 10 | P1-4 CI (제외: 사용자 결정, 로컬에서만 검사) | `chore:` |
 | 11 | 추가 검토 2: 코드 블록 하이라이트 증분 갱신 (3번 다음에 처리함) (완료, `db564b6`) | `perf:` |
 | 12 | 추가 검토 3: BlockNote 0.54.2로 올리기 (11번 다음에 처리함) (완료, `3045c78`) | `perf:` |
