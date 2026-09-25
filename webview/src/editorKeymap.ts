@@ -9,9 +9,11 @@ export interface EditorKeymapDeps {
   handleUndo: () => void;
   handleRedo: () => void;
   applyBlockTypeToSelection: (type: string, props?: Record<string, any>) => void;
+  /** 링크 주소 입력창을 연다 */
+  openLinkInput: () => void;
 }
 
-export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection }: EditorKeymapDeps) {
+export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection, openLinkInput }: EditorKeymapDeps) {
   return (e: React.KeyboardEvent) => {
     if (!editor) return;
     // 프론트매터·TOC 등 본문 밖 입력칸의 키 입력은 본문 단축키로 해석하지 않는다
@@ -54,6 +56,13 @@ export function createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockT
       } else {
         handleUndo();
       }
+      return;
+    }
+    // Cmd/Ctrl + K : 링크 입력창(추가 검토 31)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      e.stopPropagation();
+      openLinkInput();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {

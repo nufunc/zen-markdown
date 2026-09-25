@@ -57,6 +57,7 @@ Parts you did not edit are saved exactly as in the original file. The items belo
 | Images and paragraphs after a blank line following a nested list, emphasis inside HTML comments, and strikethrough combined with code in table cells are not shown exactly. An escaped bracket at the start of link text (`\[[표준\] 제목](url)`) moves into the link when you edit it | The visible text stays the same; only the underline grows |
 | Frontmatter is not shown in the block editor | It is kept as is; edit it in the text editor |
 | Shift+Tab on the first list item inside a blockquote moves that item out of the quote | Press Ctrl+Z to undo |
+| Markdown link syntax typed directly (`[a](b.md)`) stays as literal text and is saved escaped (`\[a\](b.md)`) | Use the link button or Ctrl+K to create a link |
 
 ## 🛠️ Building from Source
 

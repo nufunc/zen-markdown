@@ -12,6 +12,9 @@ import { TocPanel } from './TocPanel';
 import { EditorContextMenu } from './EditorContextMenu';
 import { handlePaste, pastePlainText } from './pasteHandling';
 import { docStats } from './docStats';
+import { LinkInput } from './LinkInput';
+import { captureLinkTarget, applyLink } from './linkActions';
+import type { LinkTarget } from './linkActions';
 import { customSlashMenuItems } from './slashMenuItems';
 import { useCodeBlockButtons } from './useCodeBlockButtons';
 import type { EditorConfig } from './SettingsPanel';
@@ -787,7 +790,10 @@ ${markdown}` : markdown;
     vscode.postMessage({ type: 'redo' });
   };
 
-  const handleKeyDownCapture = createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection });
+  // 링크 주소 입력창. 도구 막대 단추와 Ctrl+K가 연다(추가 검토 31)
+  const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
+  const openLinkInput = () => setLinkTarget(captureLinkTarget(editor));
+  const handleKeyDownCapture = createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection, openLinkInput });
 
   const updateConfig = (key: string, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -985,14 +991,7 @@ ${markdown}` : markdown;
             <Quote size={13} />
           </button>
           <div style={{ width: '1px', height: '12px', background: dropdownBorder, margin: '0 2px' }} />
-          <button onMouseDown={e => e.preventDefault()} onClick={() => {
-            const url = prompt('Enter link URL:');
-            if (url) {
-              try { editor.createLink(url); editor.focus(); } catch {}
-            } else {
-              try { editor.focus(); } catch {}
-            }
-          }} className="tb-btn" data-tooltip="Insert Link">
+          <button onMouseDown={e => e.preventDefault()} onClick={openLinkInput} className="tb-btn" data-tooltip="Insert Link (Ctrl+K)">
             <Link size={13} />
           </button>
           <button onMouseDown={e => e.preventDefault()} onClick={() => {
@@ -1028,6 +1027,13 @@ ${markdown}` : markdown;
         {/* 찾기 창은 편집 영역 위쪽 오른편에 둔다. 머리 막대의 단추를 가리지 않는다(추가 검토 31) */}
         {showSearchReplace && (
           <FindReplaceWidget search={search} onClose={() => { setShowSearchReplace(false); editor?.focus?.(); }} />
+        )}
+        {linkTarget && (
+          <LinkInput
+            target={linkTarget}
+            onSubmit={url => { setLinkTarget(null); try { applyLink(editor, linkTarget, url); } catch { /* 편집기가 바뀌었으면 건너뛴다 */ } }}
+            onClose={() => { setLinkTarget(null); editor?.focus?.(); }}
+          />
         )}
         <style>{editorCss}</style>
         {quoteJoinCss && <style>{quoteJoinCss}</style>}
