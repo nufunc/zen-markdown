@@ -65,6 +65,9 @@ export function TocPanel({ headings, colors, onClose }: {
 
       {/* TOC 계층 목록 (Tree View) */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {headings.length === 0 && (
+          <div style={{ padding: '4px 8px', opacity: 0.6, fontSize: '11.5px' }}>헤딩이 없습니다</div>
+        )}
         {headings.map(h => (
           <div
             key={h.id}

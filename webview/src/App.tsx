@@ -1054,7 +1054,7 @@ ${markdown}` : markdown;
         {quoteJoinCss && <style>{quoteJoinCss}</style>}
 
         {/* 좌측 사이드바 TOC 패널 (Orca 스타일) */}
-        {showToc && headings.length > 0 && (
+        {showToc && (
           <TocPanel headings={headings} colors={{ headerBg, dropdownBorder }} onClose={() => setShowToc(false)} />
         )}
 

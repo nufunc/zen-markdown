@@ -48,3 +48,10 @@ test('31 TOC 단추는 사용자 설정을 바꾸지 않고 이 편집기의 목
   await config(page, { showToc: true });
   await expect(page.locator('[data-tooltip="Close TOC"]')).toBeVisible();
 });
+
+test('31-8 헤딩이 없는 문서에서 TOC 단추를 누르면 안내 한 줄을 보인다', async ({ page }) => {
+  await load(page, 'body only\n');
+  await config(page, { showToc: false });
+  await page.locator('[data-tooltip="Toggle Table of Contents"]').click();
+  await expect(page.getByText('헤딩이 없습니다')).toBeVisible();
+});
