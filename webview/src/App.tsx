@@ -3,18 +3,19 @@ import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs,
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
 import type { WikilinkOccurrence, TableOriginal } from './markdownTransforms';
-import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, parseTableFromClipboardText, normalizeWordLists, headingSlugs, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
+import { quoteJoinIds, tableOriginalIds, setLiteralVerifier, processBlocksFromMarkdown, preserveMarkdownLineBreaks, extractFrontmatter, normalizeWordLists, headingSlugs, normalizeOrderedListNumbers, normalizeUnorderedListBullets } from './markdownTransforms';
 import { toEditorMarkdown, fromEditorMarkdown, makeLiteralVerifier, blocksToMarkdown, expandQuoteStructures, markdownToBlocks } from './markdownPipeline';
 import type { PipelineContext } from './markdownPipeline';
 import { useSearchReplace } from './useSearchReplace';
 import { SettingsPanel } from './SettingsPanel';
 import { TocPanel } from './TocPanel';
 import { EditorContextMenu } from './EditorContextMenu';
+import { handlePaste, pastePlainText } from './pasteHandling';
 import { customSlashMenuItems } from './slashMenuItems';
 import { useCodeBlockButtons } from './useCodeBlockButtons';
 import type { EditorConfig } from './SettingsPanel';
 import { FindReplaceWidget } from './FindReplaceWidget';
-import { isEditorElement, isPlainInputTarget } from './domTargets';
+import { isEditorElement } from './domTargets';
 import { createEditorKeymap } from './editorKeymap';
 import { useDocumentSync, normalizeMd } from './useDocumentSync';
 import { compareRoundtrip } from './roundtripCheck';
@@ -298,44 +299,6 @@ function App() {
     };
   }, []);
 
-  // 클립보드 엑셀/TSV/CSV 붙여넣기 시 마크다운 표 자동 변환 생성
-  useEffect(() => {
-    const handlePaste = async (e: ClipboardEvent) => {
-      if (!editor) return;
-      // 검색창·프론트매터 입력칸의 붙여넣기를 가로채지 않는다
-      if (isPlainInputTarget(e.target)) return;
-      // 코드블록 안에서는 CSV가 표가 아니라 코드다
-      if ((e.target as HTMLElement)?.closest?.('[data-content-type="codeBlock"]')) return;
-      const text = e.clipboardData?.getData('text/plain');
-      if (!text) return;
-
-      const tableMd = parseTableFromClipboardText(text);
-      if (tableMd) {
-        e.preventDefault();
-        try {
-          const blocks = await editor.tryParseMarkdownToBlocks(tableMd);
-          if (blocks && blocks.length > 0) {
-            const cur = editor.getTextCursorPosition();
-            if (cur && cur.block) {
-              const isBlockEmpty = !cur.block.content || (Array.isArray(cur.block.content) && cur.block.content.every((c: any) => c.type === 'text' && !c.text));
-              if (isBlockEmpty && cur.block.type === 'paragraph') {
-                editor.replaceBlocks([cur.block], blocks);
-              } else {
-                editor.insertBlocks(blocks, cur.block, 'after');
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Failed to parse TSV/CSV table paste', err);
-          diag('table_paste_failed');
-        }
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [editor]);
-
   // 코드블록 호버 시 Copy 버튼과 케밥(⋮) 메뉴 버튼
   useCodeBlockButtons(setCodeMenu);
 
@@ -404,18 +367,10 @@ function App() {
             _tiptapOptions: {
               extensions: [SearchHighlightExtension],
             },
-            pasteHandler: ({ event, editor: ed, defaultPasteHandler }) => {
-              // Word 목록(mso-list 문단)은 ul/ol로 묶어 넘긴다
-              const html = event.clipboardData?.getData('text/html');
-              if (html && /mso-list/i.test(html)) {
-                ed.pasteHTML(normalizeWordLists(html));
-                return true;
-              }
-              return defaultPasteHandler({
-                plainTextAsMarkdown: true,
-                prioritizeMarkdownOverHTML: false
-              });
-            },
+            // 평문(CRLF 정규화, TSV 표), HTML(Word 목록, pre만 있는 코드)은 앱이 붙여 넣는다
+            pasteHandler: ({ event, editor: ed, defaultPasteHandler }) =>
+              (event.clipboardData && handlePaste(ed, event.clipboardData, normalizeWordLists)) ||
+              defaultPasteHandler({ plainTextAsMarkdown: true, prioritizeMarkdownOverHTML: false }),
             editorProps: {
               attributes: {
                 spellcheck: configRef.current.spellCheck ? "true" : "false"
@@ -1230,6 +1185,7 @@ ${markdown}` : markdown;
           onUndo={handleUndo}
           onRedo={handleRedo}
           onFind={() => setShowSearchReplace(true)}
+          onPaste={text => editor && pastePlainText(editor, text)}
           onClose={() => setContextMenu(null)}
         />
       )}

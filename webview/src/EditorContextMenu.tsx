@@ -1,13 +1,15 @@
 // 본문 오른쪽 클릭 메뉴(VS Code 모양): 실행 취소, 다시 실행, 잘라내기, 복사, 붙여넣기, 찾기
 import { Undo2, Redo2, Scissors, Copy, Clipboard, Search } from 'lucide-react';
 
-export function EditorContextMenu({ at, canUndo, canRedo, onUndo, onRedo, onFind, onClose }: {
+export function EditorContextMenu({ at, canUndo, canRedo, onUndo, onRedo, onFind, onPaste, onClose }: {
   at: { x: number; y: number };
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onFind: () => void;
+  /** Ctrl+V와 같은 평문 붙여 넣기 */
+  onPaste: (text: string) => void;
   onClose: () => void;
 }) {
   return (
@@ -84,9 +86,7 @@ export function EditorContextMenu({ at, canUndo, canRedo, onUndo, onRedo, onFind
           onClick={async () => {
             try {
               const text = await navigator.clipboard.readText();
-              if (text) {
-                document.execCommand('insertText', false, text);
-              }
+              if (text) onPaste(text);
             } catch {}
             onClose();
           }}
