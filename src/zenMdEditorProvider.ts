@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DiagnosticsLog, docHash } from './diagnosticsLog';
-import { sanitizeDiag, resolveLinkPath, safeImageName } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT } from './hostLogic';
 
 // 웹뷰가 설정을 바꿀 수 있는 키 허용목록 (임의 키 주입 방지)
 const ALLOWED_CONFIG_KEYS = [
@@ -368,7 +368,7 @@ export class ZenMdEditorProvider implements vscode.CustomTextEditorProvider {
 <html>
 <head>
 <meta charset="UTF-8">
-<title>${docName}</title>
+<title>${escapeHtml(docName)}</title>
 <style>
 ${capturedStyles}
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 40px; max-width: 860px; margin: 0 auto; line-height: 1.6; color: #222; background: #ffffff; }
@@ -450,14 +450,7 @@ window.onload = function() { window.print(); };
             </head>
             <body>
                 <div id="root"></div>
-                <script nonce="${nonce}">
-                    window.onerror = function(message, source, lineno, colno, error) {
-                        document.body.innerHTML += '<div style="color:red; padding: 20px; font-family: monospace;"><b>FATAL ERROR:</b> ' + message + '<br>' + source + ':' + lineno + ':' + colno + '<br>' + (error ? error.stack : '') + '</div>';
-                    };
-                    window.addEventListener("unhandledrejection", function(event) {
-                        document.body.innerHTML += '<div style="color:red; padding: 20px; font-family: monospace;"><b>UNHANDLED PROMISE REJECTION:</b> ' + event.reason + '</div>';
-                    });
-                </script>
+                <script nonce="${nonce}">${ERROR_REPORTER_SCRIPT}</script>
                 <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>`;

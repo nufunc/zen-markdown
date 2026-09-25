@@ -72,3 +72,30 @@ export function resolveLinkPath(docDir: string, href: string, roots: string[]): 
 export function safeImageName(name: string): string {
     return name.replace(/[^\p{L}\p{N}._-]+/gu, '_');
 }
+
+/** HTML 본문과 속성에 넣을 글자를 이스케이프한다. 파일 이름처럼 사용자가 정한 글자를 HTML에 넣을 때 쓴다 */
+export function escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * 웹뷰 HTML에 넣는 오류 표시 스크립트. 오류 메시지, 출처, 스택, 거부 사유는 HTML로 해석하지 않고 글자로 붙인다.
+ * 예전에는 innerHTML에 이어 붙여, 메시지에 든 태그가 그대로 해석됐다.
+ */
+export const ERROR_REPORTER_SCRIPT = `
+window.__zenShowError = function (title, text) {
+    var box = document.createElement('div');
+    box.style.cssText = 'color:red; padding: 20px; font-family: monospace; white-space: pre-wrap;';
+    var head = document.createElement('b');
+    head.textContent = title;
+    box.appendChild(head);
+    box.appendChild(document.createTextNode(' ' + text));
+    document.body.appendChild(box);
+};
+window.onerror = function (message, source, lineno, colno, error) {
+    window.__zenShowError('FATAL ERROR:', String(message) + '\\n' + source + ':' + lineno + ':' + colno + '\\n' + (error ? error.stack : ''));
+};
+window.addEventListener('unhandledrejection', function (event) {
+    window.__zenShowError('UNHANDLED PROMISE REJECTION:', String(event.reason));
+});
+`;

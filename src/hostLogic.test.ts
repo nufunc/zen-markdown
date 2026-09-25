@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as path from 'path';
-import { sanitizeDiag, resolveLinkPath, safeImageName } from './hostLogic';
+import { sanitizeDiag, resolveLinkPath, safeImageName, escapeHtml, ERROR_REPORTER_SCRIPT } from './hostLogic';
 
 test('임의 문자열 필드는 기록하지 않고 개수만 남긴다', () => {
     const r = sanitizeDiag({ type: 'diag', ev: 'serialize_failed', message: '비밀 원고 첫 문단' });
@@ -70,4 +70,35 @@ test('붙여 넣은 이미지 이름: 한글과 숫자는 남기고 경로 구�
     assert.equal(safeImageName('x<>:"|?*y.png'), 'x_y.png');
     assert.equal(safeImageName('ctl\u0000\u001fname.png'), 'ctl_name.png');
     assert.ok(!/[\\/]/.test(safeImageName('..\\..\\x.png')));
+});
+
+test('PDF 제목의 파일 이름은 HTML 이스케이프를 거친다', () => {
+    assert.equal(escapeHtml('<img src=x onerror=alert(1)>'), '&lt;img src=x onerror=alert(1)&gt;');
+    assert.equal(escapeHtml('a & "b" \'c\''), 'a &amp; &quot;b&quot; &#39;c&#39;');
+});
+
+test('오류 표시는 메시지를 HTML로 해석하지 않고 글자로 붙인다', () => {
+    // 가짜 document: 만든 노드와 쓴 속성만 기록한다. innerHTML을 쓰면 실패한다
+    const appended: any[] = [];
+    const node = (tag: string) => {
+        const el: any = { tag, style: {}, children: [] as any[], appendChild(c: any) { this.children.push(c); } };
+        Object.defineProperty(el, 'innerHTML', { set() { throw new Error('innerHTML used'); } });
+        return el;
+    };
+    const fakeDocument = {
+        createElement: node,
+        createTextNode: (text: string) => ({ text }),
+        body: { appendChild: (el: any) => appended.push(el), set innerHTML(_v: string) { throw new Error('innerHTML used'); } },
+    };
+    const listeners: Record<string, (e: any) => void> = {};
+    const fakeWindow: any = { addEventListener: (type: string, fn: any) => { listeners[type] = fn; } };
+    new Function('window', 'document', ERROR_REPORTER_SCRIPT)(fakeWindow, fakeDocument);
+    const evil = '<img src=x onerror=alert(1)>';
+    fakeWindow.onerror(evil, 'app.js', 1, 2, { stack: evil });
+    listeners.unhandledrejection({ reason: evil });
+    assert.equal(appended.length, 2);
+    for (const box of appended) {
+        assert.ok(box.children[1].text.includes(evil), '메시지가 글자 노드로 들어간다');
+    }
+    assert.equal(appended[0].children[0].textContent, 'FATAL ERROR:');
 });

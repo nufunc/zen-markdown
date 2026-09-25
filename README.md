@@ -11,7 +11,7 @@ Minimalist & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experienc
 * **Link Navigation**: `Ctrl/Cmd + Click` a link to follow it — relative `.md` links open in Zen Markdown, other files open in VS Code, and external URLs open in your browser.
 * **Blank Line Preservation**: Two or more consecutive blank lines are shown as empty paragraphs in WYSIWYG mode and written back to your file unchanged.
 * **Smart Table of Contents (TOC)**: Easily navigate long documents with a draggable, floating TOC.
-* **Theme Support**: `auto` follows your VS Code light/dark theme, or pick a built-in theme (Nord, One Half Dark, Solarized Dark, Vintage).
+* **Theme Support**: `auto` follows your VS Code light/dark theme, or pick one of nine built-in themes (Light, Dark, Nord, One Half Dark, Solarized Dark, Vintage, Gruvbox, Tokyo Night, Orca).
 * **Familiar Shortcuts**: Uses intuitive UpNote-style keyboard shortcuts for lightning-fast formatting:
   * `Cmd/Ctrl + 1~6`: Headings 1 to 6
   * `Cmd/Ctrl + 7`: Bulleted List
@@ -19,7 +19,7 @@ Minimalist & Aesthetic WYSIWYG Markdown Editor for Visual Studio Code. Experienc
   * `Cmd/Ctrl + 9`: Task List (Checklist)
   * `Cmd/Ctrl + Shift + U`: Blockquote
 * **Code Snippet Tools**: Clean syntax highlighting with a floating one-click copy button.
-* **State Preservation**: Scroll position is kept when you switch tabs and come back — without holding the editor in memory.
+* **State Preservation**: The editor stays loaded while its tab is hidden, so the cursor, scroll position and undo history are kept when you switch tabs and come back.
 * **Original Formatting Preserved**: Parts of the document you did not edit are written back exactly as they were.
 
 ## 🚀 Usage
@@ -40,9 +40,11 @@ You can customize the editor in VS Code Settings (`Ctrl+,`):
 | `zenMarkdown.contentWidth` | `standard` | Editor content width: `narrow` (700px), `standard` (900px), `full` (100%). |
 | `zenMarkdown.autoRefresh` | `true` | Refresh the editor automatically when the file changes externally. |
 | `zenMarkdown.spellCheck` | `false` | Enable native spell checking. |
+| `zenMarkdown.defaultCodeLanguage` | `text` | Default language for newly created code blocks. |
 | `zenMarkdown.showWordCount` | `true` | Show word and character count badge in the header bar. |
 | `zenMarkdown.showFormattingToolbar` | `true` | Show the rich formatting toolbar in WYSIWYG mode. |
 | `zenMarkdown.showToc` | `false` | Show the Table of Contents by default. |
+| `zenMarkdown.diagnostics` | `true` | Record local diagnostic events (errors and round-trip self-checks). Document content is never recorded and nothing is sent over the network. |
 
 ## ⚠️ Known Limitations
 

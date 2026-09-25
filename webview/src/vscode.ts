@@ -18,7 +18,7 @@ class VSCodeAPIWrapper {
         }
     }
 
-    // 웹뷰가 숨겨졌다 복원될 때(탭 전환) 유지되는 상태 — retainContextWhenHidden 없이 위치 보존용
+    // 웹뷰 상태. 탭 전환은 retainContextWhenHidden이 웹뷰를 살려 두므로 이 상태 없이도 유지되고, 창을 다시 열 때 스크롤 위치를 되살리는 데 쓴다
     public getState(): any {
         return this.vsCodeApi?.getState?.();
     }
