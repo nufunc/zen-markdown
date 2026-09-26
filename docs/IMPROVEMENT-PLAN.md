@@ -2382,6 +2382,27 @@ node로도 밑줄, 글자색, 배경색 조각을 직렬화했다. 셋 다 서�
 | 명세 회귀 "뜻이 바뀜" | 279 그대로 |
 | 게이트 | 루트 10, 빌드, 린트 오류 0, 단위 전부, E2E 51 통과 |
 
+#### VS Code 단축키 충돌 확인(2026-09-27)
+
+위 "확인하지 못한 것"을 쟀다. 설정을 비운 VS Code 1.113을 원격 디버깅 포트로 띄우고, 저장소를 `--extensionDevelopmentPath`로 실어(0.9.5 커밋과 같은 코드) Playwright로 조작했다. 키마다 VS Code를 새로 띄워 한 줄을 선택하고 단축키를 누른 뒤, 워크벤치(사이드바, 패널, 편집기 그룹, 빠른 입력, 알림)와 편집기 모델이 바뀐 것을 기록했다. 격리한 확장 폴더에 설치한 vsix는 VS Code가 읽지 않아 이 방식으로 바꿨다.
+
+| 단축키 | Zen | VS Code | 판정 |
+|---|---|---|---|
+| `Ctrl+B` | 굵게 | 사이드바를 닫는다 | 충돌 |
+| `Ctrl+Shift+H` | 찾기와 바꾸기 창 | 검색 보기의 파일에서 바꾸기 | 충돌. 앱의 `Ctrl+H` 처리가 Shift를 보지 않았다 |
+| `Ctrl+1~9`, `Ctrl+I`, `Ctrl+U`, `Ctrl+D`, `Ctrl+K`, `Ctrl+F`, `Ctrl+H`, `Ctrl+Shift+U/C/M/K/X/S` | 기대한 동작 | 바뀌지 않음 | 충돌 없음 |
+
+원인은 VS Code 웹뷰의 `pre/index.html`이 `contentWindow`의 keydown(버블)을 `defaultPrevented`와 상관없이 모두 워크벤치로 넘기는 것이다. 앱 키맵(`editorKeymap`)이 처리하는 단축키는 이미 `stopPropagation`을 불러 넘어가지 않았고, BlockNote 기본 단축키(`Ctrl+B`, `Ctrl+I`)는 `preventDefault`만 해서 넘어갔다. `Ctrl+I`는 격리한 VS Code에 그 키의 명령이 없어 드러나지 않았을 뿐이다.
+
+고친 것:
+
+- 편집 영역의 버블 단계 `onKeyDown`이 Ctrl이나 Cmd가 든 키 가운데 이미 처리된(`defaultPrevented`) 것의 전파를 멈춘다. 처리하지 않은 `Ctrl+S`와 복사, 붙여 넣기는 그대로 넘어간다.
+- 앱의 찾기 처리가 Shift가 든 `Ctrl+Shift+F`와 `Ctrl+Shift+H`를 받지 않는다. VS Code의 파일에서 찾기와 바꾸기가 열린다.
+
+확인: `e2e/vscode-keys.spec.ts` 3건(고치기 전 코드에서 `Ctrl+B`와 `Ctrl+Shift+H` 2건 실패). 같은 VS Code 측정을 다시 돌려 `Ctrl+B`, `Ctrl+I`는 VS Code가 바뀌지 않고 서식만 들어가며, `Ctrl+Shift+H`, `Ctrl+Shift+F`는 검색 보기만 열리고, `Ctrl+B` 뒤 `Ctrl+S`는 `**hello world here**`로 저장되고, 복사와 붙여 넣기 뒤 저장도 파일에 반영됨을 확인했다. 게이트: 루트 21, 빌드, 린트 0, 단위 전부, E2E 100 통과.
+
+사용자 설정의 키 바인딩과 다른 확장(예: Copilot)의 단축키는 이 측정에 들어가지 않았다. 앱이 처리한 단축키는 이제 VS Code로 넘어가지 않으므로 그쪽 충돌도 막힐 것으로 본다(재지 않았다).
+
 ### 추가 검토 23. Word에서 붙여 넣은 목록이 목록이 되지 않는다
 
 2026-09-25 마무리 정기 검토의 첫 영역(붙여 넣기)에서 더했다.
