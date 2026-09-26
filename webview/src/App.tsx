@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
+import type React from 'react';
 import { BlockNoteEditor, BlockNoteSchema, defaultBlockSpecs, defaultStyleSpecs, createCodeBlockSpec, SyntaxHighlightingExtension } from '@blocknote/core';
 import { MermaidBlock } from './MermaidBlock';
 import { createShikiHighlighter } from './shikiHighlighter';
@@ -629,7 +630,8 @@ ${markdown}` : markdown;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 자체 Search/Replace 위젯을 Ctrl+F와 Ctrl+H 모두에 연동한다
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'h')) {
+      // Ctrl+Shift+F와 Ctrl+Shift+H는 VS Code의 파일에서 찾기와 바꾸기에 맡긴다
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'h')) {
         e.preventDefault();
         e.stopPropagation();
 
@@ -795,6 +797,11 @@ ${markdown}` : markdown;
   const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
   const openLinkInput = () => setLinkTarget(captureLinkTarget(editor));
   const handleKeyDownCapture = createEditorKeymap({ editor, handleUndo, handleRedo, applyBlockTypeToSelection, openLinkInput });
+  // VS Code 웹뷰는 window까지 올라온 keydown을 VS Code 단축키로도 실행한다(Ctrl+B가 굵게와 함께 사이드바를 닫았다).
+  // BlockNote가 처리한 Ctrl+B, Ctrl+I 같은 단축키는 여기서 멈춘다. 처리하지 않은 Ctrl+S와 복사, 붙여 넣기는 그대로 넘긴다
+  const stopHandledShortcut = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.defaultPrevented) e.stopPropagation();
+  };
 
   const updateConfig = (key: string, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -1024,6 +1031,7 @@ ${markdown}` : markdown;
       <div 
         style={{ flex: 1, display: 'flex', flexDirection: 'row', boxSizing: 'border-box', fontSize: `${config.fontSize}px`, overflow: 'hidden', position: 'relative' }}
         onKeyDownCapture={handleKeyDownCapture}
+        onKeyDown={stopHandledShortcut}
       >
         {/* 찾기 창은 편집 영역 위쪽 오른편에 둔다. 머리 막대의 단추를 가리지 않는다(추가 검토 31) */}
         {showSearchReplace && (
