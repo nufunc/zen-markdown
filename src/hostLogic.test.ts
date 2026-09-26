@@ -181,6 +181,12 @@ test('인쇄 HTML: 번들 CSS를 웹뷰 스타일보다 먼저 넣고 제목을 
     assert.ok(html.includes('<div class="bn-editor">본문</div>'));
 });
 
+test('인쇄 HTML은 어두운 테마에서 캡처해도 밝은 color-scheme으로 그린다', () => {
+    // 캡처한 .bn-mantine이 data-mantine-color-scheme=dark를 달고 오면 기본 체크박스가 어두운 네모로 찍힌다
+    const html = buildPrintHtml({ title: 't', bundleCss: '', capturedStyles: '', bodyHtml: '' });
+    assert.match(html, /\.bn-mantine[^{]*\{[^}]*color-scheme:\s*light\s*!important/);
+});
+
 test('Compare 가상 문서 경로는 *.md 선택자에 걸리지 않는다(추가 검토 28)', () => {
     for (const side of ['external', 'mine'] as const) {
         const p = comparePath('images.md', side);
