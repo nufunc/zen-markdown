@@ -650,8 +650,9 @@ ${markdown}` : markdown;
         }
 
         setShowSearchReplace(true);
-        if (e.key.toLowerCase() === 'h') {
-          setIsReplaceOpen(true);
+        if (e.key.toLowerCase() === 'h') setIsReplaceOpen(true);
+        // VS Code처럼 선택한 글자로 검색어를 채운 Ctrl+H만 바꾸기 칸에 포커스를 둔다
+        if (e.key.toLowerCase() === 'h' && selectedText) {
           setTimeout(() => {
             replaceInputRef.current?.focus();
             replaceInputRef.current?.select();
